@@ -66,6 +66,8 @@ export function IntakeQueue() {
   const requeue = useMutation(trpc.intake.requeue.mutationOptions())
   const registerMut = useMutation(trpc.intake.registerInvoice.mutationOptions())
   const agentMut = useMutation(trpc.agent.process.mutationOptions())
+  const batchMut = useMutation(trpc.agent.batch.mutationOptions())
+  const [batchNotice, setBatchNotice] = useState<string | null>(null)
   const [registerNotice, setRegisterNotice] = useState<Record<string, string>>(
     {}
   )
@@ -148,6 +150,20 @@ export function IntakeQueue() {
     }
   }
 
+  async function doBatch() {
+    try {
+      const res = await batchMut.mutateAsync({ limit: 10 })
+      const failed = res.failed.map((f) => f.docId.slice(0, 8)).join(", ")
+      setBatchNotice(
+        `Ran agent over ${res.documents} doc(s): ${res.succeeded} processed` +
+          (res.failed.length ? `, ${res.failed.length} failed (${failed})` : ``)
+      )
+      refresh()
+    } catch (e) {
+      setBatchNotice(`Batch failed: ${(e as Error).message}`)
+    }
+  }
+
   async function doClassify(id: string) {
     const rawField = occupied[id] ?? "{}"
     let payload: unknown
@@ -214,18 +230,33 @@ export function IntakeQueue() {
         <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
           Queue
         </h2>
-        <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={batchMut.isPending}
+            onClick={doBatch}
+          >
+            {batchMut.isPending ? "Processing…" : "Run agent (pending)"}
+          </Button>
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+        {batchNotice ? (
+          <p className="rounded-md bg-emerald-500/10 px-3 py-1 text-emerald-600 text-xs">
+            {batchNotice}
+          </p>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (

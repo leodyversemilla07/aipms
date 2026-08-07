@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common'
+import { db } from '@workspace/db'
 import { IntakeService } from '../intake/intake.service'
 import { InvoiceService } from '../invoice/invoice.service'
 import { extractStructuredInvoice } from './extract'
@@ -54,5 +55,30 @@ export class AgentService {
       invoiceStatus,
     )
     return { doc: bridged, invoice, match }
+  }
+
+  /**
+   * Batch runner — process `limit` pending (`new`) documents through the
+   * pipeline. The seam a worker/loop (or the eve runtime) will call to keep
+   * the queue draining; per-doc failures are isolated and reported, not
+   * fatal, and re-runs are safe because InvoiceService dedupes.
+   */
+  async processPending(limit: number) {
+    const docs = await db.intakeDocument.findMany({
+      where: { status: 'new' },
+      orderBy: { receivedAt: 'asc' },
+      take: limit,
+    })
+    let succeeded = 0
+    const failed: Array<{ docId: string; error: string }> = []
+    for (const doc of docs) {
+      try {
+        await this.classifyAndRegister(doc.id)
+        succeeded += 1
+      } catch (error) {
+        failed.push({ docId: doc.id, error: (error as Error).message })
+      }
+    }
+    return { documents: docs.length, succeeded, failed }
   }
 }

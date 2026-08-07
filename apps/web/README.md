@@ -23,7 +23,8 @@ tRPC). tRPC calls are proxied by `next.config.ts` rewrites to the API on
   its extracted payload, drop or requeue it, *register* an `extracted`
   invoice document into the finance desk via the §9 bridge, or
   **Auto-extract** a `new` document through the §3 agent pipeline
-  (deterministic extractor; LLM seam).
+  (deterministic extractor; LLM seam), or **Run agent (pending)** to drain
+  the queue in a batch.
 - `/master-data` — **Master data**: onboard vendors (and verify the §8.6
   beneficiary bank account), add/deactivate catalog items, create budget
   envelopes, and author policies (config-over-void).

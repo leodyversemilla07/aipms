@@ -12,6 +12,10 @@ const processInput = z.object({
   idempotencyKey: z.string().min(1),
 })
 
+const batchInput = z.object({
+  limit: z.number().int().min(1).max(100).default(10),
+})
+
 /**
  * §3 agent surface — promote a raw intake document to a registered invoice.
  * The extraction algorithm is swappable (structured default, LLM later); the
@@ -49,5 +53,27 @@ export class AgentRouter {
       })
       return result
     })
+  }
+
+  /**
+   * Drain the queue: process up to `limit` pending documents. Per-doc
+   * failures are reported, not fatal; the worker loop (or eve) calls this.
+   */
+  @Mutation({ input: batchInput })
+  async batch(
+    @Input() input: z.infer<typeof batchInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const result = await this.agent.processPending(input.limit)
+    await this.audit.record({
+      actorId: ctx.user.id,
+      actorKind: 'human',
+      action: 'agent.batch',
+      entity: 'IntakeDocument',
+      entityId: null,
+      input,
+      after: result,
+    })
+    return result
   }
 }

@@ -93,4 +93,43 @@ describe('Agent pipeline (§3 classify→register)', () => {
     await intake.drop(doc.id)
     await expect(agent.classifyAndRegister(doc.id)).rejects.toThrow()
   })
+
+  it('drains the pending queue in a batch', async () => {
+    const a = await intake.ingest({
+      channel: 'batch-agent',
+      contentHash: `sha256-${suffix}-batch-1`,
+      raw: {
+        docType: 'invoice',
+        payload: {
+          vendorId,
+          number: `AG-B1-${suffix}`,
+          lines: [{ amountMinor: 10_000, class: 'goods' }],
+        },
+      },
+    })
+    const b = await intake.ingest({
+      channel: 'batch-agent',
+      contentHash: `sha256-${suffix}-batch-2`,
+      raw: {
+        docType: 'invoice',
+        payload: {
+          vendorId,
+          number: `AG-B2-${suffix}`,
+          lines: [{ amountMinor: 20_000, class: 'services' }],
+        },
+      },
+    })
+    intakeIds.push(a.id)
+    intakeIds.push(b.id)
+
+    const res = await agent.processPending(10)
+    expect(res.succeeded).toBeGreaterThanOrEqual(2)
+    expect(res.failed.length).toBe(0)
+
+    const docs = await db.intakeDocument.findMany({
+      where: { id: { in: [a.id, b.id] } },
+    })
+    expect(docs.every((d) => d.status !== 'new')).toBe(true)
+    expect(docs.some((d) => d.status === 'extracted')).toBe(true)
+  })
 })
