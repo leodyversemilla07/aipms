@@ -45,9 +45,25 @@ export function InvoiceRegister() {
     name: string
   }>
 
+  const pos = useQuery(
+    trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 50 })
+  )
+  const poRows = (pos.data?.rows ?? []) as unknown as Array<{
+    id: string
+    poNumber: string
+    vendorId: string
+    status: string
+  }>
+
   const [vendorId, setVendorId] = useState("")
   const [number, setNumber] = useState("")
   const [poId, setPoId] = useState("")
+
+  const confirmedPos = poRows.filter((po) => po.status === "confirmed")
+  const vendorPos =
+    vendorId === ""
+      ? confirmedPos
+      : confirmedPos.filter((po) => po.vendorId === vendorId)
   const [lines, setLines] = useState<LineDraft[]>([emptyLine()])
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -159,13 +175,24 @@ export function InvoiceRegister() {
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">PO id (optional)</span>
-            <input
+            <span className="text-muted-foreground">PO (optional)</span>
+            <select
               value={poId}
               onChange={(e) => setPoId(e.target.value)}
-              placeholder="cuid of the PO"
-              className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
+              className="h-9 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">No PO</option>
+              {vendorPos.map((po) => (
+                <option key={po.id} value={po.id}>
+                  {po.poNumber}
+                </option>
+              ))}
+            </select>
+            {vendorId !== "" && vendorPos.length === 0 ? (
+              <span className="text-muted-foreground text-xs">
+                No confirmed PO for this vendor
+              </span>
+            ) : null}
           </label>
         </div>
 
