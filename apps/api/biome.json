@@ -1,6 +1,13 @@
 {
   "root": false,
   "extends": "//",
+  "linter": {
+    "rules": {
+      "style": {
+        "useImportType": "off"
+      }
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "single",

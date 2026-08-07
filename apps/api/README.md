@@ -5,12 +5,14 @@ via Better Auth) on port **3001**.
 
 ## Runtime
 
-The API consumes `@workspace/*` packages that ship **TypeScript sources**, so it
-runs on [tsx](https://tsx.is) (the pnpm/bun equivalent) rather than the Nest CLI:
+The API consumes `@workspace/*` packages that ship **TypeScript sources**, so
+it runs on `node` with the **SWC loader** (`@swc-node/register`) rather than
+`tsx`/the Nest CLI — SWC emits Nest's decorator metadata (Nest DI breaks under
+esbuild), and the loader resolves the workspace `.ts` packages:
 
 ```bash
-pnpm --filter api dev      # tsx watch + nestjs-trpc watch (generates server.ts)
-pnpm --filter api start    # production-ish: tsx src/main.ts
+pnpm --filter api dev      # node --watch (SWC loader) + nestjs-trpc watch
+pnpm --filter api start    # production-ish: node (SWC loader) src/main.ts
 ```
 
 > A real `dist` bundle (for serverless/containers) is a follow-up: it needs to

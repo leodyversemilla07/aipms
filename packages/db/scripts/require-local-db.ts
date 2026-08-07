@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { parseEnv } from "@workspace/env"
 
@@ -71,10 +71,15 @@ function workspaceRoot(): string | null {
 
   while (true) {
     try {
+      // pnpm declares workspaces via pnpm-workspace.yaml; npm/yarn/bun via
+      // the package.json "workspaces" field. Recognize both.
+      const hasPnpmWorkspace = existsSync(
+        join(directory, "pnpm-workspace.yaml")
+      )
       const manifest = JSON.parse(
         readFileSync(join(directory, "package.json"), "utf8")
       ) as { workspaces?: boolean }
-      if (manifest.workspaces) return directory
+      if (hasPnpmWorkspace || manifest.workspaces) return directory
     } catch {}
 
     const parent = dirname(directory)
