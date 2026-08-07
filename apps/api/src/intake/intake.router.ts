@@ -53,12 +53,12 @@ export class IntakeRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
     return this.intake.list(input.status ? { status: input.status } : {})
   }
 
-  @Mutation()
+  @Mutation({ input: ingestInput })
   async ingest(
     @Input() input: z.infer<typeof ingestInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -77,7 +77,7 @@ export class IntakeRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: classifyInput })
   async classify(
     @Input() input: z.infer<typeof classifyInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -95,7 +95,7 @@ export class IntakeRouter {
     return doc
   }
 
-  @Mutation()
+  @Mutation({ input: idInput })
   async drop(
     @Input() input: z.infer<typeof idInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -112,7 +112,7 @@ export class IntakeRouter {
     return doc
   }
 
-  @Mutation()
+  @Mutation({ input: idInput })
   async requeue(
     @Input() input: z.infer<typeof idInput>,
     @Ctx() ctx: AuthedTrpcContext,

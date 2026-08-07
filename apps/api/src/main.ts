@@ -1,7 +1,7 @@
 import '@workspace/env/load'
 import { NestFactory } from '@nestjs/core'
-import { toNodeHandler } from 'better-auth/node'
 import { auth } from '@workspace/auth'
+import { toNodeHandler } from 'better-auth/node'
 import { AppModule } from './app.module'
 
 async function bootstrap() {

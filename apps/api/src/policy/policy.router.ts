@@ -48,12 +48,12 @@ export class PolicyRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listPolicyInput })
   async list(@Input() input: z.infer<typeof listPolicyInput>) {
     return this.policy.list(input)
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.policy.detail(input.id)
   }
@@ -63,7 +63,7 @@ export class PolicyRouter {
     return this.policy.activeByKind()
   }
 
-  @Mutation()
+  @Mutation({ input: createPolicyInput })
   async create(
     @Input() input: z.infer<typeof createPolicyInput>,
     @Ctx() ctx: AuthedTrpcContext,

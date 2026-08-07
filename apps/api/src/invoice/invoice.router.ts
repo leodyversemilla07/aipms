@@ -15,14 +15,18 @@ import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { InvoiceService } from './invoice.service'
 
-const lineInput = z.object({
-  description: z.string().optional(),
-  amountMinor: z.number().int().nonnegative(),
-  class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-  vatExempt: z.boolean().optional(),
+const computeInput = z.object({
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int().nonnegative(),
+        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+        vatExempt: z.boolean().optional(),
+      }),
+    )
+    .min(1),
 })
-
-const computeInput = z.object({ lines: z.array(lineInput).min(1) })
 
 const registerInput = z.object({
   idempotencyKey: z.string().min(1),
@@ -30,7 +34,16 @@ const registerInput = z.object({
   number: z.string().min(1).max(80),
   poId: z.string().min(1).optional(),
   currencyCode: z.string().length(3).default('PHP'),
-  lines: z.array(lineInput).min(1),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int().nonnegative(),
+        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+        vatExempt: z.boolean().optional(),
+      }),
+    )
+    .min(1),
   receivedAt: z.coerce.date().optional(),
 })
 
@@ -50,23 +63,23 @@ export class InvoiceRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
     return this.invoice.list(input.status ? { status: input.status } : {})
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.invoice.detail(input.id)
   }
 
   /** §8.4 deterministic tax foot: the agent calls this to *explain* net amounts. */
-  @Query()
+  @Query({ input: computeInput })
   async compute(@Input() input: z.infer<typeof computeInput>) {
     return this.invoice.compute(input)
   }
 
-  @Mutation()
+  @Mutation({ input: registerInput })
   async register(
     @Input() input: z.infer<typeof registerInput>,
     @Ctx() ctx: AuthedTrpcContext,

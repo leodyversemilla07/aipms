@@ -13,6 +13,7 @@ import { z } from "zod";
 
 const t = initTRPC.create();
 const publicProcedure = t.procedure;
+import { listInput } from "../vendor/../trpc/list-input";
 import type { ApprovalRouter } from "../approval/approval.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
@@ -30,100 +31,283 @@ const appRouter = t.router({
     pendingList: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["pendingList"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["detail"]>>),
     decide: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  verdict: z.enum(['approve', 'reject', 'override']),
+  evidence: z.string().max(1000).optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["decide"]>>)
     }),
   budget: t.router({
     list: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  includeRemaining: z.boolean().optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["detail"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  name: z.string().min(1).max(200),
+  costCenter: z.string().min(1).max(80),
+  period: z.string().min(1).max(20),
+  currencyCode: z.string().length(3).default('PHP'),
+  limitMinor: z.number().int().nonnegative(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["create"]>>)
     }),
   catalog: t.router({
     list: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["detail"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  sku: z.string().min(1).max(100),
+  name: z.string().min(1).max(200),
+  category: z.string().max(120).default('general'),
+  unit: z.string().max(20).default('ea'),
+  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultCurrencyCode: z.string().length(3).default('PHP'),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["create"]>>),
     update: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  name: z.string().min(1).max(200).optional(),
+  category: z.string().max(120).optional(),
+  unit: z.string().max(20).optional(),
+  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultCurrencyCode: z.string().length(3).optional(),
+  active: z.boolean().optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["update"]>>),
     deactivate: publicProcedure
+      .input(z.object({ id: z.string().min(1) }).extend({
+  idempotencyKey: z.string().min(1),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["deactivate"]>>)
     }),
   intake: t.router({
     list: publicProcedure
+      .input(listInput.extend({
+  status: z
+    .enum([
+      'new',
+      'classifying',
+      'extracted',
+      'matched',
+      'exception',
+      'dropped',
+    ])
+    .optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["list"]>>),
     ingest: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  channel: z.string().min(1).max(40),
+  contentHash: z.string().min(1).max(128),
+  senderId: z.string().min(1).optional(),
+  raw: z.unknown().optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["ingest"]>>),
     classify: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  classified: z.unknown(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["classify"]>>),
     drop: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["drop"]>>),
     requeue: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>)
     }),
   invoice: t.router({
     list: publicProcedure
+      .input(listInput.extend({
+  status: z.enum(['received', 'matched', 'exception', 'paid']).optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["detail"]>>),
     compute: publicProcedure
+      .input(z.object({
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int().nonnegative(),
+        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+        vatExempt: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["compute"]>>),
     register: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  number: z.string().min(1).max(80),
+  poId: z.string().min(1).optional(),
+  currencyCode: z.string().length(3).default('PHP'),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int().nonnegative(),
+        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+        vatExempt: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+  receivedAt: z.coerce.date().optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
     }),
   paymentRun: t.router({
     list: publicProcedure
+      .input(listInput.extend({
+  status: z
+    .enum(['draft', 'approved', 'executed', 'reconciled', 'voided'])
+    .optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["detail"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  invoiceIds: z.array(z.string().min(1)).min(1),
+  notes: z.unknown().optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["create"]>>),
     approve: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["approve"]>>),
     execute: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["execute"]>>),
     reconcile: publicProcedure
+      .input(z.object({
+  runId: z.string().min(1),
+  lineId: z.string().min(1),
+  status: z.enum(['paid', 'dishonored', 'rejected']),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["reconcile"]>>),
     voidRun: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["voidRun"]>>)
     }),
   policy: t.router({
     list: publicProcedure
+      .input(z.object({
+  kind: z.enum([
+  'threshold',
+  'preferredVendor',
+  'approvalChain',
+  'budgetControl',
+  'evaluationCriterion',
+]).optional(),
+  enabled: z.boolean().optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["detail"]>>),
     activeByKind: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["activeByKind"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  name: z.string().min(1).max(200),
+  kind: z.enum([
+  'threshold',
+  'preferredVendor',
+  'approvalChain',
+  'budgetControl',
+  'evaluationCriterion',
+]),
+  enabled: z.boolean().default(true),
+  supersedesId: z.string().min(1).nullish(),
+  config: z.record(z.string(), z.unknown()),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["create"]>>)
     }),
   purchaseOrder: t.router({
     list: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["detail"]>>),
     issue: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  requisitionId: z.string().min(1),
+  vendorId: z.string().min(1),
+  terms: z.record(z.string(), z.unknown()).optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["issue"]>>),
     confirm: publicProcedure
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["confirm"]>>),
     requestCancellation: publicProcedure
+      .input(z.object({ id: z.string().min(1) }).extend({
+  idempotencyKey: z.string().min(1),
+  reason: z.string().min(1).max(500),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["requestCancellation"]>>)
     }),
   requisition: t.router({
     list: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["detail"]>>),
     exceptionQueue: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["exceptionQueue"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  costCenter: z.string().min(1).max(80),
+  budgetId: z.string().min(1).nullish(),
+  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+  note: z.string().max(1000).nullish(),
+  lines: z
+    .array(
+      z.object({
+        sku: z.string().min(1).max(100).nullish(),
+        description: z.string().min(1).max(500),
+        quantity: z.number().int().positive(),
+        unit: z.string().max(20).optional(),
+        unitPriceMinor: z.number().int().nonnegative(),
+        currencyCode: z.string().length(3).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["create"]>>),
     submit: publicProcedure
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["submit"]>>)
     }),
   users: t.router({
@@ -134,14 +318,40 @@ const appRouter = t.router({
     }),
   vendor: t.router({
     list: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["list"]>>),
     detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["detail"]>>),
     create: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  name: z.string().min(1).max(200),
+  email: z.string().email().nullish(),
+  taxId: z.string().max(30).nullish(),
+  paymentTermsDays: z.number().int().positive().nullish(),
+  ratingScore: z.number().int().min(0).max(100).nullish(),
+  status: z.enum(['prospective', 'active', 'watch', 'blacklisted']).optional(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["create"]>>),
     update: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().email().nullish(),
+  taxId: z.string().max(30).nullish(),
+  paymentTermsDays: z.number().int().positive().nullish(),
+  ratingScore: z.number().int().min(0).max(100).nullish(),
+  status: z.enum(['prospective', 'active', 'watch', 'blacklisted']).optional(),
+  blacklistReason: z.string().max(500).nullish(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["update"]>>),
     verifyBankAccount: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  bankAccount: z.any(),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>)
     })
 });

@@ -38,12 +38,12 @@ export class ApprovalRouter {
     return this.approval.pendingList()
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.approval.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: decideInput })
   async decide(
     @Input() input: z.infer<typeof decideInput>,
     @Ctx() ctx: AuthedTrpcContext,

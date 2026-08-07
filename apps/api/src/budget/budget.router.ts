@@ -39,18 +39,18 @@ export class BudgetRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInput })
   async list(@Input() input: z.infer<typeof listInput>) {
     return this.budget.list(input)
   }
 
-  @Query()
+  @Query({ input: detailInput })
   async detail(@Input() input: z.infer<typeof detailInput>) {
     if (input.includeRemaining) return this.budget.remaining(input.id)
     return this.budget.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: createBudgetInput })
   async create(
     @Input() input: z.infer<typeof createBudgetInput>,
     @Ctx() ctx: AuthedTrpcContext,

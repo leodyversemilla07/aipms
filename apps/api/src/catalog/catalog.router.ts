@@ -52,17 +52,17 @@ export class CatalogRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInput })
   async list(@Input() input: z.infer<typeof listInput>) {
     return this.catalog.list(input)
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.catalog.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: createCatalogInput })
   async create(
     @Input() input: z.infer<typeof createCatalogInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -82,7 +82,7 @@ export class CatalogRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: updateCatalogInput })
   async update(
     @Input() input: z.infer<typeof updateCatalogInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -105,7 +105,7 @@ export class CatalogRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: deactivateInput })
   async deactivate(
     @Input() input: z.infer<typeof deactivateInput>,
     @Ctx() ctx: AuthedTrpcContext,

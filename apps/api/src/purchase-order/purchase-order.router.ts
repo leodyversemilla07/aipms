@@ -42,17 +42,17 @@ export class PurchaseOrderRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInput })
   async list(@Input() input: z.infer<typeof listInput>) {
     return this.purchaseOrder.list(input)
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.purchaseOrder.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: issueInput })
   async issue(
     @Input() input: z.infer<typeof issueInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -78,7 +78,7 @@ export class PurchaseOrderRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: confirmInput })
   async confirm(
     @Input() input: z.infer<typeof confirmInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -97,7 +97,7 @@ export class PurchaseOrderRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: cancellationInput })
   async requestCancellation(
     @Input() input: z.infer<typeof cancellationInput>,
     @Ctx() ctx: AuthedTrpcContext,

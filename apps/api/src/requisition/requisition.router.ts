@@ -15,22 +15,25 @@ import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { RequisitionService } from './requisition.service'
 
-const lineInput = z.object({
-  sku: z.string().min(1).max(100).nullish(),
-  description: z.string().min(1).max(500),
-  quantity: z.number().int().positive(),
-  unit: z.string().max(20).optional(),
-  unitPriceMinor: z.number().int().nonnegative(),
-  currencyCode: z.string().length(3).optional(),
-})
-
 const createRequisitionInput = z.object({
   idempotencyKey: z.string().min(1),
   costCenter: z.string().min(1).max(80),
   budgetId: z.string().min(1).nullish(),
   priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
   note: z.string().max(1000).nullish(),
-  lines: z.array(lineInput).min(1).max(200),
+  lines: z
+    .array(
+      z.object({
+        sku: z.string().min(1).max(100).nullish(),
+        description: z.string().min(1).max(500),
+        quantity: z.number().int().positive(),
+        unit: z.string().max(20).optional(),
+        unitPriceMinor: z.number().int().nonnegative(),
+        currencyCode: z.string().length(3).optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
 })
 
 const idInput = z.object({ id: z.string().min(1) })
@@ -48,12 +51,12 @@ export class RequisitionRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInput })
   async list(@Input() input: z.infer<typeof listInput>) {
     return this.requisition.list(input)
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.requisition.detail(input.id)
   }
@@ -63,7 +66,7 @@ export class RequisitionRouter {
     return this.requisition.exceptionQueue()
   }
 
-  @Mutation()
+  @Mutation({ input: createRequisitionInput })
   async create(
     @Input() input: z.infer<typeof createRequisitionInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -90,7 +93,7 @@ export class RequisitionRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: submitInput })
   async submit(
     @Input() input: z.infer<typeof submitInput>,
     @Ctx() ctx: AuthedTrpcContext,

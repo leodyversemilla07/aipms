@@ -19,6 +19,11 @@ const idInput = z.object({ id: z.string().min(1) })
 
 const vendorStatus = z.enum(['prospective', 'active', 'watch', 'blacklisted'])
 
+const verifyBankAccountInput = z.object({
+  id: z.string().min(1),
+  bankAccount: z.any(),
+})
+
 const createVendorInput = z.object({
   idempotencyKey: z.string().min(1),
   name: z.string().min(1).max(200),
@@ -51,17 +56,17 @@ export class VendorRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInput })
   async list(@Input() input: z.infer<typeof listInput>) {
     return this.vendor.list(input)
   }
 
-  @Query()
+  @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.vendor.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: createVendorInput })
   async create(
     @Input() input: z.infer<typeof createVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -81,7 +86,7 @@ export class VendorRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: updateVendorInput })
   async update(
     @Input() input: z.infer<typeof updateVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -105,9 +110,9 @@ export class VendorRouter {
   }
 
   /** §8.6: record + verify a vendor's beneficiary bank account. */
-  @Mutation()
+  @Mutation({ input: verifyBankAccountInput })
   async verifyBankAccount(
-    @Input() input: z.infer<typeof idInput> & { bankAccount: unknown },
+    @Input() input: z.infer<typeof verifyBankAccountInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     const vendor = await this.vendor.verifyBankAccount(

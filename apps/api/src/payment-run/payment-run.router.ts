@@ -45,17 +45,17 @@ export class PaymentRunRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
+  @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
     return this.runs.list(input.status ? { status: input.status } : {})
   }
 
-  @Query()
+  @Query({ input: runIdInput })
   async detail(@Input() input: z.infer<typeof runIdInput>) {
     return this.runs.detail(input.id)
   }
 
-  @Mutation()
+  @Mutation({ input: createInput })
   async create(
     @Input() input: z.infer<typeof createInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -75,7 +75,7 @@ export class PaymentRunRouter {
     })
   }
 
-  @Mutation()
+  @Mutation({ input: runIdInput })
   async approve(
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -93,7 +93,7 @@ export class PaymentRunRouter {
     return run
   }
 
-  @Mutation()
+  @Mutation({ input: runIdInput })
   async execute(
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -111,7 +111,7 @@ export class PaymentRunRouter {
     return run
   }
 
-  @Mutation()
+  @Mutation({ input: reconcileInput })
   async reconcile(
     @Input() input: z.infer<typeof reconcileInput>,
     @Ctx() ctx: AuthedTrpcContext,
@@ -133,7 +133,7 @@ export class PaymentRunRouter {
     return result
   }
 
-  @Mutation()
+  @Mutation({ input: runIdInput })
   async voidRun(
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,

@@ -16,6 +16,7 @@
     "@trpc/client": "^11.18.0",
     "@trpc/server": "^11.18.0",
     "@trpc/tanstack-react-query": "^11.18.0",
+    "@workspace/auth": "workspace:*",
     "@workspace/ui": "workspace:*",
     "api": "workspace:*",
     "next": "16.2.6",
