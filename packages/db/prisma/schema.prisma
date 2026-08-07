@@ -170,6 +170,11 @@ model Vendor {
   qualifiedEntityClass    EntityClass? // how this vendor is typically sourced
   blacklistReason         String?
   contactChannels         Json? // verified addresses/emails (§8.3 outbox)
+  // §8.6 beneficiary bank control: a run will not plan an invoice whose
+  // vendor has not been verified after the last bank-account change.
+  bankAccount          Json?
+  bankAccountVerifiedAt DateTime?
+  bankAccountChangedAt  DateTime?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -396,6 +401,63 @@ enum InvoiceStatus {
   matched
   exception
   paid
+}
+
+// §8.6 approved payment run (hand-off to finance).
+enum PaymentRunStatus {
+  draft
+  approved
+  executed
+  reconciled
+  voided
+}
+
+// §8.6 per-supplier payment on a run.
+enum PaymentStatus {
+  planned
+  paid
+  dishonored
+  rejected
+}
+
+// §8.6 approved payment run. amount is deterministic per §9:
+// Σ per line (invoice gross + VAT − EWT), computed by the service — the
+// agent only composes and rationalizes exceptions.
+model PaymentRun {
+  id           String         @id @default(cuid())
+  runNumber    String         @unique
+  status       PaymentRunStatus @default(draft)
+  totalMinor   Int
+  currencyCode String         @default("PHP")
+  notes        Json? // planner notes / rationalization
+  createdBy    String
+  approvedBy   String?
+  approvedAt   DateTime?
+  executedBy   String?
+  executedAt   DateTime?
+  reconciledAt DateTime?
+  lines        PaymentRunLine[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@map("paymentRun")
+  @@index([status])
+}
+
+// One invoice per line (planned → paid/dishonored/rejected).
+model PaymentRunLine {
+  id      String       @id @default(cuid())
+  runId   String
+  run     PaymentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  invoiceId String
+  netMinor Int
+  status  PaymentStatus @default(planned)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("paymentRunLine")
+  @@unique([invoiceId])
+  @@index([runId])
 }
 
 // §8.2 normalized ingestion queue. One row per document; [channel, contentHash]

@@ -57,6 +57,30 @@ export class VendorService {
     return vendor
   }
 
+  /**
+   * §8.6 beneficiary bank-account control. Recording an account marks it
+   * verified; a later change (new account payload) clears that stamp so the
+   * payment service refuses to plan it until it is re-verified.
+   */
+  async verifyBankAccount(vendorId: string, bankAccount: unknown) {
+    const vendor = await this.detail(vendorId)
+    const prev = vendor.bankAccount as Record<string, unknown> | null
+    const next = bankAccount as Record<string, unknown>
+    // A *change* only when a prior account existed and differs; a fresh,
+    // never-before-recorded account is itself the verification, not a change.
+    const changed =
+      prev != null && JSON.stringify(prev) !== JSON.stringify(next)
+
+    return db.vendor.update({
+      where: { id: vendorId },
+      data: {
+        bankAccount: next as Prisma.InputJsonValue,
+        bankAccountVerifiedAt: new Date(),
+        bankAccountChangedAt: changed ? new Date() : null,
+      },
+    })
+  }
+
   create(input: CreateVendor) {
     return db.vendor.create({
       data: {

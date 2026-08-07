@@ -16,6 +16,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
+    // Integration specs share one Postgres; serial files avoid cross-file
+    // contention on shared state (sequential numbers, "latest policy"
+    // resolution) on top of the per-feature supersede chains.
+    fileParallelism: false,
     include: ['src/**/*.spec.ts', 'test/**/*.e2e-spec.ts'],
     coverage: {
       provider: 'v8',

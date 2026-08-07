@@ -18,6 +18,7 @@ import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
 import type { IntakeRouter } from "../intake/intake.router";
 import type { InvoiceRouter } from "../invoice/invoice.router";
+import type { PaymentRunRouter } from "../payment-run/payment-run.router";
 import type { PolicyRouter } from "../policy/policy.router";
 import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.router";
 import type { RequisitionRouter } from "../requisition/requisition.router";
@@ -75,6 +76,22 @@ const appRouter = t.router({
     register: publicProcedure
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
     }),
+  paymentRun: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["detail"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["create"]>>),
+    approve: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["approve"]>>),
+    execute: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["execute"]>>),
+    reconcile: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["reconcile"]>>),
+    voidRun: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["voidRun"]>>)
+    }),
   policy: t.router({
     list: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["list"]>>),
@@ -123,7 +140,9 @@ const appRouter = t.router({
     create: publicProcedure
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["create"]>>),
     update: publicProcedure
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["update"]>>)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["update"]>>),
+    verifyBankAccount: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>)
     })
 });
 

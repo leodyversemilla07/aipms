@@ -7,6 +7,7 @@ import { BudgetModule } from './budget/budget.module'
 import { CatalogModule } from './catalog/catalog.module'
 import { IntakeModule } from './intake/intake.module'
 import { InvoiceModule } from './invoice/invoice.module'
+import { PaymentRunModule } from './payment-run/payment-run.module'
 import { PolicyModule } from './policy/policy.module'
 import { PurchaseOrderModule } from './purchase-order/purchase-order.module'
 import { RequisitionModule } from './requisition/requisition.module'
@@ -27,6 +28,7 @@ import { VendorModule } from './vendor/vendor.module'
     ApprovalModule,
     IntakeModule,
     InvoiceModule,
+    PaymentRunModule,
   ],
   controllers: [AppController],
   providers: [AppService],

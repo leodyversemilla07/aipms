@@ -103,4 +103,26 @@ export class VendorRouter {
       return vendor
     })
   }
+
+  /** §8.6: record + verify a vendor's beneficiary bank account. */
+  @Mutation()
+  async verifyBankAccount(
+    @Input() input: z.infer<typeof idInput> & { bankAccount: unknown },
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const vendor = await this.vendor.verifyBankAccount(
+      input.id,
+      input.bankAccount,
+    )
+    await this.audit.record({
+      actorId: ctx.user.id,
+      actorKind: 'human',
+      action: 'vendor.verifyBankAccount',
+      entity: 'Vendor',
+      entityId: vendor.id,
+      input,
+      after: vendor,
+    })
+    return vendor
+  }
 }

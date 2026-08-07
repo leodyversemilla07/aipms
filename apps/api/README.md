@@ -91,6 +91,23 @@ Feature modules under `src/<feature>/`, all behind `AuthMiddleware`:
   (amount/vendor mismatch); dedupes re-ingested `[vendor, number]`. `compute`
   is the foot the agent calls to *explain* a net, never to derive it.
 
+## Approved payment run (Phase 5 / §8.6)
+
+- `paymentRun` — plan (`create`), `approve`, `execute`, `voidRun`, `reconcile`
+  (per-supplier `paid`/`dishonored`/`rejected`), `list`, `detail`.
+- **Hand-off, not bank-file execution**: aipms produces the approved run for
+  finance to execute in the org's own bank (§8.6); reconciliation closes the
+  invoice lifecycle.
+- **Deterministic** per §9: net = Σ (gross + VAT − EWT) from the §8.4 engine;
+  the agent composes, never derives money.
+- **Maker/checker**: approver must differ from the creator (separation of
+  duties, §16.4).
+- **§8.6 beneficiary control**: a run refuses invoices whose vendor lacks a
+  verified bank account; a bank-account change clears the stamp and forces
+  re-verification (`vendor.verifyBankAccount`).
+- Reconciliation flips paid invoices to `paid`; the run reaches `reconciled`
+  only when every line settles.
+
 Cross-cutting invariants (§9):
 
 - **Idempotency** (`src/shared/idempotency`) — every mutation takes an
