@@ -4,6 +4,7 @@ import { InvoiceModule } from '../invoice/invoice.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
 import { AgentRouter } from './agent.router'
+import { AgentScheduler } from './agent.scheduler'
 import { AGENT_EXTRACTOR, AgentService } from './agent.service'
 import { extractStructuredInvoice } from './extract'
 
@@ -12,6 +13,7 @@ import { extractStructuredInvoice } from './extract'
   providers: [
     AgentService,
     AgentRouter,
+    AgentScheduler,
     // Default extractor seam; swapped for an LLM-backed extractor without
     // changing the pipeline.
     { provide: AGENT_EXTRACTOR, useValue: extractStructuredInvoice },

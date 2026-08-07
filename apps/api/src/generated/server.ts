@@ -37,7 +37,9 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["process"]>>),
     batch: publicProcedure
-      .input(z.object({ limit: z.number().int().min(1).max(100).default(10) }))
+      .input(z.object({
+  limit: z.number().int().min(1).max(100).default(10),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["batch"]>>)
     }),
   approval: t.router({
