@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
+import Link from "next/link"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { ExceptionQueue } from "./exception-queue"
@@ -63,13 +64,21 @@ function Dashboard() {
             {user?.email} · signed in
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => authClient.signOut()}
-          className="text-muted-foreground text-sm underline hover:text-foreground"
-        >
-          Sign out
-        </button>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link
+            href="/finance"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Finance desk
+          </Link>
+          <button
+            type="button"
+            onClick={() => authClient.signOut()}
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Sign out
+          </button>
+        </nav>
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
