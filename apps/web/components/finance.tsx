@@ -2,6 +2,7 @@
 
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
+import { DemoSwitcher } from "@/components/demo-switcher"
 import { InvoiceList } from "@/components/finance/invoice-list"
 import { InvoiceRegister } from "@/components/finance/invoice-register"
 import { PaymentRuns } from "@/components/finance/payment-runs"
@@ -40,6 +41,7 @@ function FinanceBody() {
           >
             Sign out
           </button>
+          <DemoSwitcher />
         </nav>
       </header>
 
