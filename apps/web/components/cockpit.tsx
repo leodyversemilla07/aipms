@@ -77,6 +77,12 @@ function Dashboard() {
           >
             Finance
           </Link>
+          <Link
+            href="/audit"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Audit
+          </Link>
           <button
             type="button"
             onClick={() => authClient.signOut()}

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
-import { db, type UserKind } from '@workspace/db'
+import { db, Prisma, type UserKind } from '@workspace/db'
+import { paginate } from '../../trpc/list-input'
 
 /**
  * §9 append-only audit trail. Every agent/human state change records an
@@ -48,6 +49,62 @@ export class AuditService {
           : {}),
       },
     })
+  }
+
+  /**
+   * §16 review — paginated, newest-first read of the immutable trail. Read
+   * filters are a narrow, additive surface; there is intentionally no
+   * update/delete path for AuditEntry.
+   */
+  async list(input: {
+    q?: string
+    entity?: string
+    action?: string
+    page: number
+    pageSize: number
+  }) {
+    const { skip, take } = paginate(input)
+    const where: Prisma.AuditEntryWhereInput = {}
+    if (input.entity) where.entity = input.entity
+    if (input.action) where.action = input.action
+    if (input.q) {
+      where.OR = [
+        { action: { contains: input.q, mode: 'insensitive' } },
+        { entity: { contains: input.q, mode: 'insensitive' } },
+        { entityId: { contains: input.q, mode: 'insensitive' } },
+        { actorId: { contains: input.q, mode: 'insensitive' } },
+      ]
+    }
+    const [rows, total] = await Promise.all([
+      db.auditEntry.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { at: 'desc' },
+      }),
+      db.auditEntry.count({ where }),
+    ])
+    return { rows, total, facetCounts: {} }
+  }
+
+  /** Distinct entities / actions for the audit viewer's filter dropdowns. */
+  async meta() {
+    const [entities, actions] = await Promise.all([
+      db.auditEntry.groupBy({
+        by: ['entity'],
+        _count: { _all: true },
+        orderBy: { _count: { entity: 'desc' } },
+      }),
+      db.auditEntry.groupBy({
+        by: ['action'],
+        _count: { _all: true },
+        orderBy: { _count: { action: 'desc' } },
+      }),
+    ])
+    return {
+      entities: entities.map((e) => e.entity),
+      actions: actions.map((a) => a.action),
+    }
   }
 }
 

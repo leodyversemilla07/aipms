@@ -15,6 +15,7 @@ const t = initTRPC.create();
 const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
 import type { ApprovalRouter } from "../approval/approval.router";
+import type { AuditRouter } from "../audit/audit.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
 import type { IntakeRouter } from "../intake/intake.router";
@@ -41,6 +42,16 @@ const appRouter = t.router({
   evidence: z.string().max(1000).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["decide"]>>)
+    }),
+  audit: t.router({
+    list: publicProcedure
+      .input(listInput.extend({
+  entity: z.string().optional(),
+  action: z.string().optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["list"]>>),
+    meta: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["meta"]>>)
     }),
   budget: t.router({
     list: publicProcedure

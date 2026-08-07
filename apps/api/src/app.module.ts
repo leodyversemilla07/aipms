@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common'
 import { AppController } from './app.controller'
 import { AppService } from './app.service'
 import { ApprovalModule } from './approval/approval.module'
+import { AuditModule } from './audit/audit.module'
 import { BudgetModule } from './budget/budget.module'
 import { CatalogModule } from './catalog/catalog.module'
 import { IntakeModule } from './intake/intake.module'
@@ -26,6 +27,7 @@ import { VendorModule } from './vendor/vendor.module'
     RequisitionModule,
     PurchaseOrderModule,
     ApprovalModule,
+    AuditModule,
     IntakeModule,
     InvoiceModule,
     PaymentRunModule,

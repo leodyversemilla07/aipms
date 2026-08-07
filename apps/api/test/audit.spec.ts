@@ -38,4 +38,34 @@ describe('AuditService (§9 append-only)', () => {
     expect(entries[0]?.action).toBe('catalog.create')
     expect(entries[0]?.inputHash).toBe(audit.hash(input))
   })
+
+  it('lists entries newest-first and facets entities/actions', async () => {
+    const input = { sku: `PH-TEST-${suffix}`, name: 'Cable' }
+    await audit.record({
+      actorId: 'user-1',
+      actorKind: 'human',
+      action: 'audit.listTest',
+      entity: 'CatalogItem',
+      entityId: `catalog-2-${suffix}`,
+      input,
+    })
+
+    const listed = await audit.list({ q: suffix, page: 1, pageSize: 25 })
+    auditIds.push(...listed.rows.map((e) => e.id))
+    expect(listed.rows.length).toBeGreaterThanOrEqual(1)
+
+    const ats = listed.rows.map((e) => e.at.getTime())
+    expect(ats).toEqual([...ats].sort((a, b) => b - a))
+
+    const filtered = await audit.list({
+      page: 1,
+      pageSize: 25,
+      entity: 'CatalogItem',
+    })
+    expect(filtered.rows.every((e) => e.entity === 'CatalogItem')).toBe(true)
+
+    const meta = await audit.meta()
+    expect(meta.entities).toContain('CatalogItem')
+    expect(meta.actions).toContain('catalog.create')
+  })
 })

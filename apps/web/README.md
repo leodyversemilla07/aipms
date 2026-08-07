@@ -16,6 +16,8 @@ tRPC). tRPC calls are proxied by `next.config.ts` rewrites to the API on
 - `/procurement` — **Procurement desk**: issue a PO from an approved
   requisition (budget commit + vendor gate in one transaction), confirm it,
   or request §10.1 cancellation through the human gate.
+- `/audit` — **Audit trail**: §16 append-only review — filter the
+  content-addressed, SHA-256-chained events by entity / action / free text.
 
 ## Running
 
