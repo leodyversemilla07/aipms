@@ -138,6 +138,7 @@ enum PolicyKind {
   approvalChain
   budgetControl
   evaluationCriterion
+  taxRule
 }
 
 model CatalogItem {
@@ -377,4 +378,65 @@ model Approval {
   @@index([requisitionId])
   @@index([poId])
   @@index([status])
+}
+
+// ===== Phase 4 — invoice intake + tax (§8.2, §8.4) =====
+
+enum IntakeStatus {
+  new
+  classifying
+  extracted
+  matched
+  exception
+  dropped
+}
+
+enum InvoiceStatus {
+  received
+  matched
+  exception
+  paid
+}
+
+// §8.2 normalized ingestion queue. One row per document; [channel, contentHash]
+// dedupes across channels (email, EIS XML, Peppol/EDI, API).
+model IntakeDocument {
+  id          String       @id @default(cuid())
+  channel     String
+  contentHash String
+  senderId    String? // verified against Vendor master when known
+  raw         Json? // attachments, headers, original payload
+  status      IntakeStatus @default(new)
+  classified  Json? // document type, vendor hint, amounts (agent or extractor)
+  receivedAt  DateTime     @default(now())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("intakeDocument")
+  @@unique([channel, contentHash])
+  @@index([status])
+}
+
+// §9 Invoice: gross before tax, with VAT/EWT computed deterministically by the
+// tax engine (§8.4) — never by the agent. Money is minor units.
+model Invoice {
+  id               String        @id @default(cuid())
+  poId             String?
+  vendorId         String
+  number           String
+  amountMinor      Int
+  vatMinor         Int           @default(0)
+  ewtMinor         Int           @default(0)
+  currencyCode     String        @default("PHP")
+  taxPolicyVersion String?
+  receivedAt       DateTime      @default(now())
+  status           InvoiceStatus @default(received)
+  matchResult      Json? // 3-way match details (poId, variance, outcome)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@map("invoice")
+  @@unique([vendorId, number])
+  @@index([status])
+  @@index([poId])
 }

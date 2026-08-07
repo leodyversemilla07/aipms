@@ -1,0 +1,21 @@
+{
+  "name": "@workspace/tax",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test": "node --import tsx --test test/*.spec.ts",
+    "clean": "node -e \"fs.rmSync('node_modules',{recursive:true,force:true});fs.rmSync('.turbo',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@workspace/typescript-config": "workspace:*",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

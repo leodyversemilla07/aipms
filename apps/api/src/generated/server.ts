@@ -16,6 +16,8 @@ const publicProcedure = t.procedure;
 import type { ApprovalRouter } from "../approval/approval.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
+import type { IntakeRouter } from "../intake/intake.router";
+import type { InvoiceRouter } from "../invoice/invoice.router";
 import type { PolicyRouter } from "../policy/policy.router";
 import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.router";
 import type { RequisitionRouter } from "../requisition/requisition.router";
@@ -50,6 +52,28 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["update"]>>),
     deactivate: publicProcedure
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["deactivate"]>>)
+    }),
+  intake: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["list"]>>),
+    ingest: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["ingest"]>>),
+    classify: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["classify"]>>),
+    drop: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["drop"]>>),
+    requeue: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>)
+    }),
+  invoice: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["detail"]>>),
+    compute: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["compute"]>>),
+    register: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
     }),
   policy: t.router({
     list: publicProcedure

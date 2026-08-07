@@ -75,6 +75,22 @@ Feature modules under `src/<feature>/`, all behind `AuthMiddleware`:
   and vendor gates per §10.1/§11.
 - Document numbers (`REQ-…`, `PO-…`) via `shared/document-number`.
 
+## Tax + invoice intake (Phase 4)
+
+- `packages/tax` — the deterministic §8.4 PH engine (`computeTax`): input VAT
+  12% (RA 9337) + creditable withholding (EWT) by goods/service class, rounded
+  to centavos, net = gross + VAT − EWT. Pure, no I/O, no LLM; unit-tested.
+- `taxRule` joins `PolicyKind` — rates are **policy data** (config-over-fork);
+  `PolicyService.taxConfig()` resolves it and falls back to the PH default so
+  the engine never silently fails.
+- `intake` — the §8.2 normalized queue (`ingest` dedupe by `[channel,
+  contentHash]`, `classify` → `extracted`, `drop`, `requeue`); every supplier
+  e-invoice (EIS XML/JSON, Peppol, EDI, email) enters here.
+- `invoice` — `register` computes VAT/EWT deterministically then runs the §9
+  three-way match (PO total ± 5% tolerance): `matched` | `exception`
+  (amount/vendor mismatch); dedupes re-ingested `[vendor, number]`. `compute`
+  is the foot the agent calls to *explain* a net, never to derive it.
+
 Cross-cutting invariants (§9):
 
 - **Idempotency** (`src/shared/idempotency`) — every mutation takes an

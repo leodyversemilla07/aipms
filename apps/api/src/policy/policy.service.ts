@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@workspace/db'
 import { db, type PolicyKind } from '@workspace/db'
+import {
+  normalizeTaxPolicy,
+  PH_DEFAULT_POLICY,
+  type TaxPolicyConfig,
+} from '@workspace/tax'
 
 export interface CreatePolicyInput {
   name: string
@@ -62,6 +67,17 @@ export class PolicyService {
       where: { kind, ...(requireEnabled && { enabled: true }) },
       orderBy: { version: 'desc' },
     })
+  }
+
+  /**
+   * §8.4 resolve the active tax policy into a deterministic engine config.
+   * Falls back to the PH default when no taxRule policy is configured — the
+   * tax engine must never fail silently or rely on the agent.
+   */
+  async taxConfig(): Promise<TaxPolicyConfig> {
+    const policy = await this.latest('taxRule')
+    if (!policy?.config) return PH_DEFAULT_POLICY
+    return normalizeTaxPolicy(policy.config)
   }
 
   async create(input: CreatePolicyInput) {

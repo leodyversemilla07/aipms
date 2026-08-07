@@ -83,6 +83,9 @@ async function makeThresholdPolicy(
   autoApproveUpTo: number,
   budgetRequired = true,
 ) {
+  // Supersede the current latest so this policy is strictly the newest
+  // version — `latest('threshold')` must resolve deterministically to it.
+  const prior = await policyService.latest('threshold', false)
   const policy = await policyService.create({
     name: `Threshold ${suffix}`,
     kind: 'threshold',
@@ -92,6 +95,7 @@ async function makeThresholdPolicy(
       approvalChain: ['manager', 'finance'],
     },
     updatedBy: actorId,
+    supersedesId: prior?.id ?? null,
   })
   created.policy.push(policy.id)
   return policy

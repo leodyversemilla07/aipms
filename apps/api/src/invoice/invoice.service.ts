@@ -1,0 +1,189 @@
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
+import { db, type InvoiceStatus } from '@workspace/db'
+import { computeTax } from '@workspace/tax'
+import { PolicyService } from '../policy/policy.service'
+
+/** §9 3-way match tolerance: ± this much (basis points) is a clean match. */
+export const MATCH_TOLERANCE_BPS = 500 // 5%
+
+export interface RegisterInvoiceLineInput {
+  description?: string
+  amountMinor: number
+  class: 'goods' | 'services' | 'professional' | 'rental' | 'other'
+  vatExempt?: boolean
+}
+
+export interface RegisterInvoiceInput {
+  vendorId: string
+  number: string
+  poId?: string | null
+  currencyCode?: string
+  lines: RegisterInvoiceLineInput[]
+  receivedAt?: Date
+}
+
+export type MatchOutcome =
+  | 'matched'
+  | 'po_not_found'
+  | 'vendor_mismatch'
+  | 'amount_mismatch'
+
+export type MatchResult = {
+  poId: string | null
+  poTotalMinor: number | null
+  invoiceTotalMinor: number
+  varianceMinor: number
+  varianceBps: number | null
+  vendorMatched: boolean
+  amountMatched: boolean
+  outcome: MatchOutcome
+}
+
+@Injectable()
+export class InvoiceService {
+  constructor(private readonly policy: PolicyService) {}
+
+  /**
+   * §8.4 compute tax for a line set without persisting — the surface the agent
+   * calls to *explain* a net amount; it never computes the number itself.
+   */
+  async compute(input: { lines: RegisterInvoiceLineInput[] }) {
+    const taxConfig = await this.policy.taxConfig()
+    const computation = computeTax(input.lines, taxConfig)
+    return {
+      taxPolicyVersion: computation.policyVersion,
+      ...computation,
+    }
+  }
+
+  list(where: { status?: InvoiceStatus } = {}) {
+    return db.invoice.findMany({
+      where,
+      orderBy: { receivedAt: 'desc' },
+    })
+  }
+
+  async detail(id: string) {
+    const invoice = await db.invoice.findUnique({ where: { id } })
+    if (!invoice) throw new NotFoundException(`Invoice ${id} not found`)
+    return invoice
+  }
+
+  /**
+   * Register an extracted supplier invoice: compute VAT/EWT deterministically
+   * (§8.4) and run the §9 three-way match against the PO. Money is never
+   * double-entered by an agent — the engine derives every tax field.
+   */
+  async register(
+    input: RegisterInvoiceInput,
+  ): Promise<{ invoice: unknown; match: MatchResult | null }> {
+    const taxConfig = await this.policy.taxConfig()
+    const computation = computeTax(input.lines, taxConfig)
+
+    const match =
+      input.poId != null
+        ? await this.matchAgainstPo(
+            input.poId,
+            input.vendorId,
+            computation.grossMinor,
+          )
+        : null
+
+    const status: InvoiceStatus = match
+      ? match.outcome === 'matched'
+        ? 'matched'
+        : 'exception'
+      : 'received'
+
+    const data = {
+      poId: input.poId ?? null,
+      vendorId: input.vendorId,
+      number: input.number,
+      amountMinor: computation.grossMinor,
+      vatMinor: computation.vatMinor,
+      ewtMinor: computation.ewtMinor,
+      currencyCode: input.currencyCode ?? 'PHP',
+      taxPolicyVersion: computation.policyVersion,
+      receivedAt: input.receivedAt ? new Date(input.receivedAt) : undefined,
+      status,
+      matchResult: match ?? undefined,
+    }
+
+    let invoice: Awaited<ReturnType<typeof db.invoice.create>>
+    try {
+      invoice = await db.invoice.create({ data })
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: string }).code === 'P2002'
+      ) {
+        // [vendorId, number] already ingested — dedupe to the existing row.
+        const existing = await db.invoice.findUnique({
+          where: {
+            vendorId_number: { vendorId: input.vendorId, number: input.number },
+          },
+        })
+        if (!existing) throw new ConflictException('Duplicate invoice')
+        return {
+          invoice: existing,
+          match:
+            (existing.matchResult as unknown as MatchResult | null) ?? null,
+        }
+      }
+      throw error
+    }
+    return { invoice, match }
+  }
+
+  /** §9 three-way match of an invoice gross against a PO's total. */
+  private async matchAgainstPo(
+    poId: string,
+    invoiceVendorId: string,
+    invoiceTotalMinor: number,
+  ): Promise<MatchResult> {
+    const po = await db.purchaseOrder.findUnique({ where: { id: poId } })
+    if (!po) {
+      return {
+        poId,
+        poTotalMinor: null,
+        invoiceTotalMinor,
+        varianceMinor: 0,
+        varianceBps: 0,
+        vendorMatched: false,
+        amountMatched: false,
+        outcome: 'po_not_found',
+      }
+    }
+
+    const poTotalMinor = po.totalMinor
+    const varianceMinor = invoiceTotalMinor - poTotalMinor
+    const varianceBps =
+      poTotalMinor > 0
+        ? Math.round((Math.abs(varianceMinor) / poTotalMinor) * 10_000)
+        : 0
+
+    const vendorMatched = po.vendorId === invoiceVendorId
+    const amountMatched = varianceBps <= MATCH_TOLERANCE_BPS
+
+    let outcome: MatchOutcome = 'matched'
+    if (!vendorMatched) outcome = 'vendor_mismatch'
+    else if (!amountMatched) outcome = 'amount_mismatch'
+
+    return {
+      poId,
+      poTotalMinor,
+      invoiceTotalMinor,
+      varianceMinor,
+      varianceBps,
+      vendorMatched,
+      amountMatched,
+      outcome,
+    }
+  }
+}

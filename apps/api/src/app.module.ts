@@ -5,6 +5,8 @@ import { AppService } from './app.service'
 import { ApprovalModule } from './approval/approval.module'
 import { BudgetModule } from './budget/budget.module'
 import { CatalogModule } from './catalog/catalog.module'
+import { IntakeModule } from './intake/intake.module'
+import { InvoiceModule } from './invoice/invoice.module'
 import { PolicyModule } from './policy/policy.module'
 import { PurchaseOrderModule } from './purchase-order/purchase-order.module'
 import { RequisitionModule } from './requisition/requisition.module'
@@ -23,6 +25,8 @@ import { VendorModule } from './vendor/vendor.module'
     RequisitionModule,
     PurchaseOrderModule,
     ApprovalModule,
+    IntakeModule,
+    InvoiceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

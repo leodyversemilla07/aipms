@@ -31,6 +31,7 @@
     "@workspace/auth": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/env": "workspace:*",
+    "@workspace/tax": "workspace:*",
     "better-auth": "^1.6.25",
     "nestjs-trpc": "^2.13.0",
     "reflect-metadata": "^0.2.2",
