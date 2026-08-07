@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
 import { type ReactNode, useState } from "react"
+import { ConfirmButton } from "@/components/confirm-button"
 import { minorToPhp, phpToMinor } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -145,11 +146,10 @@ export function CatalogPanel() {
                 {item.active ? "active" : "inactive"}
               </span>
               {item.active ? (
-                <Button
-                  size="sm"
-                  variant="outline"
+                <ConfirmButton
+                  message="Deactivate?"
                   disabled={deactivate.isPending}
-                  onClick={() =>
+                  onConfirm={() =>
                     deactivate
                       .mutateAsync({
                         id: item.id,
@@ -159,7 +159,7 @@ export function CatalogPanel() {
                   }
                 >
                   Deactivate
-                </Button>
+                </ConfirmButton>
               ) : null}
             </div>
           </li>

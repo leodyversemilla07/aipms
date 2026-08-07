@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
 import { useState } from "react"
+import { ConfirmButton } from "@/components/confirm-button"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -301,16 +302,15 @@ export function IntakeQueue() {
                           Auto-extract
                         </Button>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="outline"
+                      <ConfirmButton
+                        message="Drop document?"
                         disabled={dropMut.isPending}
-                        onClick={() =>
+                        onConfirm={() =>
                           dropMut.mutateAsync({ id: doc.id }).then(refresh)
                         }
                       >
                         Drop
-                      </Button>
+                      </ConfirmButton>
                       {doc.status === "extracted" ? (
                         <Button
                           size="sm"
