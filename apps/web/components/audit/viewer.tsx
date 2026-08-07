@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
+import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
 type AudRow = {
@@ -15,11 +16,6 @@ type AudRow = {
   before: unknown
   after: unknown
   at: string
-}
-
-function fmtTime(at: string): string {
-  const d = new Date(at)
-  return d.toLocaleString()
 }
 
 /**

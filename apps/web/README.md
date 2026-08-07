@@ -18,6 +18,9 @@ tRPC). tRPC calls are proxied by `next.config.ts` rewrites to the API on
   or request §10.1 cancellation through the human gate.
 - `/audit` — **Audit trail**: §16 append-only review — filter the
   content-addressed, SHA-256-chained events by entity / action / free text.
+- `/intake` — **Intake desk**: §8.2 normalized ingestion queue — ingest a
+  document on any channel (deduped on `[channel, contentHash]`), classify
+  its extracted payload, drop or requeue it.
 
 ## Running
 

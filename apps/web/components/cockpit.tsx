@@ -83,6 +83,12 @@ function Dashboard() {
           >
             Audit
           </Link>
+          <Link
+            href="/intake"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Intake
+          </Link>
           <button
             type="button"
             onClick={() => authClient.signOut()}
