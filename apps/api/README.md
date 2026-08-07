@@ -48,6 +48,27 @@ Mirrors the crm reference:
 3. Re-run `trpc:generate` so the client types update.
 4. On the client, invalidate caches via `useTRPC().<alias>.<proc>.queryKey()`.
 
+## Domain core (Phase 1)
+
+Feature modules under `src/<feature>/`, all behind `AuthMiddleware`:
+
+- `catalog` — `list`, `detail`, `create`, `update`, `deactivate` (SKU master)
+- `vendor` — `list`, `detail`, `create`, `update` (qualification/blacklist)
+- `budget` — `list`, `detail` (`includeRemaining`), `create` (minor-units money)
+- `policy` — `list`, `detail`, `activeByKind`, `create` (versioned; `supersedesId`
+  bumps `version`; `evaluationCriterion` carries the §9 award seam)
+
+Cross-cutting invariants (§9):
+
+- **Idempotency** (`src/shared/idempotency`) — every mutation takes an
+  `idempotencyKey`; a replay returns the stored outcome (claim protocol, so
+  concurrent retries are safe and agent retries are idempotent).
+- **Audit** (`src/shared/audit`) — every mutation records an append-only
+  `AuditEntry` (actor, action, entity, content-hashed input, before/after).
+  No update/delete path is exposed for `AuditEntry`.
+- **Money** — stored as `*Minor` integers + `*CurrencyCode` (PHP default),
+  per §8.4; no floats in the domain.
+
 ## Environment
 
 Loaded from the repo-root `.env` via `@workspace/env` (see `.env.example`).

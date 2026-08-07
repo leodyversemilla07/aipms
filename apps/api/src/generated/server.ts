@@ -8,29 +8,64 @@
  * Learn more: https://nestjs-trpc.io
  */
 
-import { initTRPC } from '@trpc/server'
-import { z } from 'zod'
+import { initTRPC } from "@trpc/server";
+import { z } from "zod";
 
-const t = initTRPC.create()
-const publicProcedure = t.procedure
-
-import type { UsersRouter } from '../users/users.router.js'
+const t = initTRPC.create();
+const publicProcedure = t.procedure;
+import type { BudgetRouter } from "../budget/budget.router";
+import type { CatalogRouter } from "../catalog/catalog.router";
+import type { PolicyRouter } from "../policy/policy.router";
+import type { UsersRouter } from "../users/users.router";
+import type { VendorRouter } from "../vendor/vendor.router";
 
 const appRouter = t.router({
+  budget: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["detail"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["create"]>>)
+    }),
+  catalog: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["detail"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["create"]>>),
+    update: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["update"]>>),
+    deactivate: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["deactivate"]>>)
+    }),
+  policy: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["detail"]>>),
+    activeByKind: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["activeByKind"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["create"]>>)
+    }),
   users: t.router({
-    me: publicProcedure.query(
-      async () =>
-        'PLACEHOLDER_DO_NOT_REMOVE' as unknown as Awaited<
-          ReturnType<UsersRouter['me']>
-        >,
-    ),
-    list: publicProcedure.query(
-      async () =>
-        'PLACEHOLDER_DO_NOT_REMOVE' as unknown as Awaited<
-          ReturnType<UsersRouter['list']>
-        >,
-    ),
-  }),
-})
+    me: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<UsersRouter["me"]>>),
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<UsersRouter["list"]>>)
+    }),
+  vendor: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["detail"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["create"]>>),
+    update: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["update"]>>)
+    })
+});
 
-export type AppRouter = typeof appRouter
+export type AppRouter = typeof appRouter;

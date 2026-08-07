@@ -18,6 +18,11 @@ model User {
   email         String
   emailVerified Boolean  @default(false)
   image         String?
+
+  kind   UserKind @default(human) // §9: human or agent principal
+  scopes Json     @default("[]")  // §9: agent capability grants
+  quotas Json?                      // §9: rate/spend quotas for agents
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -84,4 +89,152 @@ model RateLimit {
 
   @@unique([key])
   @@map("rateLimit")
+}
+
+// ===== Phase 1 — domain core (§9) =====
+
+enum UserKind {
+  human
+  agent
+}
+
+// §16.1 — evaluation is config, not a fork (reserved seam).
+enum AwardCriterion {
+  lcrb
+  mearb
+  marb
+  hrrb
+  lowestCost
+  bestValue
+}
+
+// §9 — how a requirement is sourced.
+enum EntityClass {
+  catalog
+  negotiated
+  competitive
+}
+
+// §16.1 — publication is opt-in per instance (reserved seam).
+enum PublicationState {
+  sealed
+  published
+  redacted
+}
+
+// lifecycle/qualification of a Vendor master record.
+enum VendorStatus {
+  prospective
+  active
+  watch
+  blacklisted
+}
+
+// what a Policy encodes. `evaluationCriterion` carries the §9 seam:
+// the AwardCriterion + price weight bounds a customer instance sets.
+enum PolicyKind {
+  threshold
+  preferredVendor
+  approvalChain
+  budgetControl
+  evaluationCriterion
+}
+
+model CatalogItem {
+  id                        String  @id @default(cuid())
+  sku                       String  @unique
+  name                      String
+  category                  String  @default("general")
+  unit                      String  @default("ea")
+  active                    Boolean @default(true)
+  defaultPriceMinor         Int?    // §8.4 money = minorUnits + currencyCode
+  defaultCurrencyCode       String  @default("PHP")
+  qualifiedVendorIds        String? // JSON list — contractual suppliers
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("catalogItem")
+  @@index([category])
+  @@index([active])
+}
+
+model Vendor {
+  id                      String       @id @default(cuid())
+  name                    String
+  status                  VendorStatus @default(prospective)
+  email                   String?
+  taxId                   String? // §8.4 EWT/VAT anchor per vendor
+  paymentTermsDays        Int?  // net-{n} default
+  ratingScore             Int?  // 0..100, our scored model
+  qualifiedEntityClass    EntityClass? // how this vendor is typically sourced
+  blacklistReason         String?
+  contactChannels         Json? // verified addresses/emails (§8.3 outbox)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("vendor")
+  @@index([status])
+  @@index([name])
+}
+
+model Budget {
+  id                 String   @id @default(cuid())
+  name               String
+  costCenter         String
+  period             String // e.g. "2026-01"
+  currencyCode       String   @default("PHP")
+  limitMinor         Int      @default(0)
+  committedMinor     Int      @default(0) // POs issued
+  spentMinor         Int      @default(0) // paid invoices
+  status             String    @default("open")
+  updatedAt          DateTime @updatedAt
+
+  @@map("budget")
+  @@unique([costCenter, period])
+}
+
+model Policy {
+  id            String     @id @default(cuid())
+  name          String
+  kind          PolicyKind
+  enabled       Boolean    @default(true)
+  version       Int        @default(1)
+  supersedesId  String?
+  config        Json       // machine-checkable rule payload
+  updatedBy     String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@map("policy")
+  @@index([kind, enabled])
+}
+
+// Append-only audit trail (§9 constraints). No update/delete path exposed.
+model AuditEntry {
+  id        String   @id @default(cuid())
+  actorId   String
+  actorKind UserKind
+  action    String // e.g. "catalog.create", "budget.commit"
+  entity    String
+  entityId  String?
+  inputHash String? // content-addressed payload
+  before    Json?
+  after     Json?
+  at        DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId])
+  @@index([at])
+}
+
+// §9 idempotency: mutations carry an idempotency key; keys resolve to a prior
+// outcome so agent retries are safe.
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  resultJson Json
+  createdAt DateTime @default(now())
+
+  @@map("idempotencyKey")
+  @@index([key])
 }

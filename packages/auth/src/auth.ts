@@ -15,6 +15,8 @@ if (env.google) {
 export const auth = betterAuth({
   appName: "aipms",
 
+  baseURL: env.apiUrl,
+
   database: prismaAdapter(db, {
     provider: "postgresql",
   }),
