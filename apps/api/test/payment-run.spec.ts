@@ -1,15 +1,16 @@
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { InvoiceService } from './invoice/invoice.service'
-import { PaymentRunService } from './payment-run/payment-run.service'
-import { PolicyService } from './policy/policy.service'
-import { DocumentNumberService } from './shared/document-number/document-number.service'
-import { VendorService } from './vendor/vendor.service'
+import { InvoiceService } from '../src/invoice/invoice.service'
+import { PaymentRunService } from '../src/payment-run/payment-run.service'
+import { PolicyService } from '../src/policy/policy.service'
+import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
+import { VendorService } from '../src/vendor/vendor.service'
 
 /**
- * §8.6 approved payment run (hand-off to finance): deterministic net sums,
- * maker/checker approval, beneficiary bank control, and reconciliation.
+ * @workspace payment-run service — §8.6 approved payment run (hand-off to
+ * finance): deterministic net sums, maker/checker approval, beneficiary
+ * bank control, and reconciliation. Against local Postgres.
  */
 
 const suffix = Math.random().toString(36).slice(2, 8)
@@ -64,7 +65,7 @@ async function makeVendor(name: string) {
 async function makePo(vendorId: string, totalMinor: number, tag: string) {
   const po = await db.purchaseOrder.create({
     data: {
-      poNumber: `PO-P8-${tag}-${suffix}`,
+      poNumber: `PO-PR-${tag}-${suffix}`,
       vendorId,
       status: 'issued',
       totalMinor,
@@ -95,7 +96,7 @@ async function makeMatchedInvoice(
     number: `INV-P8-${tag}-${suffix}`,
     poId: (
       await db.purchaseOrder.findFirst({
-        where: { poNumber: `PO-P8-${tag}-${suffix}` },
+        where: { poNumber: `PO-PR-${tag}-${suffix}` },
       })
     )?.id,
     lines,

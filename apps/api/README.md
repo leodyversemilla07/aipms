@@ -119,6 +119,20 @@ Cross-cutting invariants (§9):
 - **Money** — stored as `*Minor` integers + `*CurrencyCode` (PHP default),
   per §8.4; no floats in the domain.
 
+## Tests
+
+One file per feature under `test/`, mirroring `@workspace/crm`:
+
+- `test/<feature>.spec.ts` — service/integration against the local Postgres
+  (`docker-compose`), e.g. `catalog`, `vendor`, `budget`, `policy`,
+  `requisition`, `purchase-order`, `invoice`, `intake`, `payment-run`, plus
+  `idempotency`/`audit` (shared) and the unit `app.spec.ts`.
+- `test/app.e2e-spec.ts` — boots the full `AppModule` over HTTP.
+- Pure-domain logic (tax engine, policy engine) lives as unit tests inside
+  its own package (`packages/tax/test`, `src/policy/policy-engine.ts`).
+- Specs share one Postgres, so they run serially (`fileParallelism: false`)
+  and pin the policies they assert against (supersede) to stay deterministic.
+
 ## Environment
 
 Loaded from the repo-root `.env` via `@workspace/env` (see `.env.example`).

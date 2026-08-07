@@ -1,12 +1,11 @@
 import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
-import { IntakeService } from './intake/intake.service'
-import { InvoiceService } from './invoice/invoice.service'
-import { PolicyService } from './policy/policy.service'
+import { InvoiceService } from '../src/invoice/invoice.service'
+import { PolicyService } from '../src/policy/policy.service'
 
 /**
- * Phase 4 integration: §8.2 invoice intake queue + §8.4 deterministic PH tax
- * (VAT + EWT) + §9 three-way match. Runs against local Postgres.
+ * @workspace invoice service — deterministic §8.4 tax foot + §9 three-way
+ * match against local Postgres.
  */
 
 const suffix = Math.random().toString(36).slice(2, 8)
@@ -14,19 +13,16 @@ const actorId = `test-user-${suffix}`
 
 const created: Record<string, string[]> = {
   invoice: [],
-  intake: [],
   po: [],
   vendor: [],
   policy: [],
 }
 
 const policyService = new PolicyService()
-const intakeService = new IntakeService()
 const invoiceService = new InvoiceService(policyService)
 
 afterAll(async () => {
   await db.invoice.deleteMany({ where: { id: { in: created.invoice } } })
-  await db.intakeDocument.deleteMany({ where: { id: { in: created.intake } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
@@ -48,7 +44,7 @@ async function makeVendor() {
 async function makePo(vendorId: string, totalMinor: number, tag: string) {
   const po = await db.purchaseOrder.create({
     data: {
-      poNumber: `PO-${tag}-${suffix}`,
+      poNumber: `PO-INV-${tag}-${suffix}`,
       vendorId,
       status: 'issued',
       totalMinor,
@@ -89,7 +85,7 @@ describe('Three-way match + invoice registration', () => {
 
     const { invoice, match } = await invoiceService.register({
       vendorId: vendor.id,
-      number: 'INV-OK-' + suffix,
+      number: `INV-OK-${suffix}`,
       poId: po.id,
       lines: [line],
     })
@@ -109,7 +105,7 @@ describe('Three-way match + invoice registration', () => {
 
     const { invoice, match } = await invoiceService.register({
       vendorId: vendor.id,
-      number: 'INV-002-' + suffix,
+      number: `INV-002-${suffix}`,
       poId: po.id,
       lines: [line],
     })
@@ -127,7 +123,7 @@ describe('Three-way match + invoice registration', () => {
 
     const { invoice, match } = await invoiceService.register({
       vendorId: otherVendor.id,
-      number: 'INV-003-' + suffix,
+      number: `INV-003-${suffix}`,
       poId: po.id,
       lines: [line],
     })
@@ -142,46 +138,18 @@ describe('Three-way match + invoice registration', () => {
     const vendor = await makeVendor()
     const first = await invoiceService.register({
       vendorId: vendor.id,
-      number: 'INV-004-' + suffix,
+      number: `INV-004-${suffix}`,
       lines: [line],
     })
     created.invoice.push((first.invoice as { id: string }).id)
 
     const again = await invoiceService.register({
       vendorId: vendor.id,
-      number: 'INV-004-' + suffix,
+      number: `INV-004-${suffix}`,
       lines: [line],
     })
     expect((again.invoice as { id: string }).id).toBe(
       (first.invoice as { id: string }).id,
     )
-  })
-})
-
-describe('Intake queue (§8.2)', () => {
-  const channel = `EMAIL_IMAP-${suffix}`
-
-  it('ingests, dedupes, classifies, requeues, and drops', async () => {
-    const hash = `sha256-${suffix}-doc`
-    const first = await intakeService.ingest({ channel, contentHash: hash })
-    created.intake.push(first.id)
-    expect(first.status).toBe('new')
-
-    // idempotent re-ingest returns the same row
-    const dup = await intakeService.ingest({ channel, contentHash: hash })
-    expect(dup.id).toBe(first.id)
-
-    const classified = await intakeService.classify({
-      id: first.id,
-      classified: { docType: 'invoice', vendor: 'Acme' },
-    })
-    expect(classified.status).toBe('extracted')
-
-    const requeued = await intakeService.requeue(first.id)
-    expect(requeued.status).toBe('new')
-    expect(requeued.classified).toBeNull()
-
-    const dropped = await intakeService.drop(first.id)
-    expect(dropped.status).toBe('dropped')
   })
 })

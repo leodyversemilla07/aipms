@@ -1,16 +1,16 @@
 import { ConflictException } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
-import { ApprovalService } from './approval/approval.service'
-import { BudgetService } from './budget/budget.service'
-import { PolicyService } from './policy/policy.service'
-import { PurchaseOrderService } from './purchase-order/purchase-order.service'
-import { RequisitionService } from './requisition/requisition.service'
-import { DocumentNumberService } from './shared/document-number/document-number.service'
+import { ApprovalService } from '../src/approval/approval.service'
+import { BudgetService } from '../src/budget/budget.service'
+import { PolicyService } from '../src/policy/policy.service'
+import { PurchaseOrderService } from '../src/purchase-order/purchase-order.service'
+import { RequisitionService } from '../src/requisition/requisition.service'
+import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 
 /**
- * Phase 2 integration: requisition → §11 gates → PO issue → budget commit →
- * cancellation (with budget release). Runs against local Postgres.
+ * @workspace purchase-order service — issue (budget commit + vendor gate),
+ * confirm, cancellation with budget release. Against local Postgres.
  */
 
 const suffix = Math.random().toString(36).slice(2, 8)
@@ -23,8 +23,6 @@ const created: Record<string, string[]> = {
   budget: [],
   vendor: [],
   policy: [],
-  idempotency: [],
-  audit: [],
 }
 
 const requisitionService = new RequisitionService(
@@ -47,16 +45,12 @@ afterAll(async () => {
   await db.budget.deleteMany({ where: { id: { in: created.budget } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
-  await db.idempotencyKey.deleteMany({
-    where: { id: { in: created.idempotency } },
-  })
-  await db.auditEntry.deleteMany({ where: { id: { in: created.audit } } })
   await db.$disconnect()
 })
 
 async function makeBudget(limitMinor: number) {
   const budget = await budgetService.create({
-    name: `Phase2 ${suffix}`,
+    name: `PO ${suffix}`,
     costCenter: `CC-${suffix}-${Math.random().toString(36).slice(2, 6)}`,
     period: '2026-01',
     limitMinor,
@@ -65,33 +59,22 @@ async function makeBudget(limitMinor: number) {
   return budget
 }
 
-async function makeVendor(
-  status: 'active' | 'prospective' | 'blacklisted' = 'active',
-) {
+async function makeVendor(status: 'active' | 'prospective' | 'blacklisted') {
   const vendor = await db.vendor.create({
-    data: {
-      name: `Vendor ${suffix}`,
-      status,
-      taxId: `TAX-${suffix}`,
-    },
+    data: { name: `Vendor ${suffix}`, status, taxId: `TAX-${suffix}` },
   })
   created.vendor.push(vendor.id)
   return vendor
 }
 
-async function makeThresholdPolicy(
-  autoApproveUpTo: number,
-  budgetRequired = true,
-) {
-  // Supersede the current latest so this policy is strictly the newest
-  // version — `latest('threshold')` must resolve deterministically to it.
+async function makeThresholdPolicy(autoApproveUpTo: number) {
   const prior = await policyService.latest('threshold', false)
   const policy = await policyService.create({
     name: `Threshold ${suffix}`,
     kind: 'threshold',
     config: {
       autoApproveUpTo,
-      budgetRequired,
+      budgetRequired: true,
       approvalChain: ['manager', 'finance'],
     },
     updatedBy: actorId,
@@ -101,7 +84,7 @@ async function makeThresholdPolicy(
   return policy
 }
 
-async function makeRequisition(budgetId: string, totalMinor: number) {
+async function makeApprovedRequisition(budgetId: string, totalMinor: number) {
   const req = await requisitionService.create({
     requestedBy: actorId,
     costCenter: `CC-${suffix}`,
@@ -111,21 +94,18 @@ async function makeRequisition(budgetId: string, totalMinor: number) {
     ],
   })
   created.requisition.push(req.id)
+  const submitted = await requisitionService.submit(req.id)
+  expect(submitted.decision.outcome).toBe('PASS')
   return req
 }
 
-describe('Requisition → PO happy path (auto-approve + budget commit)', () => {
+describe('PO issue + cancellation (budget commit / release)', () => {
   it('auto-approves under threshold, issues a PO, commits budget, cancels and releases', async () => {
     await makeThresholdPolicy(500_000)
     const budget = await makeBudget(100_000_000)
     const vendor = await makeVendor('active')
 
-    const req = await makeRequisition(budget.id, 125_000)
-    expect(req.status).toBe('draft')
-
-    const submitted = await requisitionService.submit(req.id)
-    expect(submitted.decision.outcome).toBe('PASS')
-    expect(submitted.requisition.status).toBe('approved')
+    const req = await makeApprovedRequisition(budget.id, 125_000)
 
     const issued = await purchaseOrderService.issue(
       { requisitionId: req.id, vendorId: vendor.id },
@@ -170,70 +150,13 @@ describe('Requisition → PO happy path (auto-approve + budget commit)', () => {
   })
 })
 
-describe('Threshold gate (human approval)', () => {
-  it('routes above-threshold spend to a pending approval; approve unlocks', async () => {
-    await makeThresholdPolicy(100_000)
-    const budget = await makeBudget(100_000_000)
-    const vendor = await makeVendor('active')
-
-    const req = await makeRequisition(budget.id, 250_000)
-    const submitted = await requisitionService.submit(req.id)
-
-    expect(submitted.decision.outcome).toBe('NEED_APPROVAL')
-    expect(submitted.requisition.status).toBe('submitted')
-
-    const pending = await approvalService.pendingList()
-    const gate = pending.find((a) => a.requisitionId === req.id)
-    expect(gate).toBeDefined()
-    expect(gate?.kind).toBe('threshold')
-    if (!gate) throw new Error('expected a pending threshold approval')
-    created.approval.push(gate.id)
-
-    const decided = await approvalService.decide(
-      gate.id,
-      'approve',
-      actorId,
-      'ok',
-    )
-    expect(decided.outcome).toBe('APPROVED')
-    expect(decided.requisitionStatus).toBe('approved')
-
-    const issued = await purchaseOrderService.issue(
-      { requisitionId: req.id, vendorId: vendor.id },
-      actorId,
-    )
-    expect(issued.outcome).toBe('ISSUED')
-    if (issued.outcome === 'ISSUED') created.po.push(issued.purchaseOrder.id)
-  })
-})
-
-describe('Budget override gate', () => {
-  it('flags spend beyond remaining budget as a budgetOverride approval', async () => {
-    await makeThresholdPolicy(100_000_000)
-    const budget = await makeBudget(100_000) // ₱1,000 budget
-    const req = await makeRequisition(budget.id, 250_000)
-
-    const submitted = await requisitionService.submit(req.id)
-    expect(submitted.decision.outcome).toBe('NEED_APPROVAL')
-    expect(submitted.decision.gateKind).toBe('budgetOverride')
-
-    const gate = (await approvalService.pendingList()).find(
-      (a) => a.requisitionId === req.id,
-    )
-    expect(gate?.kind).toBe('budgetOverride')
-    if (gate) created.approval.push(gate.id)
-  })
-})
-
 describe('Vendor gate at PO issue', () => {
   it('requires a human gate for unqualified vendors, then qualifies them', async () => {
     await makeThresholdPolicy(100_000_000)
     const budget = await makeBudget(100_000_000)
     const vendor = await makeVendor('prospective')
 
-    const req = await makeRequisition(budget.id, 50_000)
-    await requisitionService.submit(req.id)
-    expect((await requisitionService.detail(req.id)).status).toBe('approved')
+    const req = await makeApprovedRequisition(budget.id, 50_000)
 
     const first = await purchaseOrderService.issue(
       { requisitionId: req.id, vendorId: vendor.id },
@@ -264,8 +187,7 @@ describe('Vendor gate at PO issue', () => {
   it('hard-blocks blacklisted vendors', async () => {
     const budget = await makeBudget(100_000_000)
     const vendor = await makeVendor('blacklisted')
-    const req = await makeRequisition(budget.id, 10_000)
-    await requisitionService.submit(req.id)
+    const req = await makeApprovedRequisition(budget.id, 10_000)
 
     await expect(
       purchaseOrderService.issue(
