@@ -1,0 +1,38 @@
+{
+  "name": "@workspace/auth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": "./src/client.ts",
+    "./cookies": "./src/cookies.ts"
+  },
+  "scripts": {
+    "auth:generate": "better-auth generate --config src/auth.ts --output ../db/prisma/schema.prisma --y",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "clean": "node -e \"fs.rmSync('node_modules',{recursive:true,force:true});fs.rmSync('.turbo',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "@workspace/env": "workspace:*",
+    "better-auth": "^1.6.25"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@better-auth/cli": "^1.4.22",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@workspace/typescript-config": "workspace:*",
+    "react": "^19.2.4",
+    "typescript": "^5"
+  }
+}

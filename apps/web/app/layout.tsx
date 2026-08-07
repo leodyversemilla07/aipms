@@ -1,10 +1,12 @@
-import { Geist, Geist_Mono, Inter } from "next/font/google"
-
 import "@workspace/ui/globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@workspace/ui/lib/utils";
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
+import { cn } from "@workspace/ui/lib/utils"
+import { Geist_Mono, Inter } from "next/font/google"
+import { ThemeProvider } from "@/components/theme-provider"
+import { TRPCReactProvider } from "@/lib/trpc/client"
+import { HydrateClient } from "@/lib/trpc/hydrate"
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -20,10 +22,19 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", inter.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        inter.variable
+      )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <TRPCReactProvider>
+            <HydrateClient>{children}</HydrateClient>
+          </TRPCReactProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

@@ -1,0 +1,63 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "master"
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!!**/.git",
+      "!!**/.next",
+      "!!**/dist",
+      "!!**/.turbo",
+      "!!**/coverage",
+      "!!**/.eve",
+      "!!**/.vercel",
+      "!!**/.output",
+      "!!**/*.tsbuildinfo",
+      "!!**/pnpm-lock.yaml",
+      "!!**/src/generated",
+      "!!apps/api/src/generated"
+    ],
+    "ignoreUnknown": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineEnding": "lf",
+    "lineWidth": 80
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "nursery": {
+        "useSortedClasses": {
+          "level": "error",
+          "options": {
+            "functions": ["cn", "cva", "clsx"]
+          }
+        }
+      }
+    }
+  },
+  "assist": {
+    "enabled": true
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "asNeeded",
+      "trailingCommas": "es5"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@workspace/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "prisma generate",
+    "typecheck": "tsc --noEmit",
+    "db:deploy": "prisma migrate deploy",
+    "db:generate": "prisma generate",
+    "db:migrate": "tsx scripts/require-local-db.ts db:migrate && prisma migrate dev",
+    "db:push": "tsx scripts/require-local-db.ts db:push && prisma db push",
+    "db:reset": "tsx scripts/require-local-db.ts db:reset && prisma migrate reset",
+    "db:seed": "tsx scripts/require-local-db.ts db:seed && prisma db seed",
+    "db:studio": "prisma studio",
+    "dev": "prisma generate --watch",
+    "lint": "biome check .",
+    "clean": "node -e \"fs.rmSync('node_modules',{recursive:true,force:true});fs.rmSync('.turbo',{recursive:true,force:true});fs.rmSync('src/generated',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
+    "@workspace/env": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@workspace/typescript-config": "workspace:*",
+    "prisma": "^7.9.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

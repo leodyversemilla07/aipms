@@ -6,3 +6,17 @@ allowBuilds:
   sharp: true
   unrs-resolver: true
   msw: false
+  "@prisma/engines": true
+  prisma: true
+
+minimumReleaseAgeExclude:
+  - "@ai-sdk/*"
+  - "@rolldown/*"
+  - "@vercel/*"
+  - "@workflow/*"
+  - ai
+  - experimental-ai-sdk-code-mode
+  - eve
+  - nitro
+  - rolldown
+  - workflow

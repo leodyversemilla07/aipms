@@ -1,0 +1,10 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "auth:generate": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    }
+  }
+}

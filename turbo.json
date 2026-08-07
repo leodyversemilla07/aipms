@@ -16,6 +16,44 @@
     "typecheck": {
       "dependsOn": ["^typecheck"]
     },
+    "db:generate": {
+      "dependsOn": ["^db:generate"],
+      "inputs": ["$TURBO_DEFAULT$", "prisma/**"],
+      "outputs": ["src/generated/**"],
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:deploy": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:migrate": {
+      "cache": false,
+      "interactive": true,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:push": {
+      "cache": false,
+      "interactive": true,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:reset": {
+      "cache": false,
+      "interactive": true,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:seed": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
+    "auth:generate": {
+      "cache": false,
+      "passThroughEnv": ["DATABASE_URL"]
+    },
     "dev": {
       "cache": false,
       "persistent": true
