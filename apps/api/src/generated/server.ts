@@ -145,7 +145,10 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["drop"]>>),
     requeue: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>),
+    registerInvoice: publicProcedure
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["registerInvoice"]>>)
     }),
   invoice: t.router({
     list: publicProcedure

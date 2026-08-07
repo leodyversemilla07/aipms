@@ -64,6 +64,10 @@ export function IntakeQueue() {
   const classify = useMutation(trpc.intake.classify.mutationOptions())
   const dropMut = useMutation(trpc.intake.drop.mutationOptions())
   const requeue = useMutation(trpc.intake.requeue.mutationOptions())
+  const registerMut = useMutation(trpc.intake.registerInvoice.mutationOptions())
+  const [registerNotice, setRegisterNotice] = useState<Record<string, string>>(
+    {}
+  )
 
   function refresh() {
     queryClient.invalidateQueries(trpc.intake.pathFilter())
@@ -100,6 +104,26 @@ export function IntakeQueue() {
       setRaw("")
     } catch (e) {
       setError(`Could not ingest: ${(e as Error).message}`)
+    }
+  }
+
+  async function doRegister(id: string) {
+    try {
+      const res = await registerMut.mutateAsync({
+        id,
+        idempotencyKey: `web-bridge-${id}-${crypto.randomUUID()}`,
+      })
+      const inv = res.invoice as { number?: string; status?: string }
+      setRegisterNotice((prev) => ({
+        ...prev,
+        [id]: `Invoice ${inv.number ?? ""} ${inv.status ?? ""} · match ${res.match?.outcome ?? "n/a"}`,
+      }))
+      refresh()
+    } catch (e) {
+      setRegisterNotice((prev) => ({
+        ...prev,
+        [id]: `Failed: ${(e as Error).message}`,
+      }))
     }
   }
 
@@ -225,6 +249,16 @@ export function IntakeQueue() {
                       >
                         Drop
                       </Button>
+                      {doc.status === "extracted" ? (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          disabled={registerMut.isPending}
+                          onClick={() => doRegister(doc.id)}
+                        >
+                          Register invoice
+                        </Button>
+                      ) : null}
                     </>
                   ) : (
                     <Button
@@ -252,6 +286,11 @@ export function IntakeQueue() {
                 rows={2}
                 className="w-full rounded-md border bg-background px-3 py-1 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
               />
+              {registerNotice[doc.id] ? (
+                <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
+                  {registerNotice[doc.id]}
+                </p>
+              ) : null}
             </li>
           ))}
         </ul>

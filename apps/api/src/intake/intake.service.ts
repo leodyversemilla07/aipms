@@ -90,6 +90,43 @@ export class IntakeService {
     })
   }
 
+  /**
+   * §9 bridge result — a classified document that an extractor/agent
+   * turned into a registered invoice records the invoice id + status, and the
+   * document progresses from extracted to matched (or exception) accordingly.
+   */
+  async attachInvoice(id: string, invoiceId: string, invoiceStatus: string) {
+    const doc = await this.detail(id)
+    if (doc.status === 'dropped') {
+      throw new ConflictException(
+        'Dropped document cannot bridge to an invoice',
+      )
+    }
+    const nextStatus: IntakeStatus =
+      invoiceStatus === 'matched'
+        ? 'matched'
+        : invoiceStatus === 'exception'
+          ? 'exception'
+          : 'extracted'
+    const prev =
+      doc.classified &&
+      typeof doc.classified === 'object' &&
+      !Array.isArray(doc.classified)
+        ? (doc.classified as Record<string, unknown>)
+        : {}
+    return db.intakeDocument.update({
+      where: { id },
+      data: {
+        status: nextStatus,
+        classified: {
+          ...prev,
+          invoiceId,
+          invoiceStatus,
+        } as Prisma.InputJsonValue,
+      },
+    })
+  }
+
   list(where: { status?: IntakeStatus } = {}) {
     return db.intakeDocument.findMany({
       where,

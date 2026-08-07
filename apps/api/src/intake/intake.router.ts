@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common'
+import { ConflictException, Inject } from '@nestjs/common'
 import {
   Ctx,
   Input,
@@ -8,6 +8,7 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
+import { InvoiceService } from '../invoice/invoice.service'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
@@ -43,11 +44,37 @@ const listInputWithStatus = listInput.extend({
 
 const idInput = z.object({ id: z.string().min(1) })
 
+const bridgeInput = idInput.extend({ idempotencyKey: z.string().min(1) })
+
+/**
+ * The classified payload an extractor/agent is expected to produce for an
+ * invoice document (the shape InvoiceService.register consumes). The intake
+ * desk's classify step writes this; the bridge validates it before registering.
+ */
+const classifiedInvoiceSchema = z.object({
+  kind: z.string().optional(),
+  vendorId: z.string().min(1),
+  number: z.string().min(1),
+  poId: z.string().min(1).optional().nullable(),
+  currencyCode: z.string().optional(),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int(),
+        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+        vatExempt: z.boolean().optional(),
+      }),
+    )
+    .min(1),
+})
+
 @Router({ alias: 'intake' })
 @UseMiddlewares(AuthMiddleware)
 export class IntakeRouter {
   constructor(
     @Inject(IntakeService) private readonly intake: IntakeService,
+    @Inject(InvoiceService) private readonly invoice: InvoiceService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
     @Inject(AuditService) private readonly audit: AuditService,
@@ -127,5 +154,54 @@ export class IntakeRouter {
       input,
     })
     return doc
+  }
+
+  /**
+   * §9 bridge: promote a classified invoice document to a registered invoice.
+   * The payload was written by classify (or the extraction agent); the engine
+   * derives VAT/EWT and runs the three-way match. Idempotent — InvoiceService
+   * dedupes on [vendorId, number], so a re-run returns the existing invoice.
+   */
+  @Mutation({ input: bridgeInput })
+  async registerInvoice(
+    @Input() input: z.infer<typeof bridgeInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    return this.idempotency.run(input.idempotencyKey, async () => {
+      const doc = await this.intake.detail(input.id)
+      if (doc.status === 'dropped') {
+        throw new ConflictException(
+          'Dropped document cannot bridge to an invoice',
+        )
+      }
+      const parsed = classifiedInvoiceSchema.safeParse(doc.classified)
+      if (!parsed.success) {
+        throw new ConflictException(
+          `Classified payload is not an invoice: ${parsed.error.message}`,
+        )
+      }
+      const { invoice, match } = await this.invoice.register(parsed.data)
+      const invoiceId = (invoice as { id: string }).id
+      const invoiceStatus = (invoice as { status: string }).status
+      const bridged = await this.intake.attachInvoice(
+        doc.id,
+        invoiceId,
+        invoiceStatus,
+      )
+      await this.audit.record({
+        actorId: ctx.user.id,
+        actorKind: 'human',
+        action: 'intake.registerInvoice',
+        entity: 'IntakeDocument',
+        entityId: doc.id,
+        input: { id: input.id, invoiceId },
+        after: {
+          doc: bridged.status,
+          invoiceStatus,
+          matchOutcome: match?.outcome,
+        },
+      })
+      return { doc: bridged, invoice, match }
+    })
   }
 }
