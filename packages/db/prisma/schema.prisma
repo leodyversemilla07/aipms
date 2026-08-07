@@ -238,3 +238,143 @@ model IdempotencyKey {
   @@map("idempotencyKey")
   @@index([key])
 }
+
+// ===== Phase 2 — requisition → PO (§10, §11) =====
+
+enum ReqStatus {
+  draft
+  submitted
+  approved
+  rejected
+  exception
+  cancelled
+}
+
+enum ReqLineStatus {
+  pending
+  approved
+  rejected
+}
+
+enum PoStatus {
+  draft
+  issued
+  confirmed
+  cancelled
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  overridden
+}
+
+// what gate an approval enforces (§10.1 gate table).
+enum ApprovalKind {
+  threshold
+  budgetOverride
+  vendorGate
+  policyGate
+  poCancellation
+}
+
+model Requisition {
+  id            String           @id @default(cuid())
+  requestNumber String           @unique
+  requestedBy   String
+  status        ReqStatus        @default(draft)
+  costCenter    String
+  budgetId      String?
+  priority      String           @default("normal")
+  note          String?
+  submittedAt   DateTime?
+  decidedAt     DateTime?
+  lines         RequisitionLine[]
+  approvals     Approval[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@map("requisition")
+  @@index([status])
+  @@index([costCenter])
+  @@index([requestedBy])
+}
+
+model RequisitionLine {
+  id             String        @id @default(cuid())
+  requisitionId  String
+  requisition    Requisition   @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  lineNo         Int
+  sku            String?
+  description    String
+  quantity       Int
+  unit           String        @default("ea")
+  unitPriceMinor Int
+  currencyCode   String        @default("PHP")
+  lineTotalMinor Int
+  status         ReqLineStatus @default(pending)
+
+  @@map("requisitionLine")
+  @@index([requisitionId])
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  poNumber      String   @unique
+  requisitionId String?
+  vendorId      String
+  status        PoStatus @default(draft)
+  currencyCode  String   @default("PHP")
+  totalMinor    Int
+  terms         Json?
+  issuedBy      String
+  issuedAt      DateTime?
+  lines         PurchaseOrderLine[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("purchaseOrder")
+  @@index([status])
+  @@index([vendorId])
+}
+
+model PurchaseOrderLine {
+  id             String  @id @default(cuid())
+  poId           String
+  po             PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  lineNo         Int
+  sku            String?
+  description    String
+  quantity       Int
+  unit           String  @default("ea")
+  unitPriceMinor Int
+  currencyCode   String  @default("PHP")
+  lineTotalMinor Int
+
+  @@map("purchaseOrderLine")
+  @@index([poId])
+}
+
+model Approval {
+  id            String         @id @default(cuid())
+  requisitionId String?
+  requisition   Requisition?   @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  poId          String?
+  vendorId      String?
+  kind          ApprovalKind
+  gateOutcome   String         @default("NEED_APPROVAL")
+  route         Json           // ordered assignees/roles
+  citations     Json           @default("[]") // policy citations
+  status        ApprovalStatus @default(pending)
+  decidedBy     String?
+  decidedAt     DateTime?
+  evidence      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("approval")
+  @@index([requisitionId])
+  @@index([poId])
+  @@index([status])
+}

@@ -13,13 +13,24 @@ import { z } from "zod";
 
 const t = initTRPC.create();
 const publicProcedure = t.procedure;
+import type { ApprovalRouter } from "../approval/approval.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
 import type { PolicyRouter } from "../policy/policy.router";
+import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.router";
+import type { RequisitionRouter } from "../requisition/requisition.router";
 import type { UsersRouter } from "../users/users.router";
 import type { VendorRouter } from "../vendor/vendor.router";
 
 const appRouter = t.router({
+  approval: t.router({
+    pendingList: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["pendingList"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["detail"]>>),
+    decide: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["decide"]>>)
+    }),
   budget: t.router({
     list: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["list"]>>),
@@ -49,6 +60,30 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["activeByKind"]>>),
     create: publicProcedure
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PolicyRouter["create"]>>)
+    }),
+  purchaseOrder: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["detail"]>>),
+    issue: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["issue"]>>),
+    confirm: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["confirm"]>>),
+    requestCancellation: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["requestCancellation"]>>)
+    }),
+  requisition: t.router({
+    list: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["list"]>>),
+    detail: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["detail"]>>),
+    exceptionQueue: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["exceptionQueue"]>>),
+    create: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["create"]>>),
+    submit: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["submit"]>>)
     }),
   users: t.router({
     me: publicProcedure

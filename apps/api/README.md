@@ -58,6 +58,23 @@ Feature modules under `src/<feature>/`, all behind `AuthMiddleware`:
 - `policy` — `list`, `detail`, `activeByKind`, `create` (versioned; `supersedesId`
   bumps `version`; `evaluationCriterion` carries the §9 award seam)
 
+## Requisition → PO (Phase 2)
+
+- `requisition` — `create` (draft), `submit`, `list`, `detail`, `exceptionQueue`
+  (§10.2). `submit` evaluates the §11 gate **inside the same transaction**:
+  PASS auto-approves, NEED_APPROVAL creates a pending `approval`, BLOCK moves
+  the requisition to `exception`.
+- `approval` — `pendingList` (the exception queue surface), `detail`, `decide`
+  (approve / reject / override with reason). Approving a vendor gate qualifies
+  the vendor; approving a PO cancellation releases the committed budget.
+- `purchaseOrder` — `issue` (transactional budget commit, §9: never
+  read-then-write; hard-blocks blacklisted vendors, gates unqualified ones),
+  `confirm`, `requestCancellation` (human gate), `list`, `detail`.
+- `src/policy/policy-engine.ts` — pure `(policy, context) → decision`
+  (`PASS | NEED_APPROVAL | BLOCK` + citations); threshold, budget-override
+  and vendor gates per §10.1/§11.
+- Document numbers (`REQ-…`, `PO-…`) via `shared/document-number`.
+
 Cross-cutting invariants (§9):
 
 - **Idempotency** (`src/shared/idempotency`) — every mutation takes an
