@@ -1,6 +1,6 @@
 # aipms — Agentic-first Procurement Management System
 
-**Status:** Draft v0.3 · **Owner:** platform/agent · **Repo:** `aipms` monorepo
+**Status:** Draft v0.4 · **Owner:** platform/agent · **Repo:** `aipms` monorepo
 
 ---
 
@@ -24,10 +24,12 @@ This inversion has consequences for every layer of the system:
 | Policy is config documents | Policy is a **machine-checkable guardrail** agents must obey |
 | Concurrency is an edge case | Idempotency, retries, and sagas are core invariants (agents retry) |
 
-The platform serves both **public** (government / agency) and **private**
-(enterprise) procurement from one codebase. These are **not different
-products** — they are the same agentic engine under an **instance mode**
-(single-tenant, self-hostable; see §16). Key design decisions from planning
+The platform targets **private / enterprise procurement** first, deployed
+**single-tenant and self-hostable** by each customer (see §16). Government /
+agency procurement is an explicit **non-goal for v1** (§4.2): the engine
+stays instance-configurable — policies, thresholds, and evaluation criteria
+are data, not code — so a public deployment remains *possible* later without
+a rewrite, but it is not built now. Key design decisions from planning
 live in their owning sections and are marked ***(decided)***: invoicing
 (§8.2), vendor messaging (§8.3), currency & tax (§8.4), ERP integration
 (§8.5), payments (§8.6), agent topology (§7.5), and deployment (§16.2.1).
@@ -81,9 +83,9 @@ the moments that matter and trust the system for everything else.
    observability artifacts, not debug afterthoughts.
 9. **Compliance is code.** Regulations and policy are machine-checkable rules,
    evaluated in-transaction, in both sectors.
-10. **Mode over fork.** Public and private share one engine; the instance's
-   configuration toggles what is published, what is secret, and what is
-   permitted — never a second codebase or a divergent product.
+10. **Configuration over fork.** Sourcing style, thresholds, approval
+   chains, and evaluation criteria are instance configuration (policy data),
+   never hard-coded branches — no second codebase or divergent product.
 
 ---
 
@@ -103,9 +105,9 @@ the moments that matter and trust the system for everything else.
 - Agentic support: **one operator agent in Phase 1**, phasing into a thin
   orchestrator + ≤4 specialists (sourcing, ops, audit/match, compliance)
   sharing one domain model (topology per §7.5).
-- Serve **public and private** sector from one codebase, deployed
-  **single-tenant and self-hostable** by each organization (Docker / VM /
-  PaaS), with sector mode as instance configuration.
+- Serve **private / enterprise** organizations first, deployed
+  **single-tenant and self-hostable** by each customer (Docker / VM / PaaS) —
+  the enterprise deployment story is the v1 product (§16).
 
 ### 4.2 Non-goals (v1)
 
@@ -115,6 +117,11 @@ the moments that matter and trust the system for everything else.
   **structured** quote requests and draft templates.
 - No replacing the company ERP; aipms is the procurement layer that syncs out.
 - No self-modifying policy: agents can *propose* policy changes; humans ratify.
+- No government / public procurement in v1 — no PhilGEPS or e-procurement
+  portal adapters, no sealed-bid gating, no public transparency plane, no
+  NGPA (RA 12009) compliance bundles, no debarment or protest machinery.
+  The engine keeps generic configurability (policies as data) so this remains
+  possible later without a rewrite (§16.5).
 
 ---
 
@@ -280,7 +287,7 @@ Why this split (from the evidence):
   pays; every inter-agent message is an LLM call, so headcount must be
   justified by measurement.
 - **SoD by identity** — the sourcing agent can never issue/approve the same
-  spend (§16.4, §16.7); distinct principals make this structural.
+  spend (§16.4); distinct principals make this structural.
 - **Model economics** — tiered models per specialist (small/fast for ops,
   high-capability for research/review) is the multi-agent cost lever.
 - **Parallelism & fault isolation** — one specialist failing does not stall
@@ -351,10 +358,10 @@ login/CAPTCHA, rate-limits, ToS, maintenance). Sequencing:
    domain matched to vendor master, bank-account-change validation,
    duplicate detection by content hash, anomalous-value flagging, and SoD
    gates on new vendor/bank data (§12).
-2. **Structured e-invoicing (API / Peppol / EDI) — required for public
-   sector.** Government mandates (Peppol BIS, XRechnung/Factur-X, EDI
-   X12 810) make a machine-readable receiver an obligation, not an option.
-   Lower error and fraud; complements email for high-volume suppliers.
+2. **Structured e-invoicing (API / Peppol / EDI) — required for PH
+   enterprise.** The BIR e-invoicing mandate (RR 11-2025) makes a
+   machine-readable receiver an obligation for PH AP, not an option. Lower
+   error and fraud; complements email for high-volume suppliers.
 3. **In-product supplier upload portal — optional, later.** Self-service,
    low-fraud, but costs UI + onboarding; roadmap item only.
 
@@ -375,7 +382,7 @@ pattern; it guarantees audit, delivery control, and exemption handling.
   relay blocks sends to unknown, changed, or unverified contact addresses
   (fraud SoD, §12).
 - **Sends ride the org's own domain** via a dedicated transactional email API
-  or the org's SMTP relay (air-gapped government), with SPF/DKIM/DMARC and a
+  or the org's SMTP relay (air-gapped / regulated enterprise), with SPF/DKIM/DMARC and a
   transactional stream kept separate from marketing.
 - **Tiered content gates every send:**
   - low-risk / transactional (RFQ, PO status, delivery notice, invoice ack) →
@@ -393,7 +400,7 @@ pattern; it guarantees audit, delivery control, and exemption handling.
 high-volume suppliers (order / invoice / account status) but costs UI +
 onboarding; the relay remains the primary channel (§8.2).
 
-It fits single-tenant / government deployment: the relay uses the org's own
+It fits single-tenant enterprise deployment: the relay uses the org's own
 transport (or an in-network SMTP server with qualified signatures); agents
 stay offline-capable, and nothing depends on a shared platform.
 
@@ -408,18 +415,10 @@ AP is tax-laden (VAT + withholding) and cannot be cleanly deferred.
   e.g. `{ currency: "PHP", minorUnits: 150000 }`. Multi-currency is
   **deferred** as a *feature* (FX parades, bank LCs), but the shape is ready
   for it — the schema never assumes a zero-currency float.
-- **Government default.** Anchored to the **New Government Procurement Act
-  (NGPA, RA 12009)** — which **repealed RA 9184** (effective 13 Aug 2024; IRR
-  effective 25 Feb 2025) — Philippine public procurement is **denominated,
-  evaluated, and paid in PHP**: bids are priced in PHP, bid/performance
-  securities are stated in PHP (IRR §§56.4, 68.5), and any
-  foreign-denominated quote is converted to PHP at the BSP reference rate on
-  **bid-opening day** (IRR PBD §14.1). So aipms stores the foreign
-  amount + PHP equivalent + rate + valuation date, keeping procurement
-  auditable without a live FX engine. During the 3-year NGPA transition
-  (until standard forms are fully adopted), started activities may still run
-  under RA 9184 — aipms treats that as a policy-bundle switch, not a code
-  path.
+- **Currency default (PH enterprise).** PHP-first: foreign-denominated
+  amounts keep the original amount + PHP equivalent + rate + valuation date,
+  so procurement stays auditable without a live FX engine. Multi-currency is
+  a deferred *feature*, not a schema change.
 - **Tax engine (deterministic, not LLM).** PH rules as configurable policy:
   - **VAT 12%** (RA 9337; RA 12023 adds VAT on digital services): compute
     input VAT by taxable line, flag exempt lines; recoverable input VAT flows
@@ -442,17 +441,11 @@ AP is tax-laden (VAT + withholding) and cannot be cleanly deferred.
 
 ### 8.5 ERP integration (decided: publish what you own, ingest what you use)
 
-- **Which ERP?** No single anchor — the PH market spans COA e-NGAS (public)
-  and QuickBooks / Xero / SAP / NetSuite / Dynamics (private). Build an
+- **Which ERP?** No single anchor — the PH enterprise market spans
+  QuickBooks / Xero / SAP / NetSuite / Dynamics. Build an
   **anti-corruption adapter layer** over a normalized posting manifest, and
   ship v1 with anchor adapters instead of pinning the product to one vendor:
-  - **Public anchor — COA e-NGAS.** The statutory national/LGU accounting
-    system (journal entries per the Government Accounting Manual). It
-    exposes **no open API**, so integration is an **import voucher (JEV)
-    batch** that finance staff import, backed by reconciliation — not live
-    posting. (PhilGEPS is the procurement *publishing* venue; a separate
-    integration.)
-  - **Private anchor — governed journal export + one quick connector.** A
+  - **v1 anchor — governed journal export + one quick connector.** A
     validated **CSV/JSON journal-import file** that any ERP (SAP, NetSuite,
     Dynamics, Xero, QuickBooks) imports in v1, plus an OAuth connector for
     one PH-popular target (QuickBooks Online) as the concrete adapter.
@@ -483,9 +476,8 @@ AP is tax-laden (VAT + withholding) and cannot be cleanly deferred.
   VAT & withholding already computed (§8.4), verified vendor bank details,
   PESONet / payment instruction — but does **not** initiate a bank transfer. A
   finance officer executes the run in the org's own bank/Payment provider
-  (PESONet batch is the correct rail: same-day, high-value, B2B / supplier /
-  government; InstaPay is the low-value ≤50k real-time rail, treasury
-  disbursements). aipms retains the run and reconciles status (paid /
+  (PESONet batch is the correct rail: same-day, high-value, B2B / supplier
+  payments; InstaPay is the low-value ≤50k real-time rail). aipms retains the run and reconciles status (paid /
   dishonored / rejected) back from the bank/ERP, keeping the invoice
   lifecycle closed.
 - **Bank-file execution is a later phase, not v1.** It requires a banking /
@@ -501,10 +493,6 @@ AP is tax-laden (VAT + withholding) and cannot be cleanly deferred.
 - **Deterministic by construction.** Run amount = Σ(gross ± VAT − withhold);
   computed outside the LLM; the agent composes the run and rationalizes
   exceptions only.
-- **Government fit.** Agency payments route through the Treasury / COA
-  disbursement process; hand-off matches it — aipms produces a COA-ready,
-  auditable payment run that the accountable officer signs and transmits,
-  never bypassing the disbursement process.
 
 ---
 
@@ -518,10 +506,10 @@ follow during implementation.
 > EWT fields appear on every money line; tax is computed deterministically by
 > the tax engine (§8.4), never by the agent.
 >
-> **Sector seams (§16.1.1)**: language here is deliberately sector-neutral.
-> Sector-aware rules are **data** (`Policy` + `config`), never domain `switch`.
-> The `AwardCriterion` and `EntityClass` enums below are reserved up front so a
-> public instance is a config-load, not a schema-migration landing.
+> **Instance configuration (§16.1)**: rules are **data** (`Policy` + `config`),
+> never domain `switch`. `AwardCriterion`, `EntityClass`, and
+> `PublicationState` are reserved up front so customer instances differ by
+> config, not by schema migration.
 >
 > **Sketch scope**: enums (`ReqStatus`, `PoStatus`, `VendorStatus`, `RunStatus`,
 > `InvoiceStatus`, …) and `*Line` models are elided here — they exist, with
@@ -530,15 +518,15 @@ follow during implementation.
 ```prisma
 enum UserKind { human agent }
 
-tenum AwardCriterion {   // §16.3 — value-based, not lowest-wire-fork
+tenum AwardCriterion {   // §16.1 — evaluation is config, not a fork
   lcrb mearb marb hrrb lowestCost bestValue
 }
 
-enum EntityClass {      // how a requirement is sourced (sector-neutral seam)
+enum EntityClass {      // how a requirement is sourced
   catalog negotiated competitive
 }
 
-enum PublicationState { // feeds the transparency plane (§16.5)
+enum PublicationState { // publication is opt-in per instance (§16.1)
   sealed published redacted
 }
 
@@ -855,81 +843,40 @@ UI is a consumer of the same tRPC API; no UI-only logic exists in the domain.
 
 ---
 
-## 16. Serving public & private sector (single-tenant, self-hostable)
+## 16. Enterprise deployment (single-tenant, self-hostable)
 
-Government and enterprise procurement impose competition, transparency,
-audit, and deployment constraints that a shared multi-tenant SaaS cannot
-answer. aipms is therefore **single-tenant and self-hostable**: every
-organization — agency, enterprise, department — runs its own instance with its
-own data, identity provider, and configuration. Public/private is a
-**configuration of the instance**, not a runtime tenancy toggle.
+Enterprise procurement — especially regulated industries (banks, healthcare,
+utilities, manufacturers) — imposes control, audit, and deployment constraints
+that a shared multi-tenant SaaS cannot answer. aipms is therefore
+**single-tenant and self-hostable**: every customer runs its own instance with
+its own data, identity provider, and configuration. One deployment = one
+organization; no tenant-isolation seams exist in the data model — isolation is
+physical (your instance, your data).
 
-### 16.1 One engine; mode is instance configuration
+### 16.1 One engine; configuration per instance
 
-| | Private (enterprise) | Public (government / agency) |
-|---|---|---|
-| Procurement style | Negotiated: catalog, RFQ, PO | Competitive + negotiated: tender, RFP, sealed bid, framework |
-| Transparency | Confidential by default | **Published by default** (notice, award, public record) |
-| Compliance bundle | Corporate policy, SoD, audit, GRC | Procurement law, set-asides, debarment, mandates |
-| Competition / conflict | Internal controls | **Sealed** bids & evaluation windows |
-| Identity | Enterprise SSO (OIDC/SAML/SCIM) | Government federation / IdP |
-| Deployment | Self-hosted by the org | Self-hosted by the org (incl. air-gapped) |
-| Records | Retention policy | Public records & archival mandates |
+Instances differ by **configuration, never by code**:
 
-Each instance carries: `sector` (`public | private`), `procurementStyles`,
-`complianceBundle`, `transparency` default (`published | confidential |
-hybrid`), `classifications`, and `deployment` (infra + model provider).
-Sector can also be set **per department or per procurement** for hybrid
-agencies (e.g. a ministry with sensitive purchases).
+- `procurementStyles` — which sourcing paths are enabled (catalog, RFQ,
+  negotiated, framework order).
+- `approvalChains` / `thresholds` / `evaluationCriteria` — policy data consumed
+  by the §11 engine (`(policy, context) → decision`), never domain `switch`
+  statements.
+- `currency` + `taxPolicies` — the deterministic tax engine (§8.4) with
+  per-instance rates and withholding rules.
+- `transparency` — confidential by default; publication is opt-in.
+- `deployment` — infra + model provider (cloud keys or a local/offline model
+  endpoint).
 
-#### 16.1.1 Build posture: sector-neutral core, public package is additive
-
-The public/private distinction is **not a fork** — the §9 core is already
-sector-neutral. `Requisition`, `PurchaseOrder`, `Invoice`, `Vendor`,
-`Budget`, `Policy`, `Approval`, `AuditEntry`, `IntakeDocument`, and `Message`
-serve both a private catalog buy and a government competitive award: both
-produce a PO against a budget, both pass approvals, both match invoices, both
-write to the append-only audit chain. The build strategy follows:
-
-1. **Validate on a private-mode MVP first (Phases 1–6).** The same code path is
-   what a government instance runs; a private instance never touches public
-   code, and a public instance reuses ~100% of the lifecycle.
-2. **Public-specific machinery is additive (Phase 7), never a rewrite:** the
-   competitive objects (§16.3), the transparency plane (§16.5), and the
-   PhilGEPS/IFMS adapters (§16.8) layer on top of the unchanged lifecycle.
-3. **Sector-aware data over sector-aware code.** Award method, thresholds,
-   periods, set-asides, and disclosure checks are **policy data** (`PolicyKind`
-   + `config`) consumed by the §11 engine — never `switch` statements in the
-   domain. The same `(policy, context) → decision` runs both sectors.
-
-The critical risk-management split is **what can stay config-only versus what
-needs real machinery**:
-
-| Capability | Config-only (`bundle.json`)? | Where built |
-|---|---|---|
-| Award method, thresholds, periods, set-asides, benef-own checks | ✅ | §11 engine + `compliance/*.json` bundle |
-| Sealed-bid gating, publication/reveal, protest workflow, observers | ❌ real scheduled-seal machinery | **Phase 7 only** |
-
-So private mode never pays for the transparency machinery, and that machinery
-is the only genuinely costly public work. Every change carries the check: *if a
-line of code runs only for public instances, it sits behind a `complianceBundle`
-value or an intentionally uninstantiated adapter; otherwise it belongs in the
-shared core.*
-
-Sector-drift (research: CIPS; JAGGAER; Nottingham PPRG; EBRD VfM guidance) runs
-in both directions — public import private discipline (value-based award, MEAT,
-TCO/lifecycle costing) and private imports public rigor (documented process,
-reduced fraud). The engine honors both because award criteria, transparency,
-and confidentiality are instance configuration, converging on one flexible
-core.
+Every change carries the check: **policy-driven over hard-coded branches** —
+if a behavior differs per customer, it is a `Policy` + `config`, not a fork.
 
 ### 16.2 Single-tenant, self-hostable deployment
 
 - **One deployment = one organization.** No tenant-isolation seams exist in
   the data model — isolation is physical (your instance, your data).
 - **Configuration by environment, not code**: `@workspace/env` loads the
-  repo-root `.env`; runtime-tunable settings live in a settings store. The
-  sector/mode, compliance bundle, and transparency default are config.
+  repo-root `.env`; runtime-tunable settings live in a settings store.
 - **One stack, packaged for the org**: web (Next.js) + api (NestJS + tRPC) +
   agent (eve) + Postgres, shipped as Docker Compose, VM images, or PaaS
   builds. The repo is the deployment unit.
@@ -937,38 +884,37 @@ core.
   releases; backup/restore of Postgres; no cross-tenant data migration ever.
 - **Identity is the org's**: local accounts, or the org's IdP
   (OIDC/SAML/SCIM via `@better-auth/sso`). Departments/teams are RBAC groups
-  inside the single org — the Better Auth organization plugin is optional for
-  internal structure, never for tenancy.
+  inside the single org.
 - **Observability is self-hosted**: structured stdout logging, health
   endpoints, optional OpenTelemetry export. Metrics stay in the instance.
 - **Agent runtime is per-instance**: model provider is configured by the org
-  (cloud keys) or run locally/offline (air-gapped government). No shared
-  model service.
+  (cloud keys) or run locally/offline (air-gapped / regulated deployments).
+  No shared model service.
 
 ### 16.2.1 Distribution & upgrade story (decided: Docker Compose, single-node)
 
 - **Primary distribution: Docker Compose, single node.** A multi-container
   stack — web (Next) + api (NestJS + tRPC) + agent (eve) + Postgres, plus an
   optional local LLM endpoint — on one host. This is the recognized sweet
-  spot for single-tenant products: low overhead, auditable, no
-  orchestration fleet, and it does not require a Kubernetes estate (and its
-  ~2-FTE overhead) that a single agency does not need.
+  spot for single-tenant products: low overhead, auditable, no orchestration
+  fleet, and no Kubernetes estate (and its ~2-FTE overhead) that a small org
+  does not need.
 - **Single-node default, three packages from one build:**
   - **Compose (default)**: `docker compose up -d` on a VM or bare metal —
-    the gov/enterprise and private on-prem target.
-  - **Managed PaaS (private, egress-allowed)**: the same image on a managed
-    host (Render / Railway / Fly.io / cloud Run) for orgs that prefer a
-    managed runtime — explicitly not the air-gapped choice (it implies
-    outbound client egress).
-  - **Air-gapped / offline bundle (gov-hardened)**: a signed offline
-    artifact (images + model weights + dependency mirrors) staged in with
-    zero egress; updates arrive via a reviewed, signed pipeline on a slow
-    cadence (§16). No phone-home at runtime.
+    the enterprise on-prem target.
+  - **Managed PaaS (egress-allowed)**: the same image on a managed host
+    (Render / Railway / Fly.io / Cloud Run) for orgs that prefer a managed
+    runtime — explicitly not the air-gapped choice (it implies outbound
+    client egress).
+  - **Air-gapped / offline bundle**: a signed offline artifact (images +
+    model weights + dependency mirrors) staged in with zero egress; updates
+    arrive via a reviewed, signed pipeline on a slow cadence. No phone-home
+    at runtime.
 - **Postgres ships in-stack** (mounted volume); managed Postgres is an
   override, not a requirement.
-- **Instance configuration lives in env + a settings store** (sector/mode,
-  currency PHP, tax policies, compliance bundle, transparency default,
-  model provider) — no code change between deployments.
+- **Instance configuration lives in env + a settings store** (currency PHP,
+  tax policies, approval chains, model provider) — no code change between
+  deployments.
 - **Upgrades are boot-time migrations**: pinned image tags; `prisma migrate
   deploy` at boot; rollback = previous tag + `pg_dump` restore. Never a
   cross-tenant data journey.
@@ -980,145 +926,51 @@ core.
   (Llama, Mistral, Qwen, DeepSeek) inside the boundary with zero egress, or
   BYO cloud keys when egress is permitted. **v1 ships BYO cloud keys** (the
   common first-deployment case); the endpoint abstraction is in place from
-  day one so an in-boundary model is a Phase-7 *config*, never a rewrite.
-  Each instance may set a **provider gate** (residency, retention,
-  no-retention) that must pass before the agent runtime goes live.
+  day one so an in-boundary model is a later *config*, never a rewrite. Each
+  instance may set a **provider gate** (residency, retention, no-retention)
+  that must pass before the agent runtime goes live.
 
-### 16.3 Procurement domain — competitive methods
-
-```
-procurementType: quote | negotiated | rfp | tender | sealedBid | frameworkOrder
-```
-
-Award philosophy is config, not a fork: the engine exposes a `selectionRule`
-knob — `lcrb | mearb | marb | hrrb | lowestCost | bestValue` (each with price
-weight bounds, e.g. 15–40% for MEARB) — driven by the §11 policy bundle for a
-public instance and by corporate scoring for a private one. That is why the
-domain exposes weighted multi-criteria evaluation rather than a single
-lowest-price wire.
-
-New domain objects for public/competitive work:
-- **RFP / Tender** — specification, budget, response window, public notice.
-- **Bid / SealedBid** — structurally sealed until a controlled **bid opening**
-  gate; opening is an audited event (agents prepare, a gate/human opens).
-- **Evaluation** — weighted scoring, panel membership, record.
-- **Award** — decision, debrief, **debarment/screening** check, award notice.
-- **FrameworkAgreement** — standing contract + catalogue drawdown orders.
-- **Publication** — every public artifact with a scheduled reveal.
-
-Small-value spend uses the negotiated/catalog path; above statutory
-thresholds the same Requisition routes to a competitive method. **Procurement
-method is policy-driven, not a user choice.** The **NGPA (RA 12009)** alone
-prescribes the method palette (**NGPA §26**): Competitive Bidding, Limited Source
-Bidding, Competitive Dialogue, Unsolicited Offer with Bid Matching, Direct
-Contracting, Direct Acquisition (≤ ₱200k), Repeat Order, Small Value (≤
-₱2M / LGU tiers), Negotiated Procurement, Direct Sales, and Direct
-Procurement for Science, Technology & Innovation. Award criteria can be
-**LCRB, MEARB** (quality–price, price weight 15–40%), **MARB**, or **HRRB**
-(consultants) — value-based, not lowest-bid-only. Locally-funded projects
-below thresholds may also use the **design–build** scheme (§14). The domain
-objects above mirror these NGPA artifacts so a rule-bundle can drive
-them.
-
-### 16.4 Compliance as the policy runtime
-
-The §11 policy engine is the compliance runtime; regulations slide in as
-policy `kind`s:
-- **Thresholds & approval chains** (auto / manager / authority by band).
-- **Set-asides** & small-business / social / local / industrial programs.
-- **Debarment & excluded-party screening** (SAM-style registers) — checked
-  synchronously before any award.
-- **Ethics & conflicts** — vendor-requester relationship checks.
-- **Anti-corruption SoD** — separation of duties: whoever (human or agent)
-  set up the vendor or drafted the sourcing cannot approve/issue the award.
-- **Bid-abuse gates** — minimum bids, documented cancel reasons, collusion
-  heuristics (later phase).
-- **Retention & archival mandates.** (Infra warranty / structural-defect
-  periods run 2–15 yrs under IRR §90; retention 1–5% per IRR §90.1.)
-
-**Public-purchase instances run the NGPA (RA 12009) bundle** — its IRR, not
-RA 9184, is what the compliance gate checks:
-- **Beneficial ownership & relation disclosure** — bidders must disclose the
-  ultimate beneficial owner and any relation (within the 3rd civil degree)
-  to the HoPE/BAC/TWG/Secretariat (§81–82); verified as a pre-award data
-  check.
-- **Eligibility evidence** — PhilGEPS Platinum Certificate + tax/legal/
-  financial docs; misconduct triggers suspension/blacklisting (§98–105),
-  extending to controlling entities (§105).
-- **Protest & review sequence** must run its course before attempts at court
-  action (§83–87); bids are not stayed.
-- **Anti-splitting & statutory-deadline integrity.**
-
-Every decision cites the policy **bundle + version** it ran against.
-
-### 16.5 Transparency vs confidentiality
-
-- A **publication plane** (parallel to the audit plane, §14) records notice,
-  award, and public-record artifacts with a scheduled reveal.
-- **Public mode**: notice and award are released by default; a public read API
-  exposes the **record** (what happened, when, by whom) — never the **agent
-  reasoning**, which stays internal even in public mode.
-- **Sealing**: classified documents are sealed (encrypted/restricted) until
-  defined gates; opening is audited.
-- **Private mode**: everything confidential by default; publication is opt-in.
-
-### 16.6 Security & trust (per deployment)
+### 16.3 Security & trust (per deployment)
 
 - Single-tenant removes cross-tenant attack surface; each instance is
   hardened to the org's requirements (SOC 2 / ISO evidence kits for
-  enterprise; access controls, signing, and chain of custody for government).
+  enterprise).
 - **Air-gapped / cleared environments**: the full stack deploys with a
   **local or cleared model runtime** — agents run **offline** (no egress to
-  public LLM providers), awards/POs carry qualified digital signatures, and
-  the audit chain is tamper-evident.
+  public LLM providers), POs carry qualified digital signatures, and the
+  audit chain is tamper-evident.
 - Agents (§7.3) must support an **offline model deployment**: the same
   skills/tools with hosted-model channels disabled.
 
-### 16.7 Agent controls in the bound loop
+### 16.4 Agent controls in the bound loop
 
 - **SoD for agents**: an agent cannot both source/quote and issue/approve the
   same spend (mirrors human SoD).
-- **Signing**: agents prepare documents but never countersign; awards/POs
-  carry qualified electronic signature gates (human + certificate).
-- **Mandatory windows**: a publication/notice window must elapse before a
-  follow-up executes; blocked otherwise.
-- **Attribution**: agent actions are attributed like a named user's, and
-  public-relevant actions land on the public record per the instance mode.
+- **Signing**: agents prepare documents but never countersign; POs carry
+  qualified electronic signature gates (human + certificate).
+- **Mandatory windows**: a notice/wait window must elapse before a follow-up
+  executes; blocked otherwise.
+- **Attribution**: agent actions are attributed like a named user's.
 
-### 16.8 Integration
+### 16.5 Out of scope (v1): government / public procurement
 
-- Public procurement registers / supplier qualification via the existing
-  hook/event surface.
-- **PhilGEPS is mandatory, not opt-in**: under NGPA (RA 12009, §18),
-  all Procuring Entities are required to **register with and fully use**
-  PhilGEPS as the single e-procurement portal — publication, e-bidding,
-  e-small-value, e-reverse-auction, e-payment, and the supplier registry
-  (Platinum Certificate) integrate via an adapter. Digital signatures must
-  comply with the E-commerce Act (RA 8792).
-- Settlement/accounting e-payment channels (IFMS) and open-data/analytics feeds
-  when the instance opts in.
+v1 is deliberately **enterprise-only**. No public-procurement machinery is
+built in v1 — no PhilGEPS or e-procurement-portal adapters, no sealed-bid
+processing, no public transparency/publishing plane, no debarment registries,
+no NGPA (RA 12009) compliance bundles, no protest workflow. The engine
+retains generic configurability (thresholds, evaluation criteria, and
+compliance checks are policy data), so a public tier could be added without a
+rewrite — but it is consciously deferred, not designed against. Research that
+informed that potential tier is archived under `docs/research/`.
 
-### 16.9 Roadmap delta
-
-Per §16.1.1: a few schema/public seams are laid down **early** (Phase 1–2,
-cheap now) so government is a config-load, not a migration; the costly public
-machinery is Phase 7 and stays additive on the unchanged core.
+### 16.6 Roadmap delta (enterprise)
 
 ```
-Phases 1–2 (seams, low-cost)
-- reserve AwardCriterion / EntityClass enums + PublicationState (§9)
-- policy-ready schema: selectionRule, award-criteria config on Policy
-
-Phase 7 — Self-hosted public & enterprise  (additive, not a fork)
+Phase 7 — Enterprise hardening (additive, no public machinery)
 - single-tenant packaging: Docker Compose / VM / PaaS; migrate-deploy upgrades
-- env-driven sector/NGPA-compliance/transparency configuration
-- RFP / tender / bid / sealedBid / award / framework models
-- publication plane + sealing + transparency mode
-- compliance: SoD, beneficial-owner + debarment screening, qualified
-  signing; NGPA (RA 12009) rule-bundles — PhilGEPS e-channels, value-based
-  awards, domestic preference, green procurement
-- deployment: air-gapped + offline-model agent runtime
+- offline-model agent runtime (OpenAI-compatible endpoint) + provider gate
 - identity: OIDC/SAML/SCIM via @better-auth/sso
+- qualified signing for POs in air-gapped / regulated deployments
 ```
 
 ---
@@ -1128,13 +980,13 @@ Phase 7 — Self-hosted public & enterprise  (additive, not a fork)
 | Phase | Scope | Monorepo touchpoints |
 |---|---|---|
 | **0 — Foundation** (done) | db, env, auth, tRPC, agent stub | `packages/*`, `apps/api`, `apps/web`, `apps/agent` |
-| **1 — Domain core** | Catalog, Vendor, Budget, Policy models + routers; audit trail; idempotency; **sector seams** (§9 enums, selection-rule-ready Policy) | `packages/db`, `apps/api` |
+| **1 — Domain core** | Catalog, Vendor, Budget, Policy models + routers; audit trail; idempotency; **instance-config seams** (§9 enums, evaluation-ready Policy) | `packages/db`, `apps/api` |
 | **2 — Requisition→PO** | Requisition, approval gates, PO issue, budget commit; exception queue | `apps/api`, `apps/web` |
 | **3 — Agent skills** | Sourcing + requisition + ops agents on eve; events wake agents; scoped tokens | `apps/agent`, `packages/auth` |
 | **4 — Invoicing & 3-way match** | Invoice ingestion (email + structured e-invoicing), matching, exceptions | `apps/api`, `apps/web` |
 | **5 — Payments & ERP sync** | Payment runs (human-gated), outbound ERP/webhooks | `apps/api` |
 | **6 — Hardening** | Replayable audit, replay/dead-letter, quotas, redaction, load | platform-wide |
-| **7 — Public & enterprise** | Single-tenant packaging, sector config, competitive methods, transparency, compliance, offline agent (additive on shared core) | §16 |
+| **7 — Enterprise hardening** | Single-tenant packaging polish, offline-model agent runtime, SSO (OIDC/SAML/SCIM), qualified signing (additive on shared core) | §16 |
 
 ---
 
