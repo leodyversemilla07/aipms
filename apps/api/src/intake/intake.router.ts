@@ -8,6 +8,7 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
+import { invoicePayloadSchema as classifiedInvoiceSchema } from '../agent/invoice-payload'
 import { InvoiceService } from '../invoice/invoice.service'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
@@ -45,29 +46,6 @@ const listInputWithStatus = listInput.extend({
 const idInput = z.object({ id: z.string().min(1) })
 
 const bridgeInput = idInput.extend({ idempotencyKey: z.string().min(1) })
-
-/**
- * The classified payload an extractor/agent is expected to produce for an
- * invoice document (the shape InvoiceService.register consumes). The intake
- * desk's classify step writes this; the bridge validates it before registering.
- */
-const classifiedInvoiceSchema = z.object({
-  kind: z.string().optional(),
-  vendorId: z.string().min(1),
-  number: z.string().min(1),
-  poId: z.string().min(1).optional().nullable(),
-  currencyCode: z.string().optional(),
-  lines: z
-    .array(
-      z.object({
-        description: z.string().optional(),
-        amountMinor: z.number().int(),
-        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-        vatExempt: z.boolean().optional(),
-      }),
-    )
-    .min(1),
-})
 
 @Router({ alias: 'intake' })
 @UseMiddlewares(AuthMiddleware)

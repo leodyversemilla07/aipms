@@ -14,6 +14,7 @@ import { z } from "zod";
 const t = initTRPC.create();
 const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
+import type { AgentRouter } from "../agent/agent.router";
 import type { ApprovalRouter } from "../approval/approval.router";
 import type { AuditRouter } from "../audit/audit.router";
 import type { BudgetRouter } from "../budget/budget.router";
@@ -28,6 +29,14 @@ import type { UsersRouter } from "../users/users.router";
 import type { VendorRouter } from "../vendor/vendor.router";
 
 const appRouter = t.router({
+  agent: t.router({
+    process: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["process"]>>)
+    }),
   approval: t.router({
     pendingList: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["pendingList"]>>),

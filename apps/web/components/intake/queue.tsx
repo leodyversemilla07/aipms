@@ -65,6 +65,7 @@ export function IntakeQueue() {
   const dropMut = useMutation(trpc.intake.drop.mutationOptions())
   const requeue = useMutation(trpc.intake.requeue.mutationOptions())
   const registerMut = useMutation(trpc.intake.registerInvoice.mutationOptions())
+  const agentMut = useMutation(trpc.agent.process.mutationOptions())
   const [registerNotice, setRegisterNotice] = useState<Record<string, string>>(
     {}
   )
@@ -123,6 +124,26 @@ export function IntakeQueue() {
       setRegisterNotice((prev) => ({
         ...prev,
         [id]: `Failed: ${(e as Error).message}`,
+      }))
+    }
+  }
+
+  async function doAgent(id: string) {
+    try {
+      const res = await agentMut.mutateAsync({
+        id,
+        idempotencyKey: `web-agent-${id}-${crypto.randomUUID()}`,
+      })
+      const inv = res.invoice as { number?: string; status?: string }
+      setRegisterNotice((prev) => ({
+        ...prev,
+        [id]: `Agent: Invoice ${inv.number ?? ""} ${inv.status ?? ""} · match ${res.match?.outcome ?? "n/a"}`,
+      }))
+      refresh()
+    } catch (e) {
+      setRegisterNotice((prev) => ({
+        ...prev,
+        [id]: `Agent failed: ${(e as Error).message}`,
       }))
     }
   }
@@ -239,6 +260,16 @@ export function IntakeQueue() {
                       >
                         Classify
                       </Button>
+                      {doc.status === "new" ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={agentMut.isPending}
+                          onClick={() => doAgent(doc.id)}
+                        >
+                          Auto-extract
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="outline"

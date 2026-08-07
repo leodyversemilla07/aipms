@@ -1,5 +1,6 @@
 import '@workspace/env/load'
 import { Module } from '@nestjs/common'
+import { AgentModule } from './agent/agent.module'
 import { AppController } from './app.controller'
 import { AppService } from './app.service'
 import { ApprovalModule } from './approval/approval.module'
@@ -27,6 +28,7 @@ import { VendorModule } from './vendor/vendor.module'
     RequisitionModule,
     PurchaseOrderModule,
     ApprovalModule,
+    AgentModule,
     AuditModule,
     IntakeModule,
     InvoiceModule,

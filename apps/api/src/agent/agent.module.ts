@@ -1,0 +1,21 @@
+import { Module } from '@nestjs/common'
+import { IntakeModule } from '../intake/intake.module'
+import { InvoiceModule } from '../invoice/invoice.module'
+import { SharedModule } from '../shared/shared.module'
+import { TrpcModule } from '../trpc/trpc.module'
+import { AgentRouter } from './agent.router'
+import { AGENT_EXTRACTOR, AgentService } from './agent.service'
+import { extractStructuredInvoice } from './extract'
+
+@Module({
+  imports: [TrpcModule, SharedModule, IntakeModule, InvoiceModule],
+  providers: [
+    AgentService,
+    AgentRouter,
+    // Default extractor seam; swapped for an LLM-backed extractor without
+    // changing the pipeline.
+    { provide: AGENT_EXTRACTOR, useValue: extractStructuredInvoice },
+  ],
+  exports: [AgentService],
+})
+export class AgentModule {}
