@@ -13,6 +13,9 @@ tRPC). tRPC calls are proxied by `next.config.ts` rewrites to the API on
   lifecycle (create draft → approve → execute → reconcile per line).
   Maker/checker (§16.4) is enforced server-side: the desk surfaces the
   "Maker and checker must differ" error with a hint to switch accounts.
+- `/procurement` — **Procurement desk**: issue a PO from an approved
+  requisition (budget commit + vendor gate in one transaction), confirm it,
+  or request §10.1 cancellation through the human gate.
 
 ## Running
 

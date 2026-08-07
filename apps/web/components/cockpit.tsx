@@ -66,10 +66,16 @@ function Dashboard() {
         </div>
         <nav className="flex items-center gap-4 text-sm">
           <Link
+            href="/procurement"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Procurement
+          </Link>
+          <Link
             href="/finance"
             className="text-muted-foreground underline hover:text-foreground"
           >
-            Finance desk
+            Finance
           </Link>
           <button
             type="button"

@@ -2,12 +2,11 @@
 
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
-import { InvoiceList } from "@/components/finance/invoice-list"
-import { InvoiceRegister } from "@/components/finance/invoice-register"
-import { PaymentRuns } from "@/components/finance/payment-runs"
+import { IssuePo } from "@/components/procurement/issue-po"
+import { PoList } from "@/components/procurement/po-list"
 import { SignInCard } from "@/components/sign-in"
 
-function FinanceBody() {
+function ProcurementBody() {
   const { data: session } = authClient.useSession()
   const user = session?.user
 
@@ -15,9 +14,11 @@ function FinanceBody() {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="font-semibold text-lg tracking-tight">Finance desk</h1>
+          <h1 className="font-semibold text-lg tracking-tight">
+            Procurement desk
+          </h1>
           <p className="text-muted-foreground text-sm">
-            {user?.email} · invoice intake & payment runs
+            {user?.email} · sourcing & purchase orders
           </p>
         </div>
         <nav className="flex items-center gap-4 text-sm">
@@ -28,10 +29,10 @@ function FinanceBody() {
             Supervisory desk
           </Link>
           <Link
-            href="/procurement"
+            href="/finance"
             className="text-muted-foreground underline hover:text-foreground"
           >
-            Procurement
+            Finance desk
           </Link>
           <button
             type="button"
@@ -43,14 +44,13 @@ function FinanceBody() {
         </nav>
       </header>
 
-      <InvoiceRegister />
-      <InvoiceList />
-      <PaymentRuns />
+      <IssuePo />
+      <PoList />
     </div>
   )
 }
 
-export function FinanceDesk() {
+export function ProcurementDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
@@ -67,5 +67,5 @@ export function FinanceDesk() {
       </main>
     )
   }
-  return <FinanceBody />
+  return <ProcurementBody />
 }
