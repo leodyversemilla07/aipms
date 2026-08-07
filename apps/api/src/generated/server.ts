@@ -247,6 +247,7 @@ const appRouter = t.router({
   'approvalChain',
   'budgetControl',
   'evaluationCriterion',
+  'taxRule',
 ]).optional(),
   enabled: z.boolean().optional(),
 }))
@@ -266,6 +267,7 @@ const appRouter = t.router({
   'approvalChain',
   'budgetControl',
   'evaluationCriterion',
+  'taxRule',
 ]),
   enabled: z.boolean().default(true),
   supersedesId: z.string().min(1).nullish(),

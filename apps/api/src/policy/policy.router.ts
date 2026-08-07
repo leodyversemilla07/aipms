@@ -20,6 +20,7 @@ const policyKind = z.enum([
   'approvalChain',
   'budgetControl',
   'evaluationCriterion',
+  'taxRule',
 ])
 
 const idInput = z.object({ id: z.string().min(1) })

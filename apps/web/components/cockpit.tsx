@@ -89,6 +89,12 @@ function Dashboard() {
           >
             Intake
           </Link>
+          <Link
+            href="/master-data"
+            className="text-muted-foreground underline hover:text-foreground"
+          >
+            Master data
+          </Link>
           <button
             type="button"
             onClick={() => authClient.signOut()}
