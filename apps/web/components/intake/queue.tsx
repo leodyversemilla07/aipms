@@ -2,6 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+} from "@workspace/ui/components/field"
+import { Input } from "@workspace/ui/components/input"
+import { Label } from "@workspace/ui/components/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
+import { Textarea } from "@workspace/ui/components/textarea"
 import { useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
 import { fmtTime } from "@/lib/time"
@@ -187,34 +202,53 @@ export function IntakeQueue() {
       </div>
 
       <div className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-            className="h-9 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {CHANNELS.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-          <input
-            value={contentHash}
-            onChange={(e) => setContentHash(e.target.value)}
-            placeholder="contentHash (blank = random)"
-            className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
+        <FieldGroup className="flex-wrap items-end gap-2">
+          <Field>
+            <Label htmlFor="channel-select">Channel</Label>
+            <Select value={channel} onValueChange={(v) => setChannel(v ?? "")}>
+              <SelectTrigger className="h-9 w-32">
+                <SelectValue placeholder="Channel" />
+              </SelectTrigger>
+              <SelectContent>
+                {CHANNELS.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {c}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <Label htmlFor="content-hash">Hash</Label>
+            <Input
+              id="content-hash"
+              value={contentHash}
+              onChange={(e) => setContentHash(e.target.value)}
+              placeholder="contentHash (blank = random)"
+              className="h-9 flex-1"
+            />
+            <FieldDescription>Fetched or generated SHA256.</FieldDescription>
+          </Field>
           <Button size="sm" disabled={ingest.isPending} onClick={doIngest}>
             Ingest
           </Button>
-        </div>
-        <textarea
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          placeholder='Raw document payload as JSON, e.g. {"attachments":["INV-2026-0007.pdf"],"subject":"Invoice 0007"}'
-          className="h-20 rounded-md border bg-background px-3 py-2 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
-        />
+        </FieldGroup>
+
+        <Field>
+          <Label htmlFor="raw-payload">Raw payload</Label>
+          <Textarea
+            id="raw-payload"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            placeholder='{"attachments":["INV-0007.pdf"],"subject":"Invoice 0007"}'
+            className="font-mono text-xs"
+            rows={4}
+          />
+          <FieldDescription>
+            Jagged JSON envelope from document.
+          </FieldDescription>
+        </Field>
+
         {notice ? (
           <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
             {notice}
@@ -240,18 +274,22 @@ export function IntakeQueue() {
           >
             {batchMut.isPending ? "Processing…" : "Run agent (pending)"}
           </Button>
-          <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className="h-8 rounded-md border bg-background px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-          >
-            <option value="">All statuses</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <Field>
+            <Label htmlFor="status-filter">Status</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v ?? "")}>
+              <SelectTrigger className="h-8">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">All statuses</SelectItem>
+                {STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
         </div>
         {batchNotice ? (
           <p className="rounded-md bg-emerald-500/10 px-3 py-1 text-emerald-600 text-xs">
@@ -336,18 +374,29 @@ export function IntakeQueue() {
                   )}
                 </div>
               </div>
-              <textarea
-                value={
-                  occupied[doc.id] ??
-                  JSON.stringify({ kind: "invoice" }, null, 2)
-                }
-                onChange={(e) =>
-                  setOccupied((prev) => ({ ...prev, [doc.id]: e.target.value }))
-                }
-                placeholder='Classified payload JSON, e.g. {"kind":"invoice","amountMinor":100000}'
-                rows={2}
-                className="w-full rounded-md border bg-background px-3 py-1 font-mono text-xs outline-none focus:ring-2 focus:ring-ring"
-              />
+
+              <Field>
+                <Label htmlFor={`payload-${doc.id}-raw`}>
+                  Extracted payload
+                </Label>
+                <Textarea
+                  id={`payload-${doc.id}-raw`}
+                  value={
+                    occupied[doc.id] ??
+                    JSON.stringify({ kind: "invoice" }, null, 2)
+                  }
+                  onChange={(e) =>
+                    setOccupied((prev) => ({
+                      ...prev,
+                      [doc.id]: e.target.value,
+                    }))
+                  }
+                  placeholder='{"kind":"invoice","amountMinor":100000}'
+                  rows={2}
+                  className="font-mono text-xs"
+                />
+              </Field>
+
               {registerNotice[doc.id] ? (
                 <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
                   {registerNotice[doc.id]}

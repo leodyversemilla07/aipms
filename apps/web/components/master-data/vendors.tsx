@@ -2,6 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@workspace/ui/components/field"
+import { Input } from "@workspace/ui/components/input"
 import { useState } from "react"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -69,31 +76,39 @@ export function VendorsPanel() {
         <span className="text-muted-foreground text-xs">{rows.length}</span>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-4 shadow-sm">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground text-xs">Name</span>
-          <input
+      <FieldGroup className="flex-row flex-wrap items-end gap-2 rounded-xl border bg-card p-4 shadow-sm">
+        <Field>
+          <FieldLabel htmlFor="vendor-name">Name</FieldLabel>
+          <Input
+            id="vendor-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="Supplier Inc."
+            className="h-9 w-56"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground text-xs">Email</span>
-          <input
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="vendor-email">Email</FieldLabel>
+          <Input
+            id="vendor-email"
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="ap@supplier.example"
+            className="h-9 w-56"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground text-xs">Tax id</span>
-          <input
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="vendor-taxid">Tax id</FieldLabel>
+          <Input
+            id="vendor-taxid"
             value={taxId}
             onChange={(e) => setTaxId(e.target.value)}
-            className="h-9 w-36 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="000-000-000-000"
+            className="h-9 w-36"
           />
-        </label>
+          <FieldDescription>BIR TIN format.</FieldDescription>
+        </Field>
         <Button
           size="sm"
           disabled={!name.trim() || create.isPending}
@@ -101,7 +116,7 @@ export function VendorsPanel() {
         >
           Add vendor
         </Button>
-      </div>
+      </FieldGroup>
 
       {notice ? (
         <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">

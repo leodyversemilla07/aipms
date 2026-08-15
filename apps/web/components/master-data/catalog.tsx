@@ -2,7 +2,21 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
-import { type ReactNode, useState } from "react"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@workspace/ui/components/field"
+import { Input } from "@workspace/ui/components/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
+import { useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
 import { minorToPhp, phpToMinor } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
@@ -74,35 +88,54 @@ export function CatalogPanel() {
         <span className="text-muted-foreground text-xs">{rows.length}</span>
       </div>
 
-      <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-card p-4 shadow-sm">
-        <Field label="SKU">
-          <input
+      <FieldGroup className="flex-row flex-wrap items-end gap-2 rounded-xl border bg-card p-4 shadow-sm">
+        <Field>
+          <FieldLabel htmlFor="catalog-sku">SKU</FieldLabel>
+          <Input
+            id="catalog-sku"
             value={sku}
             onChange={(e) => setSku(e.target.value)}
-            className="h-9 w-32 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="ITEM-001"
+            className="h-9 w-32"
           />
         </Field>
-        <Field label="Name">
-          <input
+        <Field>
+          <FieldLabel htmlFor="catalog-name">Name</FieldLabel>
+          <Input
+            id="catalog-name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="Product name"
+            className="h-9 w-56"
           />
         </Field>
-        <Field label="Category">
-          <input
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-9 w-28 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
+        <Field>
+          <FieldLabel htmlFor="catalog-category">Category</FieldLabel>
+          <Select value={category} onValueChange={(v) => setCategory(v ?? "")}>
+            <SelectTrigger className="w-28">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="general">General</SelectItem>
+              <SelectItem value="office-supplies">Office supplies</SelectItem>
+              <SelectItem value="hardware">Hardware</SelectItem>
+            </SelectContent>
+          </Select>
         </Field>
-        <Field label="Price ₱">
-          <input
+        <Field>
+          <FieldLabel htmlFor="catalog-price">Price ₱</FieldLabel>
+          <Input
+            id="catalog-price"
+            type="number"
+            step="0.01"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder="0.00"
-            className="h-9 w-24 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="h-9 w-24"
           />
+          <FieldDescription>
+            Decimal price; stored as minor (centavos).
+          </FieldDescription>
         </Field>
         <Button
           size="sm"
@@ -111,7 +144,7 @@ export function CatalogPanel() {
         >
           Add item
         </Button>
-      </div>
+      </FieldGroup>
 
       {notice ? (
         <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
@@ -166,14 +199,5 @@ export function CatalogPanel() {
         ))}
       </ul>
     </section>
-  )
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1 text-sm">
-      <span className="text-muted-foreground text-xs">{label}</span>
-      {children}
-    </label>
   )
 }
