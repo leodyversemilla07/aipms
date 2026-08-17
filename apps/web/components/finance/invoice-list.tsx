@@ -4,6 +4,17 @@ import { useQuery } from "@tanstack/react-query"
 import { INVOICE_STATUS, netMinor } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
+import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/alert"
+import { Badge } from "@workspace/ui/components/badge"
+import { Skeleton } from "@workspace/ui/components/skeleton"
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@workspace/ui/components/table"
 
 /**
  * Recently received invoices with their derived tax fields (§8.4) and
@@ -14,15 +25,26 @@ export function InvoiceList() {
   const invoices = useQuery(trpc.invoice.list.queryOptions({}))
 
   if (invoices.isPending) {
-    return <p className="text-muted-foreground text-sm">loading invoices…</p>
-  }
-  if (invoices.isError) {
+    // Show a loading skeleton instead of plain text.
     return (
-      <p className="text-destructive text-sm">
-        Could not load invoices: {invoices.error.message}
-      </p>
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+      </div>
     )
   }
+
+  if (invoices.isError) {
+    // Use shadcn Alert for a richer error UI.
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Failed to load invoices</AlertTitle>
+        <AlertDescription>{invoices.error.message}</AlertDescription>
+      </Alert>
+    )
+  }
+
   // Prisma payload rows recurse deeply; narrow to the fields rendered here.
   const rows = (invoices.data ?? []) as unknown as Array<{
     id: string
@@ -48,30 +70,43 @@ export function InvoiceList() {
           No invoices registered yet.
         </p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {rows.map((inv) => (
-            <li
-              key={inv.id}
-              className="flex items-center justify-between gap-2 rounded-lg border bg-card px-4 py-2 text-sm"
-            >
-              <div className="flex flex-col">
-                <span className="font-medium">{inv.number}</span>
-                <span className="text-muted-foreground text-xs">
-                  {INVOICE_STATUS[inv.status] ?? inv.status}
-                  {inv.poId ? " · has PO" : ""}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 font-mono text-muted-foreground text-xs">
-                <span>gross {minorToPhp(inv.amountMinor)}</span>
-                <span>VAT {minorToPhp(inv.vatMinor)}</span>
-                <span>EWT {minorToPhp(inv.ewtMinor)}</span>
-                <span className="text-foreground">
-                  net {minorToPhp(netMinor(inv))}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <Table className="w-full">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Number</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Gross</TableHead>
+              <TableHead className="text-right">VAT</TableHead>
+              <TableHead className="text-right">EWT</TableHead>
+              <TableHead className="text-right">Net</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((inv) => (
+              <TableRow key={inv.id}>
+                <TableCell>{inv.number}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">
+                    {INVOICE_STATUS[inv.status] ?? inv.status}
+                    {inv.poId ? " · PO" : ""}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  {minorToPhp(inv.amountMinor)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {minorToPhp(inv.vatMinor)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {minorToPhp(inv.ewtMinor)}
+                </TableCell>
+                <TableCell className="text-right font-medium text-foreground">
+                  {minorToPhp(netMinor(inv))}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </section>
   )
