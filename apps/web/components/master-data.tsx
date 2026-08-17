@@ -6,6 +6,8 @@ import { BudgetsPanel } from "@/components/master-data/budgets"
 import { CatalogPanel } from "@/components/master-data/catalog"
 import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@workspace/ui/components/tabs"
+import { Badge } from "@workspace/ui/components/badge"
 import { SignInCard } from "@/components/sign-in"
 
 function MasterDataBody() {
@@ -31,13 +33,13 @@ function MasterDataBody() {
           <Link
             href="/intake"
             className="text-muted-foreground underline hover:text-foreground"
-          >
+>          
             Intake
           </Link>
           <Link
             href="/audit"
             className="text-muted-foreground underline hover:text-foreground"
-          >
+>          
             Audit
           </Link>
           <button
@@ -50,10 +52,19 @@ function MasterDataBody() {
         </nav>
       </header>
 
-      <VendorsPanel />
-      <CatalogPanel />
-      <BudgetsPanel />
-      <PoliciesPanel />
+      {/* Tabs for Master‑Data panels */}
+      <Tabs defaultValue="vendors" className="w-full">
+        <TabsList variant="default" className="mb-4">
+          <TabsTrigger value="vendors">Vendors</TabsTrigger>
+          <TabsTrigger value="catalog">Catalog</TabsTrigger>
+          <TabsTrigger value="budgets">Budgets</TabsTrigger>
+          <TabsTrigger value="policies">Policies</TabsTrigger>
+        </TabsList>
+        <TabsContent value="vendors"><VendorsPanel /></TabsContent>
+        <TabsContent value="catalog"><CatalogPanel /></TabsContent>
+        <TabsContent value="budgets"><BudgetsPanel /></TabsContent>
+        <TabsContent value="policies"><PoliciesPanel /></TabsContent>
+      </Tabs>
     </div>
   )
 }
