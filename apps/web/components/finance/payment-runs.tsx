@@ -2,6 +2,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
+import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/alert"
+import { Badge } from "@workspace/ui/components/badge"
+import { Skeleton } from "@workspace/ui/components/skeleton"
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@workspace/ui/components/table"
 import { useState } from "react"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
@@ -102,26 +106,38 @@ export function PaymentRuns() {
     }
   }
 
+  if (runs.isPending || matched.isPending) {
   return (
     <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Payment runs
-        </h2>
-        <span className="text-muted-foreground text-xs">
-          {(runs.data ?? []).length} runs
-        </span>
-      </div>
+      <Skeleton className="h-5 w-32" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-full" />
+    </section>
+  )
+}
+
+return (
+  <section className="flex flex-col gap-3">
+    <div className="flex items-baseline justify-between">
+      <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+        Payment runs
+      </h2>
+      <span className="text-muted-foreground text-xs">
+        {(runs.data ?? []).length} runs
+      </span>
+    </div>
 
       {error ? (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
+        <Alert variant="destructive">
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       ) : null}
       {notice ? (
-        <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
-          {notice}
-        </p>
+        <Alert>
+          <AlertTitle>Notice</AlertTitle>
+          <AlertDescription>{notice}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -173,9 +189,9 @@ export function PaymentRuns() {
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium text-sm">
                 {run.runNumber}
-                <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs">
+                <Badge variant="secondary" className="ml-2">
                   {RUN_STATUS[run.status] ?? run.status}
-                </span>
+                </Badge>
               </span>
               <span className="font-mono text-sm">
                 {minorToPhp(run.totalMinor)}
