@@ -218,6 +218,7 @@ model Policy {
 // Append-only audit trail (§9 constraints). No update/delete path exposed.
 model AuditEntry {
   id        String   @id @default(cuid())
+  runId     String?  // §7.1 links audit to agent execution
   actorId   String
   actorKind UserKind
   action    String // e.g. "catalog.create", "budget.commit"
@@ -244,6 +245,51 @@ model IdempotencyKey {
   @@map("idempotencyKey")
   @@index([key])
 }
+
+// ===== Phase 3 — agent skills (§7, §13) =====
+
+enum RunStatus {
+  running
+  succeeded
+  failed
+  cancelled
+}
+
+/// §7.1 — identity + audit of one agent execution. Every tool call
+/// within a run tags this runId for full traceability.
+model AgentRun {
+  id         String    @id @default(cuid())
+  agentId    String    // User.id where kind = agent
+  taskId     String?   // parent task, if decomposed by orchestrator
+  status     RunStatus @default(running)
+  skills     String[]  // which skill bundles were active
+  meta       Json?     // runtime metadata (model, tokens, cost)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@map("agentRun")
+  @@index([agentId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+/// §13 — transactional outbox for domain events. Written in the same
+/// transaction as the domain mutation; a relay publishes to subscribers.
+model DomainEvent {
+  id          String    @id @default(cuid())
+  type        String    // e.g. "requisition.approved", "invoice.received"
+  entityType  String    // e.g. "Requisition", "Invoice"
+  entityId    String
+  payload     Json      // event-specific data
+  publishedAt DateTime? // null = unpublished
+  createdAt   DateTime  @default(now())
+
+  @@map("domainEvent")
+  @@index([publishedAt])
+  @@index([type])
+  @@index([createdAt])
+}
+
 
 // ===== Phase 2 — requisition → PO (§10, §11) =====
 

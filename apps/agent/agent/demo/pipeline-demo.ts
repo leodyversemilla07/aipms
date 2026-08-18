@@ -18,7 +18,7 @@ import { sourcingSkill, opsSkill } from "./skills/skill-bundles"
 // ---------------------------------------------------------------------------
 
 /** Format bytes/ints as PHP amounts (minor → pesos). */
-function php minorToPhp(minor: number): string {
+function minorToPhp(minor: number): string {
   return (minor / 100).toFixed(2)
 }
 

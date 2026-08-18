@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { db, type IntakeStatus, Prisma } from '@workspace/db'
+import { EventEmitterService } from '../shared/events/event-emitter.service'
 
 export interface IngestInput {
   channel: string // EMAIL_IMAP | EINVOICE_EIS | PEPPOL | EDI | API | PORTAL
@@ -26,9 +27,10 @@ export interface ClassifyInput {
  */
 @Injectable()
 export class IntakeService {
+  constructor(private readonly events: EventEmitterService) {}
   async ingest(input: IngestInput) {
     try {
-      return await db.intakeDocument.create({
+      const doc = await db.intakeDocument.create({
         data: {
           channel: input.channel,
           contentHash: input.contentHash,
@@ -37,6 +39,13 @@ export class IntakeService {
           status: 'new',
         },
       })
+      await this.events.emit({
+        type: 'intake.received',
+        entityType: 'IntakeDocument',
+        entityId: doc.id,
+        payload: { channel: doc.channel, contentHash: doc.contentHash },
+      })
+      return doc
     } catch (error) {
       if (
         error &&

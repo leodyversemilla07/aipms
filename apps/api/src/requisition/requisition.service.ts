@@ -11,6 +11,7 @@ import {
   type GateDecision,
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
+import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { paginate } from '../trpc/list-input'
 
 export interface CreateRequisitionLineInput {
@@ -53,6 +54,7 @@ export class RequisitionService {
   constructor(
     private readonly numbers: DocumentNumberService,
     private readonly policy: PolicyService,
+    private readonly events: EventEmitterService,
   ) {}
 
   async list(input: RequisitionListInput) {
@@ -221,6 +223,15 @@ export class RequisitionService {
             evidence: decision.reason,
           },
         })
+        await this.events.emit(
+          {
+            type: 'requisition.approved',
+            entityType: 'Requisition',
+            entityId: id,
+            payload: { status: 'approved', requestNumber: req.requestNumber, costCenter: req.costCenter, totalMinor },
+          },
+          tx,
+        )
         return { requisition: req, decision }
       }
 
@@ -242,6 +253,15 @@ export class RequisitionService {
           evidence: decision.reason,
         },
       })
+      await this.events.emit(
+        {
+          type: 'requisition.submitted',
+          entityType: 'Requisition',
+          entityId: id,
+          payload: { status: nextStatus, requestNumber: req.requestNumber, costCenter: req.costCenter, totalMinor },
+        },
+        tx,
+      )
       return { requisition: req, decision }
     })
   }

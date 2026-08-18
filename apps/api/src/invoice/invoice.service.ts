@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { db, type InvoiceStatus } from '@workspace/db'
 import { computeTax } from '@workspace/tax'
+import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { PolicyService } from '../policy/policy.service'
 
 /** §9 3-way match tolerance: ± this much (basis points) is a clean match. */
@@ -45,7 +46,10 @@ export type MatchResult = {
 
 @Injectable()
 export class InvoiceService {
-  constructor(private readonly policy: PolicyService) {}
+  constructor(
+    private readonly policy: PolicyService,
+    private readonly events: EventEmitterService,
+  ) {}
 
   /**
    * §8.4 compute tax for a line set without persisting — the surface the agent
@@ -116,6 +120,27 @@ export class InvoiceService {
     let invoice: Awaited<ReturnType<typeof db.invoice.create>>
     try {
       invoice = await db.invoice.create({ data })
+      await this.events.emit({
+        type: 'invoice.received',
+        entityType: 'Invoice',
+        entityId: invoice.id,
+        payload: { vendorId: invoice.vendorId, number: invoice.number },
+      })
+      if (status === 'matched') {
+        await this.events.emit({
+          type: 'invoice.matched',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          payload: { status: 'matched' },
+        })
+      } else if (status === 'exception') {
+        await this.events.emit({
+          type: 'invoice.exception',
+          entityType: 'Invoice',
+          entityId: invoice.id,
+          payload: { status: 'exception' },
+        })
+      }
     } catch (error) {
       if (
         error &&

@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { db, type Prisma } from '@workspace/db'
+import { EventEmitterService } from '../shared/events/event-emitter.service'
 
 export type DecideVerdict = 'approve' | 'reject' | 'override'
 
@@ -23,6 +24,7 @@ export interface DecideResult {
  */
 @Injectable()
 export class ApprovalService {
+  constructor(private readonly events: EventEmitterService) {}
   async pendingList() {
     return db.approval.findMany({
       where: { status: 'pending' },
@@ -71,6 +73,15 @@ export class ApprovalService {
           evidence: evidence ?? null,
         },
       })
+      await this.events.emit(
+        {
+          type: 'approval.decided',
+          entityType: 'Approval',
+          entityId: id,
+          payload: { verdict, outcome: decidedStatus, kind: approval.kind },
+        },
+        tx,
+      )
 
       // --- PO cancellation gate (§10.1) --------------------------------
       if (approval.kind === 'poCancellation' && approval.poId) {
@@ -86,6 +97,15 @@ export class ApprovalService {
           tx,
           approval.requisitionId,
           po.totalMinor,
+        )
+        await this.events.emit(
+          {
+            type: 'po.cancelled',
+            entityType: 'PurchaseOrder',
+            entityId: approval.poId,
+            payload: { status: 'cancelled' },
+          },
+          tx,
         )
         return {
           approval: updated,
@@ -116,6 +136,15 @@ export class ApprovalService {
             where: { id: approval.requisitionId },
             data: { status: 'rejected', decidedAt: now },
           })
+          await this.events.emit(
+            {
+              type: 'requisition.rejected',
+              entityType: 'Requisition',
+              entityId: approval.requisitionId,
+              payload: { status: 'rejected' },
+            },
+            tx,
+          )
           return {
             approval: updated,
             outcome: 'REJECTED',
@@ -131,6 +160,17 @@ export class ApprovalService {
           where: { id: approval.requisitionId },
           data: { status: nextStatus, decidedAt: now },
         })
+        if (nextStatus === 'approved') {
+          await this.events.emit(
+            {
+              type: 'requisition.approved',
+              entityType: 'Requisition',
+              entityId: approval.requisitionId,
+              payload: { status: 'approved' },
+            },
+            tx,
+          )
+        }
         return {
           approval: updated,
           outcome: verdict === 'override' ? 'OVERRIDDEN' : 'APPROVED',

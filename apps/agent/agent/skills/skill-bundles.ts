@@ -48,48 +48,45 @@ export const sourcingSkill = defineSkill({
   modelOutput: {
     "catalog/list": {
       type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Found ${output.items?.length ?? 0} catalog item(s)` +
-              (output.items?.length
-                ? `\n${output.items
-                    .slice(0, 5)
-                    .map(
-                      (i: any) =>
-                        `- ${i.sku}: ${i.name} (${i.category ?? "—"}) — ₱${
-                          i.defaultPriceMinor != null
-                            ? `${(i.defaultPriceMinor / 100).toFixed(2)}`
-                            : "no price"
-                        }`
-                    )
-                    .join("\n")}
-                : "")`
-          : `Catalog list failed: ${output.error}`,
+      parse: (output: any) => {
+        if (!output.ok) return `Catalog list failed: ${output.error}`;
+        const items = output.items ?? [];
+        const summary = items
+          .slice(0, 5)
+          .map(
+            (i: any) =>
+              `- ${i.sku}: ${i.name} (${i.category ?? "—"}) — ₱${
+                i.defaultPriceMinor != null
+                  ? (i.defaultPriceMinor / 100).toFixed(2)
+                  : "no price"
+              }`,
+          )
+          .join("\n");
+        return `Found ${items.length} catalog item(s)${summary ? `\n${summary}` : ""}`;
+      },
     },
     "vendor/list": {
       type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Found ${output.vendors?.length ?? 0} vendor(s)${
-              output.vendors?.length
-                ? `\n${output.vendors
-                    .slice(0, 5)
-                    .map(
-                      (v: any) =>
-                        `- ${v.name} (${v.status}) — ${v.email ?? "no email"}`
-                    )
-                    .join("\n")}`
-                : ""}`
-          : `Vendor list failed: ${output.error}`,
+      parse: (output: any) => {
+        if (!output.ok) return `Vendor list failed: ${output.error}`;
+        const vendors = output.vendors ?? [];
+        const summary = vendors
+          .slice(0, 5)
+          .map(
+            (v: any) =>
+              `- ${v.name} (${v.status}) — ${v.email ?? "no email"}`,
+          )
+          .join("\n");
+        return `Found ${vendors.length} vendor(s)${summary ? `\n${summary}` : ""}`;
+      },
     },
     "messaging/submit": {
       type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Quote request ${output.status === "approved" ? "submitted" : "pending"} (${
-              output.requestId ?? "N/A"
-            })`
-          : `Quote request failed: ${output.error}`,
+      parse: (output: any) => {
+        if (!output.ok) return `Quote request failed: ${output.error}`;
+        const status = output.status === "approved" ? "submitted" : "pending";
+        return `Quote request ${status} (${output.requestId ?? "N/A"})`;
+      },
     },
   },
 });
@@ -210,26 +207,25 @@ export const auditSkill = defineSkill({
   modelOutput: {
     "audit/list": {
       type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Found ${output.total ?? 0} audit record(s)${
-              output.total > 0
-                ? `\n${output.records
-                    .slice(0, 3)
-                    .map(
-                      (r: any) =>
-                        `- ${r.action} by ${r.actorKind} on ${r.entity} ${r.entityId ?? ""} — ${r.at}`
-                    )
-                    .join("\n")}`
-                : ""}`
-          : `Audit list failed: ${output.error}`,
+      parse: (output: any) => {
+        if (!output.ok) return `Audit list failed: ${output.error}`;
+        const records = output.records ?? [];
+        const summary = records
+          .slice(0, 3)
+          .map(
+            (r: any) =>
+              `- ${r.action} by ${r.actorKind} on ${r.entity} ${r.entityId ?? ""} — ${r.at}`,
+          )
+          .join("\n");
+        return `Found ${output.total ?? 0} audit record(s)${summary ? `\n${summary}` : ""}`;
+      },
     },
     "audit/meta": {
       type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Audit system: ${output.totalRecords} total records, ${output.activeAgents} active agents`
-          : `Audit meta failed: ${output.error}`,
+      parse: (output: any) => {
+        if (!output.ok) return `Audit meta failed: ${output.error}`;
+        return `Audit system: ${output.totalRecords} total records, ${output.activeAgents} active agents`;
+      },
     },
   },
 });

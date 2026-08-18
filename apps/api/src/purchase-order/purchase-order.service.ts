@@ -6,6 +6,7 @@ import {
 import { db, Prisma } from '@workspace/db'
 import { evaluateVendorGate } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
+import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { paginate } from '../trpc/list-input'
 
 export type PurchaseOrderWith = Prisma.PurchaseOrderGetPayload<{
@@ -34,7 +35,10 @@ function isSequentialNumberRace(error: unknown): boolean {
 
 @Injectable()
 export class PurchaseOrderService {
-  constructor(private readonly numbers: DocumentNumberService) {}
+  constructor(
+    private readonly numbers: DocumentNumberService,
+    private readonly events: EventEmitterService,
+  ) {}
 
   async detail(id: string): Promise<PurchaseOrderWith> {
     const po = await db.purchaseOrder.findUnique({
@@ -194,6 +198,16 @@ export class PurchaseOrderService {
           data: { committedMinor: { increment: totalMinor } },
         })
 
+        await this.events.emit(
+          {
+            type: 'po.issued',
+            entityType: 'PurchaseOrder',
+            entityId: purchaseOrder.id,
+            payload: { poNumber, vendorId: vendor.id, totalMinor },
+          },
+          tx,
+        )
+
         return { outcome: 'ISSUED', purchaseOrder } as const
       })
 
@@ -215,11 +229,18 @@ export class PurchaseOrderService {
     if (po.status !== 'issued') {
       throw new ConflictException('Only an issued PO can be confirmed')
     }
-    return db.purchaseOrder.update({
+    const updated = await db.purchaseOrder.update({
       where: { id },
       data: { status: 'confirmed' },
       include: { lines: true },
     })
+    await this.events.emit({
+      type: 'po.confirmed',
+      entityType: 'PurchaseOrder',
+      entityId: updated.id,
+      payload: { status: 'confirmed' },
+    })
+    return updated
   }
 
   /** §10.1 — PO cancellation after vendor confirmation needs a human gate. */

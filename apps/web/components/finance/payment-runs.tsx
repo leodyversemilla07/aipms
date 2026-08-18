@@ -6,6 +6,8 @@ import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/al
 import { Badge } from "@workspace/ui/components/badge"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@workspace/ui/components/table"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@workspace/ui/components/dialog"
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@workspace/ui/components/tooltip"
 import { useState } from "react"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
@@ -189,14 +191,55 @@ return (
             <div className="flex items-center justify-between gap-2">
               <span className="font-medium text-sm">
                 {run.runNumber}
-                <Badge variant="secondary" className="ml-2">
-                  {RUN_STATUS[run.status] ?? run.status}
-                </Badge>
+                <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Badge variant="secondary" className="ml-2">
+                      {RUN_STATUS[run.status] ?? run.status}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Run status: {RUN_STATUS[run.status] ?? run.status}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               </span>
               <span className="font-mono text-sm">
                 {minorToPhp(run.totalMinor)}
               </span>
             </div>
+
+            {/* Details dialog */}
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="ml-2">Details</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Run {run.runNumber} details</DialogTitle>
+                  <DialogDescription>Line items for this run</DialogDescription>
+                </DialogHeader>
+                <Table className="w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice ID</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Net</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {run.lines.map((line) => (
+                      <TableRow key={line.id}>
+                        <TableCell>{line.invoiceId.slice(0, 8)}</TableCell>
+                        <TableCell>{LINE_STATUS[line.status] ?? line.status}</TableCell>
+                        <TableCell className="text-right">{minorToPhp(line.netMinor)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <DialogFooter showCloseButton />
+              </DialogContent>
+            </Dialog>
 
             <ul className="flex flex-col gap-1">
               {run.lines.map((line) => (

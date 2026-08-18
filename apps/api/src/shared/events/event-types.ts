@@ -1,0 +1,29 @@
+/** Domain event types that agents can subscribe to (§7.3). */
+export const DomainEventTypes = {
+  // Phase 2 — requisition & PO
+  'requisition.submitted': 'requisition.submitted',
+  'requisition.approved': 'requisition.approved',
+  'requisition.rejected': 'requisition.rejected',
+  'po.issued': 'po.issued',
+  'po.confirmed': 'po.confirmed',
+  'po.cancelled': 'po.cancelled',
+  'approval.decided': 'approval.decided',
+  // Phase 4 — invoicing
+  'intake.received': 'intake.received',
+  'invoice.received': 'invoice.received',
+  'invoice.matched': 'invoice.matched',
+  'invoice.exception': 'invoice.exception',
+  // Phase 5 — payment
+  'paymentRun.approved': 'paymentRun.approved',
+  'paymentRun.executed': 'paymentRun.executed',
+} as const
+
+export type DomainEventType =
+  (typeof DomainEventTypes)[keyof typeof DomainEventTypes]
+
+export interface DomainEventPayload {
+  type: DomainEventType
+  entityType: string
+  entityId: string
+  payload: Record<string, unknown>
+}

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { EventsModule } from '../shared/events/events.module'
 import { PolicyModule } from '../policy/policy.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
@@ -6,7 +7,7 @@ import { RequisitionRouter } from './requisition.router'
 import { RequisitionService } from './requisition.service'
 
 @Module({
-  imports: [TrpcModule, SharedModule, PolicyModule],
+  imports: [TrpcModule, SharedModule, PolicyModule, EventsModule],
   providers: [RequisitionService, RequisitionRouter],
   exports: [RequisitionService],
 })
