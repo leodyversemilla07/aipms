@@ -50,9 +50,16 @@ export class AgentWakeService implements OnModuleInit {
         include: { lines: true },
       })
       if (!requisition) throw new Error('Requisition not found')
-      // Threshold gate for auto-issue: skip if over limit
+      // Threshold gate for auto-issue: policy-driven
       const totalMinor = requisition.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0)
-      const autoIssueThreshold = Number(process.env.AUTO_PO_THRESHOLD_MINOR ?? 50000)
+      let autoIssueThreshold = Number(process.env.AUTO_PO_THRESHOLD_MINOR ?? 50000)
+      const thresholdPolicy = await db.policy.findFirst({ where: { kind: 'threshold', enabled: true } })
+      if (thresholdPolicy?.config) {
+        const cfg = thresholdPolicy.config as any
+        if (typeof cfg.autoIssueThresholdMinor === 'number') {
+          autoIssueThreshold = cfg.autoIssueThresholdMinor
+        }
+      }
       if (totalMinor > autoIssueThreshold) {
         console.log(`[agent-wake] run ${run.id} skipped auto PO: total ${totalMinor} > threshold ${autoIssueThreshold}`)
         await db.agentRun.update({
