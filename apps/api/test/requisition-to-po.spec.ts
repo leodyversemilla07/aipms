@@ -20,6 +20,7 @@ describe('Requisition → PO automation', () => {
     await db.purchaseOrder.deleteMany({})
     await db.requisition.deleteMany({})
     await db.approval.deleteMany({})
+    await db.policy.deleteMany({ where: { kind: 'preferredVendor' } })
   })
 
   afterAll(async () => {
