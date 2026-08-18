@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { EventRelayService } from '../shared/events/event-relay.service'
+import { AgentService } from './agent.service'
 
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
@@ -9,7 +10,7 @@ import { EventRelayService } from '../shared/events/event-relay.service'
  */
 @Injectable()
 export class AgentWakeService implements OnModuleInit {
-  constructor(private readonly relay: EventRelayService) {}
+  constructor(private readonly relay: EventRelayService, private readonly agent: AgentService) {}
 
   onModuleInit() {
     // Wake on requisition approval → operator agent should issue PO
@@ -42,11 +43,29 @@ export class AgentWakeService implements OnModuleInit {
       },
     })
     console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
-    // In production, enqueue work for the Eve runtime here.
-    // For now we mark it succeeded immediately as a stub.
-    await db.agentRun.update({
-      where: { id: run.id },
-      data: { status: 'succeeded', finishedAt: new Date() },
-    })
+    try {
+      // Execute minimal domain work for intake events; other events are stubbed for now
+      if (event.type === 'intake.received') {
+        // Drain up to 5 pending intake docs as a simple batch
+        const result = await this.agent.processPending(5)
+        console.log(`[agent-wake] run ${run.id} processed ${result.succeeded}/${result.documents} docs`)
+        await db.agentRun.update({
+          where: { id: run.id },
+          data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), result } },
+        })
+        return
+      }
+      // Placeholder for requisition → PO and invoice match flows
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: 'succeeded', finishedAt: new Date() },
+      })
+    } catch (err) {
+      console.error(`[agent-wake] run ${run.id} failed`, err)
+      await db.agentRun.update({
+        where: { id: run.id },
+        data: { status: 'failed', finishedAt: new Date(), meta: { ...(run.meta as any), error: (err as Error).message } },
+      })
+    }
   }
 }
