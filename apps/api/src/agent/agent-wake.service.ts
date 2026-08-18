@@ -50,8 +50,20 @@ export class AgentWakeService implements OnModuleInit {
         include: { lines: true },
       })
       if (!requisition) throw new Error('Requisition not found')
-      // Pick first active vendor as a demo default
-      const vendor = await db.vendor.findFirst({ where: { status: 'active' } })
+      // Policy-driven vendor selection: preferredVendor policy takes precedence
+      let vendor: any = null
+      const prefPolicy = await db.policy.findFirst({ where: { kind: 'preferredVendor', enabled: true } })
+      if (prefPolicy?.config) {
+        const cfg = prefPolicy.config as any
+        const vendorId = cfg.vendorId ?? cfg.vendor_id
+        if (vendorId) {
+          vendor = await db.vendor.findUnique({ where: { id: vendorId } })
+        }
+      }
+      if (!vendor) {
+        // Fallback to first active vendor
+        vendor = await db.vendor.findFirst({ where: { status: 'active' } })
+      }
       if (!vendor) throw new Error('No active vendor found')
       const result = await this.po.issue({ requisitionId: requisition.id, vendorId: vendor.id, terms: {} }, 'agent-operator')
       const poNumber = 'outcome' in result && result.outcome === 'ISSUED' ? result.purchaseOrder.poNumber : 'N/A'
