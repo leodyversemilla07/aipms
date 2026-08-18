@@ -9,6 +9,7 @@ import { AgentScheduler } from './agent.scheduler'
 import { AGENT_EXTRACTOR, AgentService } from './agent.service'
 import { extractStructuredInvoice } from './extract'
 import { ServiceTokenGuard } from './service-token.guard'
+import { AgentWakeService } from './agent-wake.service'
 
 @Module({
   imports: [TrpcModule, SharedModule, IntakeModule, InvoiceModule],
@@ -17,6 +18,7 @@ import { ServiceTokenGuard } from './service-token.guard'
     AgentService,
     AgentRouter,
     AgentScheduler,
+    AgentWakeService,
     ServiceTokenGuard,
     // Default extractor seam; swapped for an LLM-backed extractor without
     // changing the pipeline.
