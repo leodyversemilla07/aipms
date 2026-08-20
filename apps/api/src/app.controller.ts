@@ -9,4 +9,10 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello()
   }
+
+  /** Container/load-balancer probe (docker compose healthcheck). */
+  @Get('health')
+  health(): { ok: true } {
+    return { ok: true }
+  }
 }

@@ -6,7 +6,7 @@ import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/al
 import { Badge } from "@workspace/ui/components/badge"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@workspace/ui/components/table"
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose } from "@workspace/ui/components/dialog"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@workspace/ui/components/dialog"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@workspace/ui/components/tooltip"
 import { useState } from "react"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
@@ -211,9 +211,13 @@ return (
 
             {/* Details dialog */}
             <Dialog>
-              <DialogTrigger asChild>
-                <Button size="sm" variant="outline" className="ml-2">Details</Button>
-              </DialogTrigger>
+              <DialogTrigger
+                render={
+                  <Button size="sm" variant="outline" className="ml-2">
+                    Details
+                  </Button>
+                }
+              />
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>Run {run.runNumber} details</DialogTitle>

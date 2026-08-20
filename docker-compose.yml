@@ -1,21 +1,114 @@
+# Single-tenant AIPMS deployment.
+#
+#   docker compose up -d --build
+#
+# Boot order: postgres (healthy) → api (migrate-on-deploy, then healthy) →
+# web + agent. Upgrading to a new schema is the same command: the api
+# entrypoint applies pending migrations (`prisma migrate deploy`) on start.
+#
+# All secrets/variables are overridable via a root .env file (see .env.example):
+#   BETTER_AUTH_SECRET, AIPMS_SERVICE_TOKEN, POSTGRES_*, APP_URL, WEB_PORT, ...
+name: aipms
+
 services:
   postgres:
     image: postgres:17-alpine
     container_name: aipms-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: aipms
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-aipms}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - aipms-postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d aipms"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-aipms}"]
       interval: 3s
       timeout: 5s
       retries: 20
+
+  api:
+    build:
+      context: .
+      target: api
+    container_name: aipms-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-aipms}
+      PORT: 3001
+      NODE_ENV: production
+      # Browser-facing origin of the web app (auth cookies) — override in .env
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Internal origin of the auth endpoints (the web app proxies /api/auth here)
+      API_URL: http://api:3001
+      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-http://localhost:3000}
+      # Generate with: openssl rand -base64 32 — required in production
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
+      # maker@/checker@demo.aipms demo identities (non-production)
+      AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
+      # Agent drain loop (intake → classify → match) — off by default
+      AGENT_AUTORUN: ${AGENT_AUTORUN:-0}
+      AGENT_INTERVAL_MS: ${AGENT_INTERVAL_MS:-60000}
+      AGENT_BATCH_SIZE: ${AGENT_BATCH_SIZE:-25}
+      EVENT_RELAY_INTERVAL_MS: ${EVENT_RELAY_INTERVAL_MS:-1000}
+      EVENT_RELAY_MAX_ATTEMPTS: ${EVENT_RELAY_MAX_ATTEMPTS:-5}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+  web:
+    build:
+      context: .
+      target: web
+    container_name: aipms-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://api:3001
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  agent:
+    build:
+      context: .
+      target: agent
+    container_name: aipms-agent
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      AIPMS_API_URL: http://api:3001
+      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
+      # LLM provider gate: "cloud" (OpenAI-compatible) or "offline"
+      AIPMS_LLM_KIND: ${AIPMS_LLM_KIND:-cloud}
+      AIPMS_LLM_ENDPOINT: ${AIPMS_LLM_ENDPOINT:-}
+      AIPMS_LLM_MODEL: ${AIPMS_LLM_MODEL:-}
+      AIPMS_LLM_API_KEY: ${AIPMS_LLM_API_KEY:-}
+      # Model credential used by the eve runtime itself (agent.ts model id)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
 
 volumes:
   aipms-postgres:
