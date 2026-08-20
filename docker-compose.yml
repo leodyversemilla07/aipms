@@ -102,13 +102,44 @@ services:
     environment:
       AIPMS_API_URL: http://api:3001
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
-      # LLM provider gate: "cloud" (OpenAI-compatible) or "offline"
+      # LLM provider gate: "cloud" (BYO OpenAI-compatible keys) or "offline"
+      # (local zero-egress endpoint). The agent refuses to start when the
+      # gate is not satisfied (§16.6).
       AIPMS_LLM_KIND: ${AIPMS_LLM_KIND:-cloud}
       AIPMS_LLM_ENDPOINT: ${AIPMS_LLM_ENDPOINT:-}
       AIPMS_LLM_MODEL: ${AIPMS_LLM_MODEL:-}
-      AIPMS_LLM_API_KEY: ${AIPMS_LLM_API_KEY:-}
-      # Model credential used by the eve runtime itself (agent.ts model id)
+      # Cloud key. Dev-only placeholder for local compose; set a real key in
+      # production (openssl rand -base64 32).
+      AIPMS_LLM_API_KEY: ${AIPMS_LLM_API_KEY:-dev-only-key-change-me}
+      # Cloud key fallback (BYO keys).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Optional provider gate policies: residency, retention, no-retention.
+      # residency requires AIPMS_LLM_ALLOWED_HOSTS.
+      AIPMS_LLM_GATE: ${AIPMS_LLM_GATE:-}
+      AIPMS_LLM_ALLOWED_HOSTS: ${AIPMS_LLM_ALLOWED_HOSTS:-}
+      # Custom endpoints bypass the AI Gateway model catalog; set the model's
+      # context window (tokens) when compaction is used.
+      AIPMS_LLM_CONTEXT_WINDOW: ${AIPMS_LLM_CONTEXT_WINDOW:-}
+
+  # Optional local LLM endpoint for offline/air-gapped deployments. Disabled
+  # by default; enable with:
+  #   docker compose --profile offline up -d
+  #   docker compose --profile offline exec llm ollama pull llama3.2:3b
+  # then point the agent at it (e.g. AIPMS_LLM_ENDPOINT=http://llm:11434/v1,
+  # AIPMS_LLM_MODEL=llama3.2:3b, AIPMS_LLM_KIND=offline).
+  llm:
+    image: ollama/ollama:latest
+    container_name: aipms-llm
+    restart: unless-stopped
+    profiles: ["offline"]
+    volumes:
+      - aipms-ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 volumes:
   aipms-postgres:
+  aipms-ollama:

@@ -41,8 +41,15 @@ CMD ["pnpm", "--filter", "web", "start"]
 # ── agent ────────────────────────────────────────────────────────────────────
 # eve runtime: build once, then serve (production schedules only run in a
 # built app served with `eve start`).
+# eve evaluates agent/agent.ts during build, so the provider gate must be
+# satisfiable here. The baked artifact reads env at startup, so the real
+# provider is decided by the compose runtime environment; the placeholder
+# below is build-time validation only and is overridden by the compose
+# `environment:` block (or a root .env).
 FROM base AS agent
 WORKDIR /app/apps/agent
-ENV NODE_ENV=production
+ENV NODE_ENV=production \
+    AIPMS_LLM_KIND=cloud \
+    AIPMS_LLM_API_KEY=placeholder-build-only
 RUN pnpm --filter agent build
 CMD ["sh", "-c", "pnpm --filter agent start"]
