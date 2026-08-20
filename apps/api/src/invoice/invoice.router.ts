@@ -89,7 +89,7 @@ export class InvoiceRouter {
       const id = (result.invoice as { id?: string }).id
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'invoice.register',
         entity: 'Invoice',
         entityId: id,

@@ -11,7 +11,7 @@
    directly, authenticated via Bearer token.
 ─────────────────────────────────────────────────────────────────────────────── */
 import { providerCall } from "./config/agent-config"
-import { sourcingSkill, opsSkill } from "./skills/skill-bundles"
+import { sourcingSkill, opsSkill } from "../lib/skill-bundles"
 
 // ---------------------------------------------------------------------------
 // 1. HELPERS

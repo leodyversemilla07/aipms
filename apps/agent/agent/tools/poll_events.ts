@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from 'eve/tools';
-import { trpcQuery } from './trpc-client';
+import { trpcQuery } from '../lib/trpc-client';
 
 export default defineTool({
   description: 'Polls for domain events the agent is interested in.',

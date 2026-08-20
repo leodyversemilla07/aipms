@@ -1,10 +1,11 @@
 import { db } from '@workspace/db'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ApprovalService } from '../src/approval/approval.service'
 import { BudgetService } from '../src/budget/budget.service'
 import { PolicyService } from '../src/policy/policy.service'
 import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
+import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
  * @workspace requisition service — §11 gate outcomes on submit
@@ -25,12 +26,26 @@ const created: Record<string, string[]> = {
 const requisitionService = new RequisitionService(
   new DocumentNumberService(),
   new PolicyService(),
+  new EventEmitterService(),
 )
-const approvalService = new ApprovalService()
+const approvalService = new ApprovalService(new EventEmitterService())
 const budgetService = new BudgetService()
 const policyService = new PolicyService()
 
+// §10: decide() requires a real actor — an admin bypasses route membership.
+beforeAll(async () => {
+  await db.user.create({
+    data: {
+      id: actorId,
+      name: 'Test Admin',
+      email: `${actorId}@test.aipms`,
+      role: 'admin',
+    },
+  })
+})
+
 afterAll(async () => {
+  await db.user.deleteMany({ where: { id: actorId } })
   await db.approval.deleteMany({ where: { id: { in: created.approval } } })
   await db.requisition.deleteMany({
     where: { id: { in: created.requisition } },

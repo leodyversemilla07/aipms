@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common'
 import { IntakeModule } from '../intake/intake.module'
 import { InvoiceModule } from '../invoice/invoice.module'
+import { PurchaseOrderModule } from '../purchase-order/purchase-order.module'
+import { EventsModule } from '../shared/events/events.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
 import { AgentController } from './agent.controller'
@@ -12,7 +14,7 @@ import { ServiceTokenGuard } from './service-token.guard'
 import { AgentWakeService } from './agent-wake.service'
 
 @Module({
-  imports: [TrpcModule, SharedModule, IntakeModule, InvoiceModule],
+  imports: [TrpcModule, SharedModule, EventsModule, IntakeModule, InvoiceModule, PurchaseOrderModule],
   controllers: [AgentController],
   providers: [
     AgentService,

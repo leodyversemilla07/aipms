@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { requireRole } from '../trpc/authorize'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { BudgetService } from './budget.service'
@@ -55,11 +56,12 @@ export class BudgetRouter {
     @Input() input: z.infer<typeof createBudgetInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'budget.create')
     return this.idempotency.run(input.idempotencyKey, async () => {
       const budget = await this.budget.create(input)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'budget.create',
         entity: 'Budget',
         entityId: budget.id,

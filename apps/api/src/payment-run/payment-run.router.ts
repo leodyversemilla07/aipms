@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { requireRole } from '../trpc/authorize'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { PaymentRunService } from './payment-run.service'
@@ -60,11 +61,12 @@ export class PaymentRunRouter {
     @Input() input: z.infer<typeof createInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.create')
     return this.idempotency.run(input.idempotencyKey, async () => {
       const result = await this.runs.create(input, ctx.user.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'paymentRun.create',
         entity: 'PaymentRun',
         entityId: result.run.id,
@@ -80,10 +82,11 @@ export class PaymentRunRouter {
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.approve')
     const run = await this.runs.approve(input.id, ctx.user.id)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'paymentRun.approve',
       entity: 'PaymentRun',
       entityId: run.id,
@@ -98,10 +101,11 @@ export class PaymentRunRouter {
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.execute')
     const run = await this.runs.execute(input.id, ctx.user.id)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'paymentRun.execute',
       entity: 'PaymentRun',
       entityId: run.id,
@@ -116,6 +120,7 @@ export class PaymentRunRouter {
     @Input() input: z.infer<typeof reconcileInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.reconcile')
     const result = await this.runs.reconcile(
       input.runId,
       input.lineId,
@@ -123,7 +128,7 @@ export class PaymentRunRouter {
     )
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'paymentRun.reconcile',
       entity: 'PaymentRunLine',
       entityId: input.lineId,
@@ -138,10 +143,11 @@ export class PaymentRunRouter {
     @Input() input: z.infer<typeof runIdInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.void')
     const run = await this.runs.voidRun(input.id)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'paymentRun.void',
       entity: 'PaymentRun',
       entityId: run.id,

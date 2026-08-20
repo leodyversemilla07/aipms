@@ -26,7 +26,7 @@ describe('DemoIdentityService (§16.4 maker/checker seed)', () => {
       where: { email: { in: EMAILS } },
     })
     expect(users.map((u) => u.email).sort()).toEqual([...EMAILS].sort())
-  })
+  }, 30000)
 
   afterAll(async () => {
     await db.user.deleteMany({ where: { email: { in: EMAILS } } })

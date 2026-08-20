@@ -5,6 +5,8 @@ import type {
   MiddlewareResponse,
   TRPCMiddleware,
 } from 'nestjs-trpc'
+import type { SessionUser } from '@workspace/auth'
+import { db, type UserKind, type UserRole } from '@workspace/db'
 import type { AuthedTrpcContext, BaseTrpcContext } from '../context.types'
 
 @Injectable()
@@ -17,7 +19,27 @@ export class AuthMiddleware implements TRPCMiddleware {
       throw new TRPCError({ code: 'UNAUTHORIZED' })
     }
 
-    const nextCtx: AuthedTrpcContext = { ...ctx, user }
+    const kind: UserKind =
+      (user as SessionUser & { kind?: UserKind }).kind ?? 'human'
+    // §10: load the human's role for authorization gates (least privilege if
+    // the DB row is missing). Agent principals carry no role — their surface
+    // is governed by scopes, and role checks bypass them via actorKind.
+    let role: UserRole | undefined
+    if (kind === 'human') {
+      role =
+        (
+          await db.user.findUnique({
+            where: { id: user.id },
+            select: { role: true },
+          })
+        )?.role ?? 'user'
+    }
+
+    const nextCtx: AuthedTrpcContext = {
+      ...ctx,
+      user: { ...user, kind, role },
+      actorKind: kind,
+    }
     return opts.next({ ctx: nextCtx })
   }
 }

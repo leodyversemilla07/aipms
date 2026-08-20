@@ -33,6 +33,7 @@
     "@workspace/env": "workspace:*",
     "@workspace/tax": "workspace:*",
     "better-auth": "^1.6.25",
+    "better-call": "^1.3.7",
     "nestjs-trpc": "^2.13.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

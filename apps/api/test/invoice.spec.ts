@@ -2,6 +2,7 @@ import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
  * @workspace invoice service — deterministic §8.4 tax foot + §9 three-way
@@ -19,7 +20,7 @@ const created: Record<string, string[]> = {
 }
 
 const policyService = new PolicyService()
-const invoiceService = new InvoiceService(policyService)
+const invoiceService = new InvoiceService(policyService, new EventEmitterService())
 
 afterAll(async () => {
   await db.invoice.deleteMany({ where: { id: { in: created.invoice } } })

@@ -40,7 +40,7 @@ export class AgentRouter {
       const result = await this.agent.classifyAndRegister(input.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'agent.process',
         entity: 'IntakeDocument',
         entityId: input.id,
@@ -67,7 +67,7 @@ export class AgentRouter {
     const result = await this.agent.processPending(input.limit)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'agent.batch',
       entity: 'IntakeDocument',
       entityId: null,

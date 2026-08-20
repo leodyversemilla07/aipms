@@ -71,7 +71,7 @@ export class CatalogRouter {
       const item = await this.catalog.create(input)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'catalog.create',
         entity: 'CatalogItem',
         entityId: item.id,
@@ -93,7 +93,7 @@ export class CatalogRouter {
       const item = await this.catalog.update(id, rest)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'catalog.update',
         entity: 'CatalogItem',
         entityId: id,
@@ -115,7 +115,7 @@ export class CatalogRouter {
       const item = await this.catalog.deactivate(input.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'catalog.deactivate',
         entity: 'CatalogItem',
         entityId: input.id,

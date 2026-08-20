@@ -61,7 +61,7 @@ export class PurchaseOrderRouter {
       const result = await this.purchaseOrder.issue(input, ctx.user.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action:
           result.outcome === 'ISSUED'
             ? 'purchaseOrder.issue'
@@ -87,7 +87,7 @@ export class PurchaseOrderRouter {
       const po = await this.purchaseOrder.confirm(input.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'purchaseOrder.confirm',
         entity: 'PurchaseOrder',
         entityId: po.id,
@@ -109,7 +109,7 @@ export class PurchaseOrderRouter {
       )
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'purchaseOrder.cancelRequest',
         entity: 'PurchaseOrder',
         entityId: input.id,

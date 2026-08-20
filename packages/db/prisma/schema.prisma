@@ -20,6 +20,7 @@ model User {
   image         String?
 
   kind   UserKind @default(human) // §9: human or agent principal
+  role   UserRole @default(user)  // §10: authorization role
   scopes Json     @default("[]")  // §9: agent capability grants
   quotas Json?                      // §9: rate/spend quotas for agents
 
@@ -96,6 +97,15 @@ model RateLimit {
 enum UserKind {
   human
   agent
+}
+
+// §10 human-in-the-loop roles. Approval `route` arrays name these roles;
+// `admin` bypasses route membership (never silently — decisions stay audited).
+enum UserRole {
+  admin
+  finance
+  procurement
+  user
 }
 
 // §16.1 — evaluation is config, not a fork (reserved seam).
@@ -275,17 +285,24 @@ model AgentRun {
 
 /// §13 — transactional outbox for domain events. Written in the same
 /// transaction as the domain mutation; a relay publishes to subscribers.
+/// Failed deliveries retry (attemptCount/lastError) and dead-letter after
+/// EVENT_RELAY_MAX_ATTEMPTS so a poison event cannot block the queue.
 model DomainEvent {
-  id          String    @id @default(cuid())
-  type        String    // e.g. "requisition.approved", "invoice.received"
-  entityType  String    // e.g. "Requisition", "Invoice"
-  entityId    String
-  payload     Json      // event-specific data
-  publishedAt DateTime? // null = unpublished
-  createdAt   DateTime  @default(now())
+  id                String    @id @default(cuid())
+  type              String    // e.g. "requisition.approved", "invoice.received"
+  entityType        String    // e.g. "Requisition", "Invoice"
+  entityId          String
+  payload           Json      // event-specific data
+  publishedAt       DateTime? // null = unpublished
+  attemptCount      Int       @default(0)
+  lastError         String?
+  deadLetteredAt    DateTime? // null = still retryable
+  deadLetterReason  String?
+  createdAt         DateTime  @default(now())
 
   @@map("domainEvent")
   @@index([publishedAt])
+  @@index([deadLetteredAt])
   @@index([type])
   @@index([createdAt])
 }

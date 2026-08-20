@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from 'eve/tools';
-import { trpcMutate } from './trpc-client';
+import { trpcMutate } from '../lib/trpc-client';
 import crypto from 'crypto';
 
 export default defineTool({

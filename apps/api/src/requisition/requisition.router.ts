@@ -82,7 +82,7 @@ export class RequisitionRouter {
       })
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'requisition.create',
         entity: 'Requisition',
         entityId: requisition.id,
@@ -102,7 +102,7 @@ export class RequisitionRouter {
       const result = await this.requisition.submit(input.id)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'requisition.submit',
         entity: 'Requisition',
         entityId: input.id,

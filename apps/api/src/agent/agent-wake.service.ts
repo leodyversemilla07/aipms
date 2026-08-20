@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { EventRelayService } from '../shared/events/event-relay.service'
+import { evaluateThresholdGate } from '../policy/policy-engine'
 import { AgentService } from './agent.service'
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
 
@@ -50,21 +51,29 @@ export class AgentWakeService implements OnModuleInit {
         include: { lines: true },
       })
       if (!requisition) throw new Error('Requisition not found')
-      // Threshold gate for auto-issue: policy-driven
+      // Threshold gate for auto-issue: reuse the same policy engine the
+      // requisition submit path uses (§11). Conservative by default — no
+      // applicable policy means human review, never silent auto-issue.
       const totalMinor = requisition.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0)
-      let autoIssueThreshold = Number(process.env.AUTO_PO_THRESHOLD_MINOR ?? 50000)
       const thresholdPolicy = await db.policy.findFirst({ where: { kind: 'threshold', enabled: true } })
-      if (thresholdPolicy?.config) {
-        const cfg = thresholdPolicy.config as any
-        if (typeof cfg.autoIssueThresholdMinor === 'number') {
-          autoIssueThreshold = cfg.autoIssueThresholdMinor
+      let budgetRemainingMinor: number | undefined
+      if (requisition.budgetId) {
+        const budget = await db.budget.findUnique({ where: { id: requisition.budgetId } })
+        if (budget) {
+          budgetRemainingMinor = budget.limitMinor - budget.committedMinor - budget.spentMinor
         }
       }
-      if (totalMinor > autoIssueThreshold) {
-        console.log(`[agent-wake] run ${run.id} skipped auto PO: total ${totalMinor} > threshold ${autoIssueThreshold}`)
+      const decision = evaluateThresholdGate(thresholdPolicy ?? undefined, {
+        costCenter: requisition.costCenter,
+        amountMinor: totalMinor,
+        budgetAssigned: Boolean(requisition.budgetId),
+        budgetRemainingMinor,
+      })
+      if (decision.outcome !== 'PASS') {
+        console.log(`[agent-wake] run ${run.id} skipped auto PO: ${decision.reason}`)
         await db.agentRun.update({
           where: { id: run.id },
-          data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), skipped: 'threshold', totalMinor, autoIssueThreshold } },
+          data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), skipped: decision.outcome, totalMinor, decision } },
         })
         return
       }

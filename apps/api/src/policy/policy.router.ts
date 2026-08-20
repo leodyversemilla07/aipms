@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { requireRole } from '../trpc/authorize'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { PolicyService } from './policy.service'
 
@@ -69,6 +70,7 @@ export class PolicyRouter {
     @Input() input: z.infer<typeof createPolicyInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['admin'], 'policy.create')
     return this.idempotency.run(input.idempotencyKey, async () => {
       const { idempotencyKey: _key, ...rest } = input
       const policy = await this.policy.create({
@@ -77,7 +79,7 @@ export class PolicyRouter {
       })
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'policy.create',
         entity: 'Policy',
         entityId: policy.id,

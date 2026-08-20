@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, type PaymentRunStatus, type PaymentStatus } from '@workspace/db'
+import {
+  db,
+  Prisma,
+  type PaymentRunStatus,
+  type PaymentStatus,
+} from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 
 /**
@@ -50,24 +55,6 @@ export class PaymentRunService {
       throw new NotFoundException('One or more invoices do not exist')
     }
 
-    // Only matched invoices are payable; anything already claimed by another
-    // run (unique line) or already paid is refused.
-    for (const invoice of invoices) {
-      if (invoice.status !== 'matched') {
-        throw new BadRequestException(
-          `Invoice ${invoice.number} is ${invoice.status}, not payable`,
-        )
-      }
-    }
-    const claimed = await db.paymentRunLine.findMany({
-      where: { invoiceId: { in: uniqueIds } },
-    })
-    if (claimed.length > 0) {
-      throw new ConflictException(
-        'One or more invoices are already in a payment run',
-      )
-    }
-
     // §8.6 beneficiary control: no run plans an invoice without a verified bank.
     const vendorIds = [...new Set(invoices.map((invoice) => invoice.vendorId))]
     const vendors = await db.vendor.findMany({
@@ -93,34 +80,85 @@ export class PaymentRunService {
       0,
     )
 
-    const runNumber = await this.documentNumber.next('RUN-', async () => {
-      const last = await db.paymentRun.findFirst({
-        orderBy: { runNumber: 'desc' },
-      })
-      return last?.runNumber ?? null
-    })
+    // §8.6 race-hardened create: invoice eligibility is re-checked inside the
+    // transaction under FOR UPDATE row locks (serializes concurrent creates
+    // claiming the same invoices), and the run number is minted in the same
+    // transaction — a runNumber collision retries with a fresh number.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await db.$transaction(async (tx) => {
+          const locked = await tx.$queryRaw<{ id: string }[]>(
+            Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) FOR UPDATE`,
+          )
+          if (locked.length !== uniqueIds.length) {
+            throw new NotFoundException('One or more invoices do not exist')
+          }
 
-    return db.$transaction(async (tx) => {
-      const run = await tx.paymentRun.create({
-        data: {
-          runNumber,
-          status: 'draft',
-          totalMinor,
-          currencyCode: 'PHP',
-          notes: input.notes ?? undefined,
-          createdBy,
-          lines: {
-            create: invoices.map((invoice) => ({
-              invoiceId: invoice.id,
-              netMinor: netByInvoice.get(invoice.id) ?? 0,
-              status: 'planned',
-            })),
-          },
-        },
-        include: { lines: true },
-      })
-      return { run, netMinor: totalMinor }
-    })
+          // Only matched invoices are payable; anything already claimed by
+          // another run (unique line) or already paid is refused.
+          const fresh = await tx.invoice.findMany({
+            where: { id: { in: uniqueIds } },
+            select: { id: true, status: true, number: true },
+          })
+          for (const invoice of fresh) {
+            if (invoice.status !== 'matched') {
+              throw new BadRequestException(
+                `Invoice ${invoice.number} is ${invoice.status}, not payable`,
+              )
+            }
+          }
+          const claimed = await tx.paymentRunLine.findMany({
+            where: { invoiceId: { in: uniqueIds } },
+            select: { invoiceId: true },
+          })
+          if (claimed.length > 0) {
+            throw new ConflictException(
+              'One or more invoices are already in a payment run',
+            )
+          }
+
+          // Serialize the run-number mint with a transaction advisory lock so
+          // parallel creates on disjoint invoices cannot collide; the retry
+          // loop below is a belt-and-braces net for any residual race.
+          const runNumber = await this.documentNumber.next('RUN-', async () => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('payment_run_number'))`
+            const last = await tx.paymentRun.findFirst({
+              orderBy: { runNumber: 'desc' },
+            })
+            return last?.runNumber ?? null
+          })
+
+          const run = await tx.paymentRun.create({
+            data: {
+              runNumber,
+              status: 'draft',
+              totalMinor,
+              currencyCode: 'PHP',
+              notes: input.notes ?? undefined,
+              createdBy,
+              lines: {
+                create: invoices.map((invoice) => ({
+                  invoiceId: invoice.id,
+                  netMinor: netByInvoice.get(invoice.id) ?? 0,
+                  status: 'planned',
+                })),
+              },
+            },
+            include: { lines: true },
+          })
+          return { run, netMinor: totalMinor }
+        })
+      } catch (error) {
+        const target = (error as { meta?: { target?: unknown } }).meta?.target
+        const isRunNumberCollision =
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002' &&
+          Array.isArray(target) &&
+          target.includes('runNumber')
+        if (isRunNumberCollision && attempt < 3) continue
+        throw error
+      }
+    }
   }
 
   /** Maker/checker: the approver cannot be the creator (§16.4 separation). */

@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common'
+import { ConflictException, Injectable } from '@nestjs/common'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { db, Prisma } from '@workspace/db'
 
 /**
@@ -11,8 +12,20 @@ import { db, Prisma } from '@workspace/db'
  * a concurrent duplicate hits the unique constraint, re-reads, and returns the
  * winner's outcome. If the mutation fails the claim is removed so a retry can
  * re-run; on success the real result replaces the marker.
+ *
+ * A caller that observes an in-flight claim does not get the marker back: it
+ * waits (bounded by IDEMPOTENCY_WAIT_MS) for the winner to publish its
+ * outcome, and re-claims if the winner failed and released the key.
  */
 const INFLIGHT = { __inflight: true } as const
+
+function isInflight(resultJson: unknown): boolean {
+  return (
+    typeof resultJson === 'object' &&
+    resultJson !== null &&
+    (resultJson as { __inflight?: boolean }).__inflight === true
+  )
+}
 
 @Injectable()
 export class IdempotencyService {
@@ -20,10 +33,16 @@ export class IdempotencyService {
     const existing = await db.idempotencyKey.findUnique({ where: { key } })
 
     if (existing) {
-      // A concurrent attempt already owns this key; it may still be inflight.
-      return existing.resultJson as T
+      if (!isInflight(existing.resultJson)) {
+        return existing.resultJson as T
+      }
+      // A concurrent attempt owns this key and is still executing.
+      return this.waitForOutcome(key, () => this.claimAndRun(key, fn))
     }
+    return this.claimAndRun(key, fn)
+  }
 
+  private async claimAndRun<T>(key: string, fn: () => Promise<T>): Promise<T> {
     let claimId: string
     try {
       const claim = await db.idempotencyKey.create({
@@ -36,7 +55,12 @@ export class IdempotencyService {
         error.code === 'P2002'
       ) {
         const theirs = await db.idempotencyKey.findUnique({ where: { key } })
-        if (theirs) return theirs.resultJson as T
+        if (theirs) {
+          if (!isInflight(theirs.resultJson)) {
+            return theirs.resultJson as T
+          }
+          return this.waitForOutcome(key, () => this.claimAndRun(key, fn))
+        }
       }
       throw error
     }
@@ -54,5 +78,27 @@ export class IdempotencyService {
       await db.idempotencyKey.delete({ where: { id: claimId } }).catch(() => {})
       throw error
     }
+  }
+
+  /**
+   * The winner of the claim is still executing: poll for its outcome. If it
+   * failed and released the claim, the key vanishes — re-claim and run. Bounded
+   * by IDEMPOTENCY_WAIT_MS (default 3000ms) so callers never hang.
+   */
+  private async waitForOutcome<T>(
+    key: string,
+    rerun: () => Promise<T>,
+  ): Promise<T> {
+    const deadline =
+      Date.now() + Number(process.env.IDEMPOTENCY_WAIT_MS ?? 3000)
+    while (Date.now() < deadline) {
+      await sleep(50)
+      const row = await db.idempotencyKey.findUnique({ where: { key } })
+      if (!row) return rerun()
+      if (!isInflight(row.resultJson)) return row.resultJson as T
+    }
+    throw new ConflictException(
+      `Idempotency key ${key} is still in flight; retry shortly`,
+    )
   }
 }

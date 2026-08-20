@@ -57,7 +57,7 @@ export class ApprovalRouter {
       )
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'approval.decide',
         entity: 'Approval',
         entityId: input.id,

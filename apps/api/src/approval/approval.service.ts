@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
@@ -55,6 +56,25 @@ export class ApprovalService {
       if (!approval) throw new NotFoundException(`Approval ${id} not found`)
       if (approval.status !== 'pending') {
         throw new ConflictException('Approval already decided')
+      }
+
+      // §10 authorization: the deciding actor must be a human whose role is on
+      // the approval's route (or an admin). Unknown principals (e.g. the
+      // service-token agent) can never decide human gates.
+      const actor = await tx.user.findUnique({
+        where: { id: actorId },
+        select: { role: true },
+      })
+      if (!actor) {
+        throw new ForbiddenException(
+          `Principal ${actorId} is not authorized to decide approvals`,
+        )
+      }
+      const route = (approval.route ?? []) as string[]
+      if (actor.role !== 'admin' && !route.includes(actor.role)) {
+        throw new ForbiddenException(
+          `Role ${actor.role} is not on this approval's route (${route.join(', ') || 'admin only'})`,
+        )
       }
 
       const now = new Date()

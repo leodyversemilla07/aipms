@@ -1,6 +1,7 @@
 import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { IntakeService } from '../src/intake/intake.service'
+import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
  * @workspace intake service — §8.2 normalized ingestion queue against local
@@ -10,7 +11,7 @@ import { IntakeService } from '../src/intake/intake.service'
 const suffix = Math.random().toString(36).slice(2, 8)
 const intakeIds: string[] = []
 
-const intakeService = new IntakeService()
+const intakeService = new IntakeService(new EventEmitterService())
 
 afterAll(async () => {
   await db.intakeDocument.deleteMany({ where: { id: { in: intakeIds } } })

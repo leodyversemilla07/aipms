@@ -3,6 +3,10 @@ import { z } from 'zod';
 /**
  * Lightweight tRPC HTTP client for the agent runtime.
  * All agent tools call the API through this module.
+ *
+ * Wire format follows the tRPC v11 HTTP protocol:
+ *   - queries:   GET  /api/trpc/<router>.<procedure>?input=<JSON input>
+ *   - mutations: POST /api/trpc/<router>.<procedure> with the JSON input as body
  */
 
 export function getApiConfig() {
@@ -15,7 +19,7 @@ export function getApiConfig() {
 export async function trpcQuery<T = unknown>(router: string, procedure: string, input: Record<string, unknown>): Promise<T> {
   const { apiUrl, token } = getApiConfig()
   const url = new URL(`${apiUrl}/api/trpc/${router}.${procedure}`)
-  url.searchParams.set('input', JSON.stringify({ json: input }))
+  url.searchParams.set('input', JSON.stringify(input))
   const res = await fetch(url.toString(), {
     headers: { authorization: `Bearer ${token}` },
   })
@@ -37,7 +41,7 @@ export async function trpcMutate<T = unknown>(router: string, procedure: string,
       'content-type': 'application/json',
       authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ json: input }),
+    body: JSON.stringify(input),
   })
   if (!res.ok) {
     const text = await res.text()

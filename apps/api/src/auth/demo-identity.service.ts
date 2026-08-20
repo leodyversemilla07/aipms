@@ -1,19 +1,26 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common'
 import { auth } from '@workspace/auth'
+import { db } from '@workspace/db'
 
 /**
  * Dev-only maker/checker identities. §16.4 requires the payment-run approver
  * to differ from the maker; a single browser can't demo that with one
  * account. When AUTH_SEED_DEMO=1 (non-production), boot seeds two demo users
  * with known passwords so the web identity switcher can alternate. Seeding is
- * idempotent — an existing user is left untouched.
+ * idempotent — an existing user is left untouched (only its role is synced).
  */
 const DEMO_USERS = [
-  { name: 'Demo Maker', email: 'maker@demo.aipms', password: 'demo-maker-123' },
+  {
+    name: 'Demo Maker',
+    email: 'maker@demo.aipms',
+    password: 'demo-maker-123',
+    role: 'finance',
+  },
   {
     name: 'Demo Checker',
     email: 'checker@demo.aipms',
     password: 'demo-checker-123',
+    role: 'admin',
   },
 ] as const
 
@@ -47,6 +54,18 @@ export class DemoIdentityService implements OnModuleInit {
         }
       } catch {
         this.logger.log(`demo user ${user.email} already present (idempotent)`)
+      }
+      // §10: sync the demo role every boot so role gates stay demo-able.
+      const row = await db.user.findUnique({
+        where: { email: user.email },
+        select: { id: true },
+      })
+      if (row && row.id !== user.role) {
+        await db.user.update({
+          where: { id: row.id },
+          data: { role: user.role as 'finance' | 'admin' },
+        })
+        this.logger.log(`demo user ${user.email} role -> ${user.role}`)
       }
     }
   }

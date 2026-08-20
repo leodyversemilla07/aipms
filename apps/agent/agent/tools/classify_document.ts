@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineTool } from 'eve/tools';
-import { trpcMutate } from './trpc-client';
+import { trpcMutate } from '../lib/trpc-client';
 
 export default defineTool({
   description: 'Attaches classification to an intake document.',

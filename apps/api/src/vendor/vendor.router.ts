@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { requireRole } from '../trpc/authorize'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { VendorService } from './vendor.service'
@@ -75,7 +76,7 @@ export class VendorRouter {
       const vendor = await this.vendor.create(input)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'vendor.create',
         entity: 'Vendor',
         entityId: vendor.id,
@@ -97,7 +98,7 @@ export class VendorRouter {
       const vendor = await this.vendor.update(id, rest)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'vendor.update',
         entity: 'Vendor',
         entityId: id,
@@ -115,13 +116,19 @@ export class VendorRouter {
     @Input() input: z.infer<typeof verifyBankAccountInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(
+      ctx.user,
+      ctx.actorKind,
+      ['finance'],
+      'vendor.verifyBankAccount',
+    )
     const vendor = await this.vendor.verifyBankAccount(
       input.id,
       input.bankAccount,
     )
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'vendor.verifyBankAccount',
       entity: 'Vendor',
       entityId: vendor.id,

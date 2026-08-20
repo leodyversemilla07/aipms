@@ -5,6 +5,7 @@ import { InvoiceService } from '../src/invoice/invoice.service'
 import { PaymentRunService } from '../src/payment-run/payment-run.service'
 import { PolicyService } from '../src/policy/policy.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
+import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { VendorService } from '../src/vendor/vendor.service'
 
 /**
@@ -26,7 +27,7 @@ const created: Record<string, string[]> = {
 }
 
 const policyService = new PolicyService()
-const invoiceService = new InvoiceService(policyService)
+const invoiceService = new InvoiceService(policyService, new EventEmitterService())
 const vendorService = new VendorService()
 const paymentRuns = new PaymentRunService(new DocumentNumberService())
 

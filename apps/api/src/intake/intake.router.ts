@@ -72,7 +72,7 @@ export class IntakeRouter {
       const doc = await this.intake.ingest(input)
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'intake.ingest',
         entity: 'IntakeDocument',
         entityId: doc.id,
@@ -90,7 +90,7 @@ export class IntakeRouter {
     const doc = await this.intake.classify(input)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'intake.classify',
       entity: 'IntakeDocument',
       entityId: doc.id,
@@ -108,7 +108,7 @@ export class IntakeRouter {
     const doc = await this.intake.drop(input.id)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'intake.drop',
       entity: 'IntakeDocument',
       entityId: doc.id,
@@ -125,7 +125,7 @@ export class IntakeRouter {
     const doc = await this.intake.requeue(input.id)
     await this.audit.record({
       actorId: ctx.user.id,
-      actorKind: 'human',
+      actorKind: ctx.actorKind,
       action: 'intake.requeue',
       entity: 'IntakeDocument',
       entityId: doc.id,
@@ -168,7 +168,7 @@ export class IntakeRouter {
       )
       await this.audit.record({
         actorId: ctx.user.id,
-        actorKind: 'human',
+        actorKind: ctx.actorKind,
         action: 'intake.registerInvoice',
         entity: 'IntakeDocument',
         entityId: doc.id,
