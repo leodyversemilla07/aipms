@@ -25,6 +25,8 @@ import type { PaymentRunRouter } from "../payment-run/payment-run.router";
 import type { PolicyRouter } from "../policy/policy.router";
 import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.router";
 import type { RequisitionRouter } from "../requisition/requisition.router";
+import type { EventSubscriptionRouter } from "../shared/events/event-subscription.router";
+import type { SsoRouter } from "../sso/sso.router";
 import type { UsersRouter } from "../users/users.router";
 import type { VendorRouter } from "../vendor/vendor.router";
 
@@ -339,6 +341,59 @@ const appRouter = t.router({
     submit: publicProcedure
       .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["submit"]>>)
+    }),
+  events: t.router({
+    poll: publicProcedure
+      .input(z.object({
+  types: z.array(z.string()).min(1),
+  since: z.string().datetime().optional(),
+  limit: z.number().int().min(1).max(100).default(20),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>)
+    }),
+  sso: t.router({
+    listProviders: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SsoRouter["listProviders"]>>),
+    listScimConnections: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SsoRouter["listScimConnections"]>>),
+    registerProvider: publicProcedure
+      .input(z
+  .object({
+    providerId: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase slug'),
+    issuer: z.string().url(),
+    domain: z.string().min(3).max(253),
+    oidcConfig: z.object({
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+  discoveryEndpoint: z.string().url().optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+}).optional(),
+    samlConfig: z.object({
+  idpMetadata: z.string().min(1).optional(),
+  entryPoint: z.string().url().optional(),
+  cert: z.string().min(1).optional(),
+}).optional(),
+  })
+  .refine((v) => v.oidcConfig || v.samlConfig, {
+    message: 'oidcConfig or samlConfig is required',
+  }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SsoRouter["registerProvider"]>>),
+    deleteProvider: publicProcedure
+      .input(z.object({ providerId: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SsoRouter["deleteProvider"]>>),
+    generateScimToken: publicProcedure
+      .input(z.object({
+  providerId: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, 'lowercase slug'),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SsoRouter["generateScimToken"]>>)
     }),
   users: t.router({
     me: publicProcedure

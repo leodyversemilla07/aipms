@@ -36,6 +36,20 @@ export function SignInCard() {
     setBusy(false)
   }
 
+  /** §16.2 — enterprise SSO: route the email's domain to the org IdP. */
+  async function signInWithSso(event: React.FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    const res = await authClient.signIn.sso({
+      email,
+      callbackURL: "/",
+      errorCallbackURL: "/?sso=failed",
+    })
+    if (res.error) setError(res.error.message ?? "SSO sign-in failed")
+    setBusy(false)
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-sm flex-col gap-6">
       <div>
@@ -101,6 +115,26 @@ export function SignInCard() {
             ? "No account? Create one"
             : "Have an account? Sign in"}
         </button>
+      </form>
+
+      <form onSubmit={signInWithSso} className="flex flex-col gap-2">
+        <div className="flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-muted-foreground text-xs">or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={busy || !email}
+          title={
+            email
+              ? "Continue with your organization's identity provider"
+              : "Enter your work email first"
+          }
+        >
+          Sign in with SSO
+        </Button>
       </form>
     </div>
   )

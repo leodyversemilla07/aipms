@@ -15,6 +15,7 @@ import { PolicyModule } from './policy/policy.module'
 import { PurchaseOrderModule } from './purchase-order/purchase-order.module'
 import { RequisitionModule } from './requisition/requisition.module'
 import { EventsModule } from './shared/events/events.module'
+import { SsoModule } from './sso/sso.module'
 import { TrpcModule } from './trpc/trpc.module'
 import { UsersModule } from './users/users.module'
 import { VendorModule } from './vendor/vendor.module'
@@ -36,6 +37,7 @@ import { VendorModule } from './vendor/vendor.module'
     IntakeModule,
     InvoiceModule,
     PaymentRunModule,
+    SsoModule,
     EventsModule,
   ],
   controllers: [AppController],

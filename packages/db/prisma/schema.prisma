@@ -565,3 +565,32 @@ model Invoice {
   @@index([status])
   @@index([poId])
 }
+
+// ===== Phase 7 — enterprise identity (§16.2: OIDC/SAML/SCIM) =====
+
+// §16.2 "Identity is the org's": the instance's IdP connection, managed by
+// admins through the api (raw better-auth management paths are disabled).
+// oidcConfig/samlConfig are JSON blobs owned by @better-auth/sso.
+model SsoProvider {
+  id             String  @id
+  issuer         String
+  oidcConfig     String?
+  samlConfig     String?
+  userId         String
+  providerId     String  @unique
+  organizationId String?
+  domain         String
+
+  @@map("ssoProvider")
+}
+
+// SCIM provisioning connection (IdP → aipms user sync). The scimToken is the
+// bearer credential the IdP presents to /api/auth/scim/v2/*.
+model ScimProvider {
+  id             String  @id
+  providerId     String  @unique
+  scimToken      String  @unique
+  organizationId String?
+
+  @@map("scimProvider")
+}
