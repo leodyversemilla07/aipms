@@ -30,6 +30,7 @@ export function AuditViewer() {
   const [action, setAction] = useState("")
 
   const meta = useQuery(trpc.audit.meta.queryOptions())
+  const chain = useQuery(trpc.audit.chain.queryOptions())
   const feed = useQuery(
     trpc.audit.list.queryOptions({
       q,
@@ -86,6 +87,22 @@ export function AuditViewer() {
           ))}
         </select>
       </div>
+
+      {/* §16.3 — hash-chain integrity, recomputed live. */}
+      {chain.data ? (
+        chain.data.ok ? (
+          <p className="rounded-md bg-primary/10 px-3 py-2 text-primary text-xs">
+            Chain intact — {chain.data.checked} hashed entries verified
+            {chain.data.legacy > 0
+              ? ` · ${chain.data.legacy} legacy entries predate the chain`
+              : ""}
+          </p>
+        ) : (
+          <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
+            Chain broken at seq {chain.data.brokenAtSeq}: {chain.data.reason}
+          </p>
+        )
+      ) : null}
 
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">

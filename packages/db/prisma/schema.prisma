@@ -228,6 +228,10 @@ model Policy {
 // Append-only audit trail (§9 constraints). No update/delete path exposed.
 model AuditEntry {
   id        String   @id @default(cuid())
+  // §16.3 tamper-evident chain: seq fixes insertion order (advisory-lock
+  // serialized); each entry commits to the previous entry's hash. Rows from
+  // before the feature have null hashes and are skipped by verification.
+  seq       Int      @unique @default(autoincrement())
   runId     String?  // §7.1 links audit to agent execution
   actorId   String
   actorKind UserKind
@@ -238,6 +242,8 @@ model AuditEntry {
   before    Json?
   after     Json?
   at        DateTime @default(now())
+  prevHash  String?
+  entryHash String?  @unique
 
   @@index([entity, entityId])
   @@index([actorId])

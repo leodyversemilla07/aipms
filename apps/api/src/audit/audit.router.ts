@@ -29,4 +29,10 @@ export class AuditRouter {
   async meta() {
     return this.audit.meta()
   }
+
+  /** §16.3 — recompute the hash chain; any tampering since the first entry shows here. */
+  @Query()
+  async chain() {
+    return this.audit.verifyChain()
+  }
 }
