@@ -13,6 +13,7 @@ import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
+import { PoSigningService } from './po-signing.service'
 import { PurchaseOrderService } from './purchase-order.service'
 
 const idInput = z.object({ id: z.string().min(1) })
@@ -31,12 +32,15 @@ const cancellationInput = idInput.extend({
   reason: z.string().min(1).max(500),
 })
 
+const signInput = idInput
+
 @Router({ alias: 'purchaseOrder' })
 @UseMiddlewares(AuthMiddleware)
 export class PurchaseOrderRouter {
   constructor(
     @Inject(PurchaseOrderService)
     private readonly purchaseOrder: PurchaseOrderService,
+    @Inject(PoSigningService) private readonly signing: PoSigningService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
     @Inject(AuditService) private readonly audit: AuditService,
@@ -50,6 +54,34 @@ export class PurchaseOrderRouter {
   @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.purchaseOrder.detail(input.id)
+  }
+
+  /** §16.3 — verification status of the PO's qualified signature. */
+  @Query({ input: idInput })
+  async signature(@Input() input: z.infer<typeof idInput>) {
+    return this.signing.verify(input.id)
+  }
+
+  /**
+   * §16.4 — human countersignature with the instance certificate. Agents are
+   * refused by construction; every signature is audited.
+   */
+  @Mutation({ input: signInput })
+  async sign(
+    @Input() input: z.infer<typeof signInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    PoSigningService.assertHumanSigner(ctx)
+    const result = await this.signing.sign(input.id, ctx)
+    await this.audit.record({
+      actorId: ctx.user.id,
+      actorKind: ctx.actorKind,
+      action: 'purchaseOrder.sign',
+      entity: 'PurchaseOrder',
+      entityId: input.id,
+      after: result,
+    })
+    return result
   }
 
   @Mutation({ input: issueInput })

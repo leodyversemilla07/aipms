@@ -289,6 +289,12 @@ const appRouter = t.router({
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["detail"]>>),
+    signature: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["signature"]>>),
+    sign: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["sign"]>>),
     issue: publicProcedure
       .input(z.object({
   idempotencyKey: z.string().min(1),
@@ -371,6 +377,11 @@ const appRouter = t.router({
   clientSecret: z.string().min(1),
   discoveryEndpoint: z.string().url().optional(),
   scopes: z.array(z.string().min(1)).optional(),
+  // Air-gapped registrations: manual endpoints instead of discovery fetch.
+  skipDiscovery: z.boolean().optional(),
+  authorizationEndpoint: z.string().url().optional(),
+  tokenEndpoint: z.string().url().optional(),
+  jwksEndpoint: z.string().url().optional(),
 }).optional(),
     samlConfig: z.object({
   idpMetadata: z.string().min(1).optional(),

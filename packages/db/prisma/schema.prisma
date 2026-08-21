@@ -400,6 +400,7 @@ model PurchaseOrder {
   issuedBy      String
   issuedAt      DateTime?
   lines         PurchaseOrderLine[]
+  signatures    PoSignature[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -422,6 +423,25 @@ model PurchaseOrderLine {
   lineTotalMinor Int
 
   @@map("purchaseOrderLine")
+  @@index([poId])
+}
+
+// §16.3/§16.4 — qualified electronic signature on a PO (human + certificate;
+// agents prepare documents but never countersign). Detached signature over
+// the canonical PO snapshot; append-only so re-signing preserves history.
+model PoSignature {
+  id           String        @id @default(cuid())
+  poId         String
+  po           PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  keyId        String
+  algorithm    String
+  payloadHash  String
+  signature    String
+  publicKeyPem String
+  signerId     String
+  signedAt     DateTime      @default(now())
+
+  @@map("poSignature")
   @@index([poId])
 }
 
