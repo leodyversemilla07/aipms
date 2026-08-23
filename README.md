@@ -1,5 +1,7 @@
 # AIPMS — AI-Native Procurement Management System
 
+[![CI](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml)
+
 **Status:** Enterprise-ready (v0.4) | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
 
 ---

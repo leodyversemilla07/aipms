@@ -1,0 +1,80 @@
+# aipms CI — lint, typecheck, unit/integration tests against a real Postgres.
+#
+# Mirrors the local verification loop exactly (biome → turbo typecheck →
+# vitest suites) so a green branch locally stays green here. The database
+# is a service container; migrations and demo master data are applied
+# before the test phase.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aipms
+          POSTGRES_PASSWORD: aipms
+          POSTGRES_DB: aipms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aipms -d aipms"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
+      # Tests bootstrap Better Auth; a throwaway signing key suffices here.
+      BETTER_AUTH_SECRET: ci-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4 # version comes from packageManager
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Apply migrations
+        run: pnpm db:deploy
+
+      - name: Seed demo master data
+        run: pnpm db:seed
+
+      - name: Lint & format check (Biome)
+        run: pnpm check
+
+      - name: Typecheck (turbo)
+        run: pnpm typecheck
+
+      - name: API tests
+        run: pnpm --filter api test
+
+      - name: Agent tests
+        run: pnpm --filter agent test
+
+      - name: Tax engine tests
+        run: pnpm --filter tax test

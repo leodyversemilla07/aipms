@@ -10,6 +10,7 @@
     "build": "eve build",
     "dev": "eve dev",
     "start": "eve start",
+    "test": "vitest run",
     "typecheck": "tsc"
   },
   "dependencies": {
