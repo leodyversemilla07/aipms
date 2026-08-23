@@ -33,6 +33,8 @@ describe('Requisition → PO automation', () => {
     const vendor = await db.vendor.findFirst({ where: { status: 'active' } })
     expect(budget).toBeTruthy()
     expect(vendor).toBeTruthy()
+    if (!budget) throw new Error('budget missing')
+    if (!vendor) throw new Error('vendor missing')
 
     const policyService = new PolicyService()
     const events = new EventEmitterService()
@@ -44,7 +46,7 @@ describe('Requisition → PO automation', () => {
     const req = await requisitionService.create({
       requestedBy: 'user-1',
       costCenter: 'IT-PROD',
-      budgetId: budget!.id,
+      budgetId: budget.id,
       lines: [{ description: 'Test item', quantity: 1, unitPriceMinor: 1000 }],
     })
 
@@ -54,16 +56,18 @@ describe('Requisition → PO automation', () => {
 
     // Simulate event relay
     relay = new EventRelayService()
-    // @ts-expect-error
     const agentService = {
       processPending: async () => ({ documents: 0, succeeded: 0, failed: [] }),
     }
-    wake = new AgentWakeService(relay, agentService as any, poService)
+    wake = new AgentWakeService(
+      relay,
+      agentService as unknown as AgentService,
+      poService,
+    )
     wake.onModuleInit()
 
     // Poll outbox - should spawn run and issue PO
-    // @ts-expect-error
-    await (relay as any).poll()
+    await (relay as unknown as { poll(): Promise<void> }).poll()
 
     const runs = await db.agentRun.findMany({
       where: { agentId: 'operator', skills: { has: 'requisition-to-po' } },
@@ -75,7 +79,7 @@ describe('Requisition → PO automation', () => {
       where: { requisitionId: req.id },
     })
     expect(po).toBeTruthy()
-    expect(po?.vendorId).toBe(vendor!.id)
+    expect(po?.vendorId).toBe(vendor.id)
     expect(po?.status).toBe('issued')
   })
 })

@@ -35,8 +35,8 @@ describe('AgentWakeService', () => {
     })
 
     // Manually trigger poll
-    // @ts-expect-error private
-    await (relay as any).poll()
+    // Private, but stable enough for tests; cast through unknown.
+    await (relay as unknown as { poll(): Promise<void> }).poll()
 
     const runs = await db.agentRun.findMany({ where: { agentId } })
     expect(runs.length).toBeGreaterThan(0)

@@ -1,10 +1,29 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
-import { db } from '@workspace/db'
+import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
 import { EventRelayService } from '../shared/events/event-relay.service'
 import { AgentService } from './agent.service'
 
+/** Shape the relay hands to handlers (§13 outbox rows). */
+interface RelayedEvent {
+  id: string
+  type: string
+  entityType: string
+  entityId: string
+  payload: Record<string, unknown>
+  createdAt: Date
+}
+
+/** PreferredVendor policy config (§11 — config as data). */
+interface PreferredVendorConfig {
+  vendorId?: string
+  vendor_id?: string
+}
+
+/** Cast an arbitrary plain value to a writable Prisma JSON field. */
+const asJson = (value: unknown): Prisma.InputJsonObject =>
+  value as Prisma.InputJsonObject
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
  * for events that require automated handling. This is a thin orchestrator
@@ -35,7 +54,7 @@ export class AgentWakeService implements OnModuleInit {
     })
   }
 
-  private async handleRequisitionApproved(event: any) {
+  private async handleRequisitionApproved(event: RelayedEvent) {
     const run = await db.agentRun.create({
       data: {
         agentId: 'operator',
@@ -91,22 +110,22 @@ export class AgentWakeService implements OnModuleInit {
             status: 'succeeded',
             finishedAt: new Date(),
             meta: {
-              ...(run.meta as any),
+              ...(run.meta as Prisma.InputJsonObject),
               skipped: decision.outcome,
               totalMinor,
-              decision,
+              decision: asJson(decision),
             },
           },
         })
         return
       }
       // Policy-driven vendor selection: preferredVendor policy takes precedence
-      let vendor: any = null
+      let vendor: Vendor | null = null
       const prefPolicy = await db.policy.findFirst({
         where: { kind: 'preferredVendor', enabled: true },
       })
       if (prefPolicy?.config) {
-        const cfg = prefPolicy.config as any
+        const cfg = prefPolicy.config as PreferredVendorConfig
         const vendorId = cfg.vendorId ?? cfg.vendor_id
         if (vendorId) {
           vendor = await db.vendor.findUnique({ where: { id: vendorId } })
@@ -131,7 +150,7 @@ export class AgentWakeService implements OnModuleInit {
         data: {
           status: 'succeeded',
           finishedAt: new Date(),
-          meta: { ...(run.meta as any), result },
+          meta: { ...(run.meta as Prisma.InputJsonObject), result: asJson(result) },
         },
       })
     } catch (err) {
@@ -141,13 +160,20 @@ export class AgentWakeService implements OnModuleInit {
         data: {
           status: 'failed',
           finishedAt: new Date(),
-          meta: { ...(run.meta as any), error: (err as Error).message },
+          meta: {
+            ...(run.meta as Prisma.InputJsonObject),
+            error: (err as Error).message,
+          },
         },
       })
     }
   }
 
-  private async spawnRun(agentId: string, skills: string[], event: any) {
+  private async spawnRun(
+    agentId: string,
+    skills: string[],
+    event: RelayedEvent,
+  ) {
     const run = await db.agentRun.create({
       data: {
         agentId,
@@ -172,7 +198,7 @@ export class AgentWakeService implements OnModuleInit {
           data: {
             status: 'succeeded',
             finishedAt: new Date(),
-            meta: { ...(run.meta as any), result },
+            meta: { ...(run.meta as Prisma.InputJsonObject), result: asJson(result) },
           },
         })
         return
@@ -188,7 +214,10 @@ export class AgentWakeService implements OnModuleInit {
         data: {
           status: 'failed',
           finishedAt: new Date(),
-          meta: { ...(run.meta as any), error: (err as Error).message },
+          meta: {
+            ...(run.meta as Prisma.InputJsonObject),
+            error: (err as Error).message,
+          },
         },
       })
     }

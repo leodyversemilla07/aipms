@@ -22,7 +22,7 @@ export class EventEmitterService {
         type: event.type,
         entityType: event.entityType,
         entityId: event.entityId,
-        payload: event.payload as any,
+        payload: event.payload as Prisma.InputJsonObject,
       },
     })
   }

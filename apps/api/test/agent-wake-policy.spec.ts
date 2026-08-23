@@ -64,7 +64,7 @@ describe('AgentWakeService policy-driven vendor selection', () => {
     const req = await requisitionService.create({
       requestedBy: 'user-1',
       costCenter: 'IT-PROD',
-      budgetId: budget!.id,
+      budgetId: budget.id,
       lines: [{ description: 'Test', quantity: 1, unitPriceMinor: 500 }],
     })
     await requisitionService.submit(req.id)
@@ -73,11 +73,14 @@ describe('AgentWakeService policy-driven vendor selection', () => {
     const agentService = {
       processPending: async () => ({ documents: 0, succeeded: 0, failed: [] }),
     }
-    wake = new AgentWakeService(relay, agentService as any, poService)
+    wake = new AgentWakeService(
+      relay,
+      agentService as unknown as AgentService,
+      poService,
+    )
     wake.onModuleInit()
 
-    // @ts-expect-error
-    await (relay as any).poll()
+    await (relay as unknown as { poll(): Promise<void> }).poll()
 
     const po = await db.purchaseOrder.findFirst({
       where: { requisitionId: req.id },
