@@ -122,8 +122,9 @@ aipms/
 | `payment-run` | list, create, approve, execute | Payment workflow |
 | `messaging` | submit, approve, reject, list, detail | §8.3 vendor messaging relay (tiered sends) |
 | `receipt` | record, cancel, list, detail | §8.1 goods receipts (3-way match leg) |
+| `bir` | report2307, report1601e | §8.4 BIR statutory withholding reports |
 
-**Total:** 53 procedures across 13 routers
+**Total:** 74 procedures across 18 routers
 
 ---
 

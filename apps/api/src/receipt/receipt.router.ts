@@ -15,7 +15,9 @@ import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { ReceiptService } from './receipt.service'
 
-const receiptLineInput = z.object({
+// Exported so nestjs-trpc's generator can import it into the generated
+// router surface (a local const is emitted as a dangling reference).
+export const receiptLineInput = z.object({
   poLineId: z.string().min(1).optional(),
   lineNo: z.number().int().min(1).optional(),
   sku: z.string().min(1).max(60).optional(),

@@ -14,16 +14,20 @@ import { z } from "zod";
 const t = initTRPC.create();
 const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
+import { receiptLineInput } from "../receipt/receipt.router";
 import type { AgentRouter } from "../agent/agent.router";
 import type { ApprovalRouter } from "../approval/approval.router";
 import type { AuditRouter } from "../audit/audit.router";
+import type { BirRouter } from "../bir/bir.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
 import type { IntakeRouter } from "../intake/intake.router";
 import type { InvoiceRouter } from "../invoice/invoice.router";
+import type { MessagingRouter } from "../messaging/messaging.router";
 import type { PaymentRunRouter } from "../payment-run/payment-run.router";
 import type { PolicyRouter } from "../policy/policy.router";
 import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.router";
+import type { ReceiptRouter } from "../receipt/receipt.router";
 import type { RequisitionRouter } from "../requisition/requisition.router";
 import type { EventSubscriptionRouter } from "../shared/events/event-subscription.router";
 import type { SsoRouter } from "../sso/sso.router";
@@ -70,6 +74,21 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["meta"]>>),
     chain: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["chain"]>>)
+    }),
+  bir: t.router({
+    certificate: publicProcedure
+      .input(z.object({
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+}).extend({ vendorId: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BirRouter["certificate"]>>),
+    remittance: publicProcedure
+      .input(z.object({
+  period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BirRouter["remittance"]>>),
+    periods: publicProcedure
+      .input(z.object({}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BirRouter["periods"]>>)
     }),
   budget: t.router({
     list: publicProcedure
@@ -212,6 +231,45 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
     }),
+  messaging: t.router({
+    list: publicProcedure
+      .input(listInput.extend({
+  status: z
+    .enum(['queued', 'approved', 'rejected', 'sent', 'failed'])
+    .optional(),
+  tier: z.enum(['auto', 'gated']).optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["list"]>>),
+    detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["detail"]>>),
+    submit: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  recipient: z.string().email(),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(20_000),
+  /** Transactional template id; omit/unknown ⇒ gated tier (§8.3). */
+  templateId: z.string().min(1).max(60).optional(),
+  threadId: z.string().min(1).optional(),
+  /** §7.1 agent execution tag when submitted by an agent. */
+  runId: z.string().min(1).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["submit"]>>),
+    approve: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  reason: z.string().min(1).max(500).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["approve"]>>),
+    reject: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  reason: z.string().min(1).max(500).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["reject"]>>)
+    }),
   paymentRun: t.router({
     list: publicProcedure
       .input(listInput.extend({
@@ -314,6 +372,30 @@ const appRouter = t.router({
   reason: z.string().min(1).max(500),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["requestCancellation"]>>)
+    }),
+  receipt: t.router({
+    list: publicProcedure
+      .input(listInput.extend({
+  status: z.enum(['recorded', 'cancelled']).optional(),
+  poId: z.string().min(1).optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["list"]>>),
+    detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["detail"]>>),
+    record: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  poId: z.string().min(1),
+  lines: z.array(receiptLineInput).min(1),
+  note: z.string().max(500).optional(),
+  /** §7.1 agent execution tag when recorded by an agent. */
+  runId: z.string().min(1).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["record"]>>),
+    cancel: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["cancel"]>>)
     }),
   requisition: t.router({
     list: publicProcedure

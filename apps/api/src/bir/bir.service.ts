@@ -29,7 +29,8 @@ export function assertPeriod(period: string): void {
 }
 
 function periodRange(period: string): { gte: Date; lt: Date } {
-  const [y, m] = period
+  // `assertPeriod` guarantees YYYY-MM; narrow for noUncheckedIndexedAccess.
+  const [y = 0, m = 1] = period
     .split('-')
     .map((part) => Number.parseInt(part, 10))
   return {
@@ -110,7 +111,12 @@ export class BirService {
       ...inv,
       vendor:
         byId.get(inv.vendorId) ??
-        ({ id: inv.vendorId, name: '(deleted)', taxId: null, email: null } as const),
+        ({
+          id: inv.vendorId,
+          name: '(deleted)',
+          taxId: null,
+          email: null,
+        } as const),
     }))
   }
 
@@ -126,7 +132,8 @@ export class BirService {
       where: { id: input.vendorId },
       select: { id: true, name: true, taxId: true, email: true },
     })
-    if (!vendor) throw new NotFoundException(`Vendor ${input.vendorId} not found`)
+    if (!vendor)
+      throw new NotFoundException(`Vendor ${input.vendorId} not found`)
 
     const invoices = await this.withheldInPeriod(vendor.id, input.period)
     const lines: Bir2307Line[] = invoices.map((inv) => ({
@@ -190,9 +197,13 @@ export class BirService {
   }
 
   /** Periods that have withholding data (drives UI period pickers). */
-  async list(
-    input: Partial<ListInput> = {},
-  ): Promise<ListResult<{ period: string; taxWithheldMinor: number; invoiceCount: number }>> {
+  async list(input: Partial<ListInput> = {}): Promise<
+    ListResult<{
+      period: string
+      taxWithheldMinor: number
+      invoiceCount: number
+    }>
+  > {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
@@ -201,15 +212,24 @@ export class BirService {
       where: { ewtMinor: { gt: 0 } },
       select: { receivedAt: true, ewtMinor: true },
     })
-    const acc = new Map<string, { period: string; taxWithheldMinor: number; invoiceCount: number }>()
+    const acc = new Map<
+      string,
+      { period: string; taxWithheldMinor: number; invoiceCount: number }
+    >()
     for (const r of rows) {
       const period = r.receivedAt.toISOString().slice(0, 7)
-      const row = acc.get(period) ?? { period, taxWithheldMinor: 0, invoiceCount: 0 }
+      const row = acc.get(period) ?? {
+        period,
+        taxWithheldMinor: 0,
+        invoiceCount: 0,
+      }
       row.taxWithheldMinor += r.ewtMinor
       row.invoiceCount += 1
       acc.set(period, row)
     }
-    const sorted = [...acc.values()].sort((a, b) => b.period.localeCompare(a.period))
+    const sorted = [...acc.values()].sort((a, b) =>
+      b.period.localeCompare(a.period),
+    )
     return {
       rows: sorted.slice(skip, skip + take),
       total: sorted.length,
