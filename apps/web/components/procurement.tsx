@@ -2,8 +2,10 @@
 
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
+import { MessagingQueue } from "@/components/messaging-queue"
 import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
+import { Receipts } from "@/components/procurement/receipts"
 import { SignInCard } from "@/components/sign-in"
 
 function ProcurementBody() {
@@ -18,7 +20,7 @@ function ProcurementBody() {
             Procurement desk
           </h1>
           <p className="text-muted-foreground text-sm">
-            {user?.email} · sourcing & purchase orders
+            {user?.email} · sourcing, receipts & vendor messaging
           </p>
         </div>
         <nav className="flex items-center gap-4 text-sm">
@@ -46,6 +48,8 @@ function ProcurementBody() {
 
       <IssuePo />
       <PoList />
+      <Receipts />
+      <MessagingQueue />
     </div>
   )
 }
