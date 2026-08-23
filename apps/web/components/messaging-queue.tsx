@@ -182,7 +182,7 @@ function MessageItem({
       </div>
 
       {expanded || rejecting ? (
-        <pre className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs whitespace-pre-wrap">
+        <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 text-xs">
           {message.body}
         </pre>
       ) : null}

@@ -183,10 +183,12 @@ export function PoliciesPanel() {
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
+  // The wrapped control is a composite (Select), not a native input — a
+  // plain group keeps the a11y contract honest.
   return (
-    <label className="flex flex-col gap-1 text-sm">
+    <div className="flex flex-col gap-1 text-sm">
       <span className="text-muted-foreground text-xs">{label}</span>
       {children}
-    </label>
+    </div>
   )
 }

@@ -18,8 +18,8 @@ const DEMO = [
 ] as const
 
 export function DemoSwitcher() {
-  if (process.env.NODE_ENV === "production") return null
   const { data: session } = authClient.useSession()
+  if (process.env.NODE_ENV === "production") return null
 
   async function switchTo(email: string, password: string) {
     const res = await authClient.signIn.email({ email, password })

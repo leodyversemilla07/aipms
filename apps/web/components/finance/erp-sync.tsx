@@ -11,7 +11,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@workspace/ui/components/dialog"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { useState } from "react"
@@ -238,11 +237,7 @@ export function ErpSync() {
             {manifest.data?.csv ?? ""}
           </pre>
           <DialogFooter>
-            <DialogClose
-              render={
-                <Button variant="outline">Close</Button>
-              }
-            />
+            <DialogClose render={<Button variant="outline">Close</Button>} />
           </DialogFooter>
         </DialogContent>
       </Dialog>

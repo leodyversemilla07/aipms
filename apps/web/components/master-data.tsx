@@ -1,7 +1,6 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
-import { Badge } from "@workspace/ui/components/badge"
 import {
   Tabs,
   TabsContent,
