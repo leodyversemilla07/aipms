@@ -592,6 +592,49 @@ model Invoice {
   @@index([poId])
 }
 
+// §8.1 receipt of goods/services against PO lines — the middle leg of the
+// three-way match (PO ↔ receipt ↔ invoice).
+enum ReceiptStatus {
+  recorded
+  cancelled
+}
+
+model Receipt {
+  id            String        @id @default(cuid())
+  receiptNumber String        @unique
+  poId          String
+  vendorId      String
+  status        ReceiptStatus @default(recorded)
+  note          String?
+  recordedBy    String
+  recordedAt    DateTime      @default(now())
+  lines         ReceiptLine[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@map("receipt")
+  @@index([poId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+// One received line. `lineNo` mirrors the PO line number when the delivery is
+// against known PO lines; free-text deliveries may omit the reference.
+model ReceiptLine {
+  id          String  @id @default(cuid())
+  receiptId   String
+  receipt     Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  poLineId    String? // PurchaseOrderLine.id when matched to a PO line
+  lineNo      Int?
+  sku         String?
+  description String
+  quantity    Int
+  unit        String  @default("ea")
+
+  @@map("receiptLine")
+  @@index([receiptId])
+}
+
 // ===== Phase 7 — enterprise identity (§16.2: OIDC/SAML/SCIM) =====
 
 // §16.2 "Identity is the org's": the instance's IdP connection, managed by

@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PaymentRunService } from '../src/payment-run/payment-run.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { ReceiptService } from '../src/receipt/receipt.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { VendorService } from '../src/vendor/vendor.service'
@@ -27,13 +28,23 @@ const created: Record<string, string[]> = {
 }
 
 const policyService = new PolicyService()
-const invoiceService = new InvoiceService(policyService, new EventEmitterService())
+const invoiceService = new InvoiceService(
+  policyService,
+  new EventEmitterService(),
+)
+
+const receipts = new ReceiptService(
+  new DocumentNumberService(),
+  new EventEmitterService(),
+  invoiceService,
+)
 const vendorService = new VendorService()
 const paymentRuns = new PaymentRunService(new DocumentNumberService())
 
 afterAll(async () => {
   await db.paymentRun.deleteMany({ where: { id: { in: created.run } } })
   await db.invoice.deleteMany({ where: { id: { in: created.invoice } } })
+  await db.receipt.deleteMany({ where: { poId: { in: created.po } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
@@ -71,6 +82,17 @@ async function makePo(vendorId: string, totalMinor: number, tag: string) {
       status: 'issued',
       totalMinor,
       issuedBy: actorA,
+      lines: {
+        create: [
+          {
+            lineNo: 1,
+            description: 'goods',
+            quantity: 1,
+            unitPriceMinor: totalMinor,
+            lineTotalMinor: totalMinor,
+          },
+        ],
+      },
     },
   })
   created.po.push(po.id)
@@ -91,7 +113,13 @@ async function makeMatchedInvoice(
   tag: string,
 ) {
   const gross = lines.reduce((sum, line) => sum + line.amountMinor, 0)
-  await makePo(vendorId, gross, tag)
+  const po = await makePo(vendorId, gross, tag)
+  // §8.1 true three-way match: goods must arrive before an invoice matches.
+  await receipts.record({
+    poId: po.id,
+    lines: [{ lineNo: 1, description: 'goods', quantity: 1 }],
+    recordedBy: actorA,
+  })
   const invoice = await invoiceService.register({
     vendorId,
     number: `INV-P8-${tag}-${suffix}`,

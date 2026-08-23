@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PaymentRunService } from '../src/payment-run/payment-run.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { ReceiptService } from '../src/receipt/receipt.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { VendorService } from '../src/vendor/vendor.service'
@@ -32,11 +33,17 @@ const invoiceService = new InvoiceService(
   new EventEmitterService(),
 )
 const vendorService = new VendorService()
+const receipts = new ReceiptService(
+  new DocumentNumberService(),
+  new EventEmitterService(),
+  invoiceService,
+)
 const paymentRuns = new PaymentRunService(new DocumentNumberService())
 
 afterAll(async () => {
   await db.paymentRun.deleteMany({ where: { id: { in: created.run } } })
   await db.invoice.deleteMany({ where: { id: { in: created.invoice } } })
+  await db.receipt.deleteMany({ where: { poId: { in: created.po } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
@@ -71,9 +78,26 @@ async function makeMatchedInvoice(vendorId: string, tag: string) {
       status: 'issued',
       totalMinor: 100_000,
       issuedBy: actor,
+      lines: {
+        create: [
+          {
+            lineNo: 1,
+            description: 'goods',
+            quantity: 1,
+            unitPriceMinor: 100_000,
+            lineTotalMinor: 100_000,
+          },
+        ],
+      },
     },
   })
   created.po.push(po.id)
+  // §8.1 true three-way match: goods must arrive before an invoice matches.
+  await receipts.record({
+    poId: po.id,
+    lines: [{ lineNo: 1, description: 'goods', quantity: 1 }],
+    recordedBy: actor,
+  })
   const invoice = await invoiceService.register({
     vendorId,
     number: `INV-RACE-${tag}-${suffix}`,

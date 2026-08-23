@@ -2,6 +2,8 @@ import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { ReceiptService } from '../src/receipt/receipt.service'
+import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
@@ -17,13 +19,24 @@ const created: Record<string, string[]> = {
   po: [],
   vendor: [],
   policy: [],
+  receipt: [],
 }
 
 const policyService = new PolicyService()
-const invoiceService = new InvoiceService(policyService, new EventEmitterService())
+const invoiceService = new InvoiceService(
+  policyService,
+  new EventEmitterService(),
+)
+
+const receiptService = new ReceiptService(
+  new DocumentNumberService(),
+  new EventEmitterService(),
+  invoiceService,
+)
 
 afterAll(async () => {
   await db.invoice.deleteMany({ where: { id: { in: created.invoice } } })
+  await db.receipt.deleteMany({ where: { id: { in: created.receipt } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
@@ -80,9 +93,29 @@ describe('Deterministic tax (§8.4)', () => {
 })
 
 describe('Three-way match + invoice registration', () => {
-  it('registers a matched invoice with tax fields and status matched', async () => {
+  it('registers a clean invoice as awaiting_receipt until goods arrive, then matches', async () => {
     const vendor = await makeVendor()
-    const po = await makePo(vendor.id, 100_000, 'ok')
+    const po = await db.purchaseOrder.create({
+      data: {
+        poNumber: `PO-INV-3W-${suffix}`,
+        vendorId: vendor.id,
+        status: 'issued',
+        totalMinor: 100_000,
+        issuedBy: actorId,
+        lines: {
+          create: [
+            {
+              lineNo: 1,
+              description: 'A4 bond paper',
+              quantity: 10,
+              unitPriceMinor: 10_000,
+              lineTotalMinor: 100_000,
+            },
+          ],
+        },
+      },
+    })
+    created.po.push(po.id)
 
     const { invoice, match } = await invoiceService.register({
       vendorId: vendor.id,
@@ -95,9 +128,29 @@ describe('Three-way match + invoice registration', () => {
     expect((invoice as { amountMinor: number }).amountMinor).toBe(100_000)
     expect((invoice as { vatMinor: number }).vatMinor).toBe(12_000)
     expect((invoice as { ewtMinor: number }).ewtMinor).toBe(1_000)
-    expect((invoice as { status: string }).status).toBe('matched')
-    expect(match?.outcome).toBe('matched')
-    expect(match?.varianceMinor).toBe(0)
+    // Clean against the PO but no goods booked yet — parked, not an exception.
+    expect((invoice as { status: string }).status).toBe('received')
+    expect(match?.outcome).toBe('awaiting_receipt')
+
+    // §8.1 goods arrive — the receipt re-matches the parked invoice.
+    const { receipt, rematch } = await receiptService.record({
+      poId: po.id,
+      lines: [{ lineNo: 1, description: 'A4 bond paper', quantity: 10 }],
+      recordedBy: actorId,
+    })
+    created.receipt.push((receipt as { id: string }).id)
+    expect(rematch.matched).toBe(1)
+
+    const after = await db.invoice.findUnique({
+      where: { id: (invoice as { id: string }).id },
+    })
+    expect(after?.status).toBe('matched')
+    const stored = after?.matchResult as {
+      outcome: string
+      receivedValueMinor: number
+    }
+    expect(stored.outcome).toBe('matched')
+    expect(stored.receivedValueMinor).toBe(100_000)
   })
 
   it('flags an amount variance beyond tolerance as an exception', async () => {

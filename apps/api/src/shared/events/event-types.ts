@@ -13,6 +13,8 @@ export const DomainEventTypes = {
   'invoice.received': 'invoice.received',
   'invoice.matched': 'invoice.matched',
   'invoice.exception': 'invoice.exception',
+  // §8.1 — receipts (three-way match leg)
+  'receipt.recorded': 'receipt.recorded',
   // Phase 5 — payment
   'paymentRun.approved': 'paymentRun.approved',
   'paymentRun.executed': 'paymentRun.executed',
