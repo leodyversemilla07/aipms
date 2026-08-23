@@ -4,6 +4,7 @@ import { auth, type Session } from '@workspace/auth'
 import { fromNodeHeaders } from 'better-auth/node'
 import type { ContextOptions, TRPCContext } from 'nestjs-trpc'
 import type { Request } from 'express'
+import { resolveAgentScopes } from './agent-capabilities'
 import type { BaseTrpcContext } from './context.types'
 
 /**
@@ -61,7 +62,7 @@ function resolveServiceTokenSession(req: Request | undefined): Session | null {
       image: null,
       kind: 'agent',
       role: 'user',
-      scopes: [],
+      scopes: resolveAgentScopes(),
       quotas: null,
       createdAt: now,
       updatedAt: now,

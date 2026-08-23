@@ -7,6 +7,7 @@ import type {
 } from 'nestjs-trpc'
 import type { SessionUser } from '@workspace/auth'
 import { db, type UserKind, type UserRole } from '@workspace/db'
+import { assertAgentCapability } from '../agent-capabilities'
 import type { AuthedTrpcContext, BaseTrpcContext } from '../context.types'
 
 @Injectable()
@@ -23,8 +24,9 @@ export class AuthMiddleware implements TRPCMiddleware {
       (user as SessionUser & { kind?: UserKind }).kind ?? 'human'
     // §10: load the human's role for authorization gates (least privilege if
     // the DB row is missing). Agent principals carry no role — their surface
-    // is governed by scopes, and role checks bypass them via actorKind.
+    // is governed by scopes (§7.2), enforced below.
     let role: UserRole | undefined
+    let scopes: string[] = []
     if (kind === 'human') {
       role =
         (
@@ -33,6 +35,11 @@ export class AuthMiddleware implements TRPCMiddleware {
             select: { role: true },
           })
         )?.role ?? 'user'
+    } else {
+      const raw = (user as SessionUser & { scopes?: unknown }).scopes
+      if (Array.isArray(raw)) scopes = raw.filter((s): s is string => typeof s === 'string')
+      // §7.2 default-deny: the capability map decides what agents may call.
+      assertAgentCapability(opts.path, scopes)
     }
 
     const nextCtx: AuthedTrpcContext = {
