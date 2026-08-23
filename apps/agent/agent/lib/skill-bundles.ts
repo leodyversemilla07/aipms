@@ -1,231 +1,87 @@
-import { defineSkill } from "eve/skills";
-import { z } from "zod";
+import { defineSkill } from "eve/skills"
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   SOURCING SKILL
-   — Browse catalog, request vendor quotes, list vendors.
-   Used by the sourcing agent to discover suppliers and raise quote requests.
+   SKILL BUNDLES
+
+   eve ≥0.31 skills are instruction packages: identity is path-derived,
+   input contracts live on each tool's `inputSchema`, and model-facing
+   rendering lives on each tool's `toModelOutput`. These bundles carry the
+   procedural guidance for each specialist role.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 export const sourcingSkill = defineSkill({
-  name: "sourcing",
   description:
     "Skills for discovering vendors and catalog items, and raising quote requests.",
-  toolNames: [
-    "catalog/list",
-    "vendor/list",
-    "messaging/submit",
-  ],
+  markdown: `
+# Sourcing
 
-  /* ── Tool configurations ────────────────────────────────────────────── */
-  tools: {
-    "catalog/list": {
-      input: z.object({
-        query: z.string().optional(),
-        category: z.string().optional(),
-        limit: z.number().int().min(1).max(100).default(50),
-      }),
-    },
-    "vendor/list": {
-      input: z.object({
-        query: z.string().optional(),
-        status: z.enum(["qualified", "pending", "blacklisted"]).optional(),
-        limit: z.number().int().min(1).max(200).default(50),
-      }),
-    },
-    "messaging/submit": {
-      input: z.object({
-        vendorId: z.string(),
-        catalogItemSku: z.string(),
-        quantity: z.number().int().min(1).default(1),
-        notes: z.string().optional(),
-        tier: z.enum(["auto", "gated"]).default("auto"),
-      }),
-    },
-  },
+Discover suppliers and raise quote requests.
 
-  /* ── Default model shapes (what the model sees on each tool call) ──────── */
-  modelOutput: {
-    "catalog/list": {
-      type: "text",
-      parse: (output: any) => {
-        if (!output.ok) return `Catalog list failed: ${output.error}`;
-        const items = output.items ?? [];
-        const summary = items
-          .slice(0, 5)
-          .map(
-            (i: any) =>
-              `- ${i.sku}: ${i.name} (${i.category ?? "—"}) — ₱${
-                i.defaultPriceMinor != null
-                  ? (i.defaultPriceMinor / 100).toFixed(2)
-                  : "no price"
-              }`,
-          )
-          .join("\n");
-        return `Found ${items.length} catalog item(s)${summary ? `\n${summary}` : ""}`;
-      },
-    },
-    "vendor/list": {
-      type: "text",
-      parse: (output: any) => {
-        if (!output.ok) return `Vendor list failed: ${output.error}`;
-        const vendors = output.vendors ?? [];
-        const summary = vendors
-          .slice(0, 5)
-          .map(
-            (v: any) =>
-              `- ${v.name} (${v.status}) — ${v.email ?? "no email"}`,
-          )
-          .join("\n");
-        return `Found ${vendors.length} vendor(s)${summary ? `\n${summary}` : ""}`;
-      },
-    },
-    "messaging/submit": {
-      type: "text",
-      parse: (output: any) => {
-        if (!output.ok) return `Quote request failed: ${output.error}`;
-        const status = output.status === "approved" ? "submitted" : "pending";
-        return `Quote request ${status} (${output.requestId ?? "N/A"})`;
-      },
-    },
-  },
-});
+## Workflow
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   OPS SKILL
-   — Requisition → PO → invoice match basics.
-   Used by the ops agent to create requests, issue POs, and run 3-way matches.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+1. **Browse the catalog** (\`catalog_list\`) to find items matching the
+   requirement — filter by query or category; prices are minor units.
+2. **List vendors** (\`vendor_list\`) filtered by status; only approach
+   vendors in good standing.
+3. **Request a quote** (\`request_quote\`) through the vendor messaging
+   relay — recipients must be verified contacts on the vendor master.
+   Low-risk RFQ templates auto-send; anything else waits for human
+   approval.
+
+## Constraints
+
+- Never message a raw address outside the relay.
+- Report money as integer minor units; never convert silently.
+`,
+})
 
 export const opsSkill = defineSkill({
-  name: "ops",
   description:
     "Skills for creating requisitions, issuing purchase orders, and running invoice matches.",
-  toolNames: [
-    "requisition/create",
-    "po/issue",
-    "invoice/match",
-  ],
+  markdown: `
+# Operations
 
-  tools: {
-    "requisition/create": {
-      input: z.object({
-        idempotencyKey: z.string(),
-        name: z.string(),
-        description: z.string().optional(),
-        budgetId: z.string().optional(),
-        items: z.array(
-          z.object({
-            sku: z.string(),
-            quantity: z.number().int().min(1),
-            unit: z.string().optional(),
-          }),
-        ),
-      }),
-    },
-    "po/issue": {
-      input: z.object({
-        idempotencyKey: z.string(),
-        vendorId: z.string(),
-        requisitionId: z.string(),
-        items: z.array(
-          z.object({
-            sku: z.string(),
-            quantity: z.number().int().min(1),
-            unit: z.string().optional(),
-          }),
-        ),
-        notes: z.string().optional(),
-      }),
-    },
-    "invoice/match": {
-      input: z.object({
-        idempotencyKey: z.string(),
-        invoiceId: z.string(),
-        poId: z.string(),
-        tolerancePct: z.number().default(10),
-      }),
-    },
-  },
+Requisition → PO → three-way match basics.
 
-  modelOutput: {
-    "requisition/create": {
-      type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `Requisition created: ${output.id} (status: ${output.status})`
-          : `Requisition creation failed: ${output.error}`,
-    },
-    "po/issue": {
-      type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `PO issued: ${output.id} (status: ${output.status})`
-          : `PO issue failed: ${output.error}`,
-    },
-    "invoice/match": {
-      type: "text",
-      parse: (output: any) =>
-        output.ok
-          ? `3-way match: ${output.match?.outcome ?? "pending"} — ${output.match?.notes ?? ""}`
-          : `Invoice match failed: ${output.error}`,
-    },
-  },
-});
+## Workflow
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   AUDIT SKILL
-   — Audit trail checks, exception reporting.
-   Used by the auditor agent to inspect the system state.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+1. **Create a requisition** with lines (sku, quantity, unit); every
+   mutation carries an idempotency key.
+2. Once approved (policy gates decide routing), **issue a PO** against a
+   qualified vendor — check budget first with \`get_budget\`.
+3. **Record receipts** (\`record_receipt\`) against PO lines as goods
+   arrive; over-receipt is refused server-side. Recording a receipt
+   re-matches any invoices waiting for goods.
+4. Invoices register through intake; the engine runs the three-way match
+   deterministically — never adjust match outcomes manually.
+
+## Constraints
+
+- Agents prepare documents but never countersign POs.
+- If a gate returns NEED_APPROVAL or BLOCK, stop and report verbatim.
+`,
+})
 
 export const auditSkill = defineSkill({
-  name: "audit",
   description:
     "Skills for inspecting audit records, exception queues, and system state.",
-  toolNames: [
-    "audit/list",
-    "audit/meta",
-  ],
+  markdown: `
+# Audit
 
-  tools: {
-    "audit/list": {
-      input: z.object({
-        entity: z.enum(["PurchaseOrder", "Invoice", "Approval", "Requisition"]).optional(),
-        entityId: z.string().optional(),
-        actorKind: z.enum(["human", "agent"]).optional(),
-        limit: z.number().int().min(1).max(200).default(20),
-      }),
-    },
-    "audit/meta": {
-      input: z.object({
-        entity: z.enum(["PurchaseOrder", "Invoice", "Approval", "Requisition"]).optional(),
-      }),
-    },
-  },
+Inspect audit trail records, exception queues, and system state.
 
-  modelOutput: {
-    "audit/list": {
-      type: "text",
-      parse: (output: any) => {
-        if (!output.ok) return `Audit list failed: ${output.error}`;
-        const records = output.records ?? [];
-        const summary = records
-          .slice(0, 3)
-          .map(
-            (r: any) =>
-              `- ${r.action} by ${r.actorKind} on ${r.entity} ${r.entityId ?? ""} — ${r.at}`,
-          )
-          .join("\n");
-        return `Found ${output.total ?? 0} audit record(s)${summary ? `\n${summary}` : ""}`;
-      },
-    },
-    "audit/meta": {
-      type: "text",
-      parse: (output: any) => {
-        if (!output.ok) return `Audit meta failed: ${output.error}`;
-        return `Audit system: ${output.totalRecords} total records, ${output.activeAgents} active agents`;
-      },
-    },
-  },
-});
+## Workflow
+
+1. **List audit entries** (\`audit list\`) filtered by entity, actor kind
+   (human vs agent), or entity id — newest first.
+2. **Check counts** (\`audit meta\`) to sanity-check system activity.
+3. For exceptions, report the blocked action, its citations, and the
+   gate outcome verbatim; resolution belongs to humans in the cockpit.
+
+## Constraints
+
+- Audit entries are append-only; nothing can correct history, only
+  append context.
+- Always include \`runId\` when attributing outcomes to an agent run.
+`,
+})

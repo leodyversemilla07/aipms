@@ -1,6 +1,7 @@
-import crypto from "crypto"
+import crypto from "node:crypto"
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import type { RelayPayload } from "../lib/relay-payload"
 import { trpcMutate } from "../lib/trpc-client"
 
 /**
@@ -37,14 +38,19 @@ export default defineTool({
       note: input.note,
     })
   },
-  toModelOutput(result: any) {
-    if (!result?.receipt) return "Receipt recording failed."
+
+  toModelOutput(result: RelayPayload) {
+    if (!result?.receipt)
+      return { type: "text", value: "Receipt recording failed." }
     const r = result.receipt
     const rm = result.rematch ?? {}
     const rematch =
       rm.considered > 0
         ? `, re-matched ${rm.matched ?? 0} waiting invoice(s) (${rm.exceptions ?? 0} exceptions)`
         : ""
-    return `Receipt ${r.receiptNumber} recorded against ${r.poId}${rematch}.`
+    return {
+      type: "text",
+      value: `Receipt ${r.receiptNumber} recorded against ${r.poId}${rematch}.`,
+    }
   },
 })

@@ -1,6 +1,7 @@
-import crypto from "crypto"
+import crypto from "node:crypto"
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import type { RelayPayload } from "../lib/relay-payload"
 import { trpcMutate } from "../lib/trpc-client"
 
 /**
@@ -35,8 +36,9 @@ export default defineTool({
       threadId: input.threadId,
     })
   },
-  toModelOutput(result: any) {
-    if (!result?.message) return "Message submission failed."
+  toModelOutput(result: RelayPayload) {
+    if (!result?.message)
+      return { type: "text", value: "Message submission failed." }
     const m = result.message
     const state =
       m.status === "sent"
@@ -44,6 +46,6 @@ export default defineTool({
         : m.status === "queued" && m.tier === "gated"
           ? "queued for human approval (gated tier)"
           : `status: ${m.status}`
-    return `Message ${m.id} ${state}.`
+    return { type: "text", value: `Message ${m.id} ${state}.` }
   },
 })

@@ -6,11 +6,13 @@ import {
   DEFAULT_CLOUD_MODEL,
   normalizeProviderConfig,
   parseGatePolicies,
-  resolveProviderFromEnv,
   resolveContextWindowTokens,
+  resolveProviderFromEnv,
 } from "../agent/provider/provider"
 
-function env(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+function env(
+  overrides: Record<string, string | undefined> = {}
+): Record<string, string | undefined> {
   return {
     AIPMS_LLM_KIND: "cloud",
     AIPMS_LLM_ENDPOINT: "https://api.openai.com/v1",
@@ -52,7 +54,7 @@ describe("resolveProviderFromEnv", () => {
 
   it("rejects an unknown AIPMS_LLM_KIND", () => {
     expect(() => resolveProviderFromEnv({ AIPMS_LLM_KIND: "hybrid" })).toThrow(
-      /Invalid AIPMS_LLM_KIND "hybrid"/,
+      /Invalid AIPMS_LLM_KIND "hybrid"/
     )
   })
 
@@ -76,7 +78,7 @@ describe("resolveProviderFromEnv", () => {
       resolveProviderFromEnv({
         AIPMS_LLM_KIND: "offline",
         AIPMS_LLM_ENDPOINT: "http://localhost:1234/v1",
-      }),
+      })
     ).toThrow(/Invalid provider config/)
   })
 })
@@ -100,7 +102,7 @@ describe("parseGatePolicies", () => {
 
   it("rejects unknown policy names so typos cannot weaken the gate", () => {
     expect(() => parseGatePolicies("residensy")).toThrow(
-      /Unknown AIPMS_LLM_GATE policy: residensy/,
+      /Unknown AIPMS_LLM_GATE policy: residensy/
     )
   })
 })
@@ -114,22 +116,29 @@ describe("assertProviderGate", () => {
           endpoint: "http://localhost:11434/v1",
           model: "llama3.2:3b",
         }),
-        env({ AIPMS_LLM_KIND: "offline" }),
-      ),
+        env({ AIPMS_LLM_KIND: "offline" })
+      )
     ).not.toThrow()
   })
 
-  it.each(["http://10.0.0.5:8080/v1", "http://192.168.1.20:1234/v1", "http://172.16.3.9:8000/v1", "http://llm.internal:11434/v1", "http://llm.local:11434/v1"])(
-    "accepts an offline provider on private host %s",
-    (endpoint) => {
-      expect(() =>
-        assertProviderGate(
-          normalizeProviderConfig({ kind: "offline", endpoint, model: "qwen2.5:7b" }),
-          env({ AIPMS_LLM_KIND: "offline" }),
-        ),
-      ).not.toThrow()
-    },
-  )
+  it.each([
+    "http://10.0.0.5:8080/v1",
+    "http://192.168.1.20:1234/v1",
+    "http://172.16.3.9:8000/v1",
+    "http://llm.internal:11434/v1",
+    "http://llm.local:11434/v1",
+  ])("accepts an offline provider on private host %s", (endpoint) => {
+    expect(() =>
+      assertProviderGate(
+        normalizeProviderConfig({
+          kind: "offline",
+          endpoint,
+          model: "qwen2.5:7b",
+        }),
+        env({ AIPMS_LLM_KIND: "offline" })
+      )
+    ).not.toThrow()
+  })
 
   it("refuses an offline provider on a public LLM host (zero egress)", () => {
     expect(() =>
@@ -139,8 +148,8 @@ describe("assertProviderGate", () => {
           endpoint: "https://api.openai.com/v1",
           model: "gpt-4o-mini",
         }),
-        env({ AIPMS_LLM_KIND: "offline" }),
-      ),
+        env({ AIPMS_LLM_KIND: "offline" })
+      )
     ).toThrow(/zero egress/)
   })
 
@@ -155,8 +164,8 @@ describe("assertProviderGate", () => {
         env({
           AIPMS_LLM_KIND: "offline",
           AIPMS_LLM_ALLOWED_HOSTS: "llm.example-corp.com",
-        }),
-      ),
+        })
+      )
     ).not.toThrow()
   })
 
@@ -168,8 +177,8 @@ describe("assertProviderGate", () => {
           endpoint: "https://api.openai.com/v1",
           model: "gpt-4o-mini",
         }),
-        env({ AIPMS_LLM_API_KEY: undefined, OPENAI_API_KEY: undefined }),
-      ),
+        env({ AIPMS_LLM_API_KEY: undefined, OPENAI_API_KEY: undefined })
+      )
     ).toThrow(/requires AIPMS_LLM_API_KEY/)
   })
 
@@ -182,8 +191,8 @@ describe("assertProviderGate", () => {
           model: "gpt-4o-mini",
           apiKey: "sk-test",
         }),
-        env(),
-      ),
+        env()
+      )
     ).not.toThrow()
   })
 
@@ -196,8 +205,8 @@ describe("assertProviderGate", () => {
           model: "gpt-4o-mini",
           apiKey: "sk-test",
         }),
-        env({ AIPMS_LLM_GATE: "residency" }),
-      ),
+        env({ AIPMS_LLM_GATE: "residency" })
+      )
     ).toThrow(/requires AIPMS_LLM_ALLOWED_HOSTS/)
   })
 
@@ -210,8 +219,11 @@ describe("assertProviderGate", () => {
           model: "gpt-4o-mini",
           apiKey: "sk-test",
         }),
-        env({ AIPMS_LLM_GATE: "residency", AIPMS_LLM_ALLOWED_HOSTS: "api.azure.com" }),
-      ),
+        env({
+          AIPMS_LLM_GATE: "residency",
+          AIPMS_LLM_ALLOWED_HOSTS: "api.azure.com",
+        })
+      )
     ).toThrow(/does not allow endpoint host "api.openai.com"/)
   })
 
@@ -224,8 +236,11 @@ describe("assertProviderGate", () => {
           model: "gpt-4o-mini",
           apiKey: "sk-test",
         }),
-        env({ AIPMS_LLM_GATE: "residency", AIPMS_LLM_ALLOWED_HOSTS: "api.openai.com" }),
-      ),
+        env({
+          AIPMS_LLM_GATE: "residency",
+          AIPMS_LLM_ALLOWED_HOSTS: "api.openai.com",
+        })
+      )
     ).not.toThrow()
   })
 })
@@ -236,12 +251,14 @@ describe("resolveContextWindowTokens", () => {
   })
 
   it("reads an explicit context window", () => {
-    expect(resolveContextWindowTokens({ AIPMS_LLM_CONTEXT_WINDOW: "8192" })).toBe(8192)
+    expect(
+      resolveContextWindowTokens({ AIPMS_LLM_CONTEXT_WINDOW: "8192" })
+    ).toBe(8192)
   })
 
   it("rejects a non-positive value", () => {
     expect(() =>
-      resolveContextWindowTokens({ AIPMS_LLM_CONTEXT_WINDOW: "-5" }),
+      resolveContextWindowTokens({ AIPMS_LLM_CONTEXT_WINDOW: "-5" })
     ).toThrow(/Invalid AIPMS_LLM_CONTEXT_WINDOW/)
   })
 })
@@ -253,7 +270,7 @@ describe("buildModel", () => {
         kind: "offline",
         endpoint: "http://localhost:11434/v1",
         model: "llama3.2:3b",
-      }),
+      })
     )
     expect(model).toMatchObject({ modelId: "llama3.2:3b" })
   })
@@ -265,7 +282,7 @@ describe("buildModel", () => {
         endpoint: "https://api.openai.com/v1",
         model: "gpt-4o-mini",
         apiKey: "sk-test",
-      }),
+      })
     )
     expect(model).toMatchObject({ modelId: "gpt-4o-mini" })
   })

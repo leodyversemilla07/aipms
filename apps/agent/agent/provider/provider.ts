@@ -17,8 +17,8 @@
    without touching the agent skill logic.
 ────────────────────────────────────────────────────────────────────────────── */
 
-import { z } from "zod"
 import { createGateway, type LanguageModel } from "ai"
+import { z } from "zod"
 
 /* ── Provider kind ─────────────────────────────────────────────────────────── */
 export type ProviderKind = "cloud" | "offline"
@@ -69,12 +69,12 @@ export const providerSchema = z.union([cloudSchema, offlineSchema])
 
 /* ── Helper: coerce a partial config into a full ProviderConfig ────────────── */
 export function normalizeProviderConfig(
-  partial: Partial<ProviderConfig>,
+  partial: Partial<ProviderConfig>
 ): ProviderConfig {
   const result = providerSchema.safeParse(partial)
   if (!result.success) {
     throw new Error(
-      `Invalid provider config: ${JSON.stringify(result.error.issues)}`,
+      `Invalid provider config: ${JSON.stringify(result.error.issues)}`
     )
   }
   return result.data as ProviderConfig
@@ -91,18 +91,24 @@ export type GatePolicies = {
   noRetention: boolean
 }
 
-export const GATE_POLICY_NAMES = ["residency", "retention", "no-retention"] as const
+export const GATE_POLICY_NAMES = [
+  "residency",
+  "retention",
+  "no-retention",
+] as const
 
 export function parseGatePolicies(raw: string | undefined): GatePolicies {
   const names = (raw ?? "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
-  const unknown = names.filter((n) => !GATE_POLICY_NAMES.includes(n as (typeof GATE_POLICY_NAMES)[number]))
+  const unknown = names.filter(
+    (n) => !GATE_POLICY_NAMES.includes(n as (typeof GATE_POLICY_NAMES)[number])
+  )
   if (unknown.length > 0) {
     throw new Error(
       `Unknown AIPMS_LLM_GATE policy: ${unknown.join(", ")}. ` +
-        `Allowed policies: ${GATE_POLICY_NAMES.join(", ")}.`,
+        `Allowed policies: ${GATE_POLICY_NAMES.join(", ")}.`
     )
   }
   return {
@@ -121,13 +127,15 @@ export const OFFLINE_API_KEY = "local"
 export const DEFAULT_CONTEXT_WINDOW = 128_000
 
 export function resolveContextWindowTokens(
-  env: Record<string, string | undefined>,
+  env: Record<string, string | undefined>
 ): number {
   const raw = env.AIPMS_LLM_CONTEXT_WINDOW
   if (raw === undefined || raw === "") return DEFAULT_CONTEXT_WINDOW
   const n = Number(raw)
   if (!Number.isInteger(n) || n <= 0) {
-    throw new Error(`Invalid AIPMS_LLM_CONTEXT_WINDOW "${raw}". Expected a positive integer.`)
+    throw new Error(
+      `Invalid AIPMS_LLM_CONTEXT_WINDOW "${raw}". Expected a positive integer.`
+    )
   }
   return n
 }
@@ -140,7 +148,9 @@ export function resolveContextWindowTokens(
    AIPMS_LLM_GATE      comma-separated residency/retention/no-retention
    AIPMS_LLM_ALLOWED_HOSTS  comma-separated host allowlist for the residency gate
 ────────────────────────────────────────────────────────────────────────────── */
-function firstDefined(...values: Array<string | undefined>): string | undefined {
+function firstDefined(
+  ...values: Array<string | undefined>
+): string | undefined {
   for (const v of values) {
     if (v !== undefined && v !== "") return v
   }
@@ -148,7 +158,7 @@ function firstDefined(...values: Array<string | undefined>): string | undefined 
 }
 
 export function resolveProviderFromEnv(
-  env: Record<string, string | undefined>,
+  env: Record<string, string | undefined>
 ): ProviderConfig {
   const kind = firstDefined(env.AIPMS_LLM_KIND) ?? "cloud"
 
@@ -162,7 +172,7 @@ export function resolveProviderFromEnv(
 
   if (kind !== "cloud") {
     throw new Error(
-      `Invalid AIPMS_LLM_KIND "${kind}". Expected "cloud" or "offline".`,
+      `Invalid AIPMS_LLM_KIND "${kind}". Expected "cloud" or "offline".`
     )
   }
 
@@ -175,7 +185,7 @@ export function resolveProviderFromEnv(
 }
 
 /* ── Host classification (zero-egress enforcement) ───────────────────────── */
-function isLoopback(host: string): boolean {
+function _isLoopback(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "")
   if (h === "localhost" || h === "::1") return true
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
@@ -190,7 +200,9 @@ function isPrivateHost(host: string): boolean {
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
   if (!m) return false
   const [a, b] = [Number(m[1]), Number(m[2])]
-  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  return (
+    a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+  )
 }
 
 export function parseAllowedHosts(raw: string | undefined): string[] {
@@ -209,7 +221,7 @@ export function parseAllowedHosts(raw: string | undefined): string[] {
 ────────────────────────────────────────────────────────────────────────────── */
 export function assertProviderGate(
   cfg: ProviderConfig,
-  env: Record<string, string | undefined>,
+  env: Record<string, string | undefined>
 ): void {
   const gate = parseGatePolicies(env.AIPMS_LLM_GATE)
   const allowedHosts = parseAllowedHosts(env.AIPMS_LLM_ALLOWED_HOSTS)
@@ -219,7 +231,7 @@ export function assertProviderGate(
     if (!isPrivateHost(host) && !allowedHosts.includes(host)) {
       throw new Error(
         `AIPMS_LLM_KIND=offline requires a private/local endpoint (zero egress), ` +
-          `got "${host}". Add it to AIPMS_LLM_ALLOWED_HOSTS to override.`,
+          `got "${host}". Add it to AIPMS_LLM_ALLOWED_HOSTS to override.`
       )
     }
     return
@@ -227,20 +239,20 @@ export function assertProviderGate(
 
   if (!cfg.apiKey) {
     throw new Error(
-      "AIPMS_LLM_KIND=cloud requires AIPMS_LLM_API_KEY (or OPENAI_API_KEY).",
+      "AIPMS_LLM_KIND=cloud requires AIPMS_LLM_API_KEY (or OPENAI_API_KEY)."
     )
   }
 
   if (gate.residency) {
     if (allowedHosts.length === 0) {
       throw new Error(
-        "The residency gate requires AIPMS_LLM_ALLOWED_HOSTS to be set.",
+        "The residency gate requires AIPMS_LLM_ALLOWED_HOSTS to be set."
       )
     }
     if (!allowedHosts.includes(host)) {
       throw new Error(
         `The residency gate does not allow endpoint host "${host}". ` +
-          `Add it to AIPMS_LLM_ALLOWED_HOSTS or remove the residency policy.`,
+          `Add it to AIPMS_LLM_ALLOWED_HOSTS or remove the residency policy.`
       )
     }
   }
