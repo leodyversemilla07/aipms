@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module'
 import { BirModule } from './bir/bir.module'
 import { BudgetModule } from './budget/budget.module'
 import { CatalogModule } from './catalog/catalog.module'
+import { ErpModule } from './erp/erp.module'
 import { IntakeModule } from './intake/intake.module'
 import { InvoiceModule } from './invoice/invoice.module'
 import { MessagingModule } from './messaging/messaging.module'
@@ -44,6 +45,7 @@ import { VendorModule } from './vendor/vendor.module'
     MessagingModule,
     PaymentRunModule,
     SsoModule,
+    ErpModule,
     EventsModule,
   ],
   controllers: [AppController],

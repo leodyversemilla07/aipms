@@ -150,7 +150,10 @@ export class AgentWakeService implements OnModuleInit {
         data: {
           status: 'succeeded',
           finishedAt: new Date(),
-          meta: { ...(run.meta as Prisma.InputJsonObject), result: asJson(result) },
+          meta: {
+            ...(run.meta as Prisma.InputJsonObject),
+            result: asJson(result),
+          },
         },
       })
     } catch (err) {
@@ -198,7 +201,10 @@ export class AgentWakeService implements OnModuleInit {
           data: {
             status: 'succeeded',
             finishedAt: new Date(),
-            meta: { ...(run.meta as Prisma.InputJsonObject), result: asJson(result) },
+            meta: {
+              ...(run.meta as Prisma.InputJsonObject),
+              result: asJson(result),
+            },
           },
         })
         return

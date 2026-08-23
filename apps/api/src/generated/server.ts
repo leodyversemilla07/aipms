@@ -21,6 +21,7 @@ import type { AuditRouter } from "../audit/audit.router";
 import type { BirRouter } from "../bir/bir.router";
 import type { BudgetRouter } from "../budget/budget.router";
 import type { CatalogRouter } from "../catalog/catalog.router";
+import type { ErpRouter } from "../erp/erp.router";
 import type { IntakeRouter } from "../intake/intake.router";
 import type { InvoiceRouter } from "../invoice/invoice.router";
 import type { MessagingRouter } from "../messaging/messaging.router";
@@ -146,6 +147,43 @@ const appRouter = t.router({
   idempotencyKey: z.string().min(1),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["deactivate"]>>)
+    }),
+  erp: t.router({
+    exportRun: publicProcedure
+      .input(z.object({ runId: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["exportRun"]>>),
+    list: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["list"]>>),
+    manifest: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["manifest"]>>),
+    acknowledge: publicProcedure
+      .input(z.object({
+  exportId: z.string().min(1),
+  status: z.enum(['posted', 'rejected']),
+  externalRef: z.string().min(1).max(100).optional(),
+  rejectedReason: z.string().min(1).max(500).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["acknowledge"]>>),
+    ingestVendors: publicProcedure
+      .input(z.object({
+  vendors: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        taxId: z.string().min(1).max(40).nullish(),
+        email: z.string().email().nullish(),
+        paymentTermsDays: z.number().int().min(0).max(365).nullish(),
+      }),
+    )
+    .min(1)
+    .max(1_000),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["ingestVendors"]>>),
+    reconcileReport: publicProcedure
+      .input(z.object({}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["reconcileReport"]>>)
     }),
   intake: t.router({
     list: publicProcedure

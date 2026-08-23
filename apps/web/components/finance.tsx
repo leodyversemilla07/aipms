@@ -4,6 +4,7 @@ import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
 import { DemoSwitcher } from "@/components/demo-switcher"
 import { BirReports } from "@/components/finance/bir-reports"
+import { ErpSync } from "@/components/finance/erp-sync"
 import { InvoiceList } from "@/components/finance/invoice-list"
 import { InvoiceRegister } from "@/components/finance/invoice-register"
 import { PaymentRuns } from "@/components/finance/payment-runs"
@@ -49,6 +50,7 @@ function FinanceBody() {
       <InvoiceRegister />
       <InvoiceList />
       <PaymentRuns />
+      <ErpSync />
       <BirReports />
     </div>
   )

@@ -492,7 +492,33 @@ enum InvoiceStatus {
   paid
 }
 
-// §8.6 approved payment run (hand-off to finance).
+// ===== Phase 5 — ERP integration (§8.5: publish what you own) =====
+
+// One governed journal export handed to the ERP. The manifest itself is
+// derived deterministically from the run's invoices (§8.4 tax split); the
+// sha256 over its canonical JSON is both idempotency (re-export yields the
+// same hash) and tamper-evidence. Lifecycle: exported → posted | rejected
+// via the ERP acknowledgement feed.
+model ErpJournalExport {
+  id             String    @id @default(cuid())
+  runId          String    @unique
+  runNumber      String
+  manifestHash   String
+  lineCount      Int
+  totalMinor     Int
+  currencyCode   String    @default("PHP")
+  status         String    @default("exported") // exported | posted | rejected
+  externalRef    String?
+  rejectedReason String?
+  acknowledgedAt DateTime?
+  exportedBy     String
+  exportedAt     DateTime  @default(now())
+
+  @@map("erpJournalExport")
+  @@index([status])
+}
+
+// ===== §8.6 approved payment run (hand-off to finance). =====
 enum PaymentRunStatus {
   draft
   approved

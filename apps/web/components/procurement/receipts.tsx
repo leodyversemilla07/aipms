@@ -256,10 +256,7 @@ function RecordReceiptForm({
       <FieldGroup>
         <Field>
           <Label>Purchase order</Label>
-          <Select
-            value={poId}
-            onValueChange={(value) => pickPo(value ?? "")}
-          >
+          <Select value={poId} onValueChange={(value) => pickPo(value ?? "")}>
             <SelectTrigger className="w-full">
               <SelectValue
                 placeholder={

@@ -23,6 +23,9 @@ export const DomainEventTypes = {
   'message.approved': 'message.approved',
   'message.rejected': 'message.rejected',
   'message.sent': 'message.sent',
+  // §8.5 — ERP bridge
+  'erp.exported': 'erp.exported',
+  'erp.posted': 'erp.posted',
 } as const
 
 export type DomainEventType =

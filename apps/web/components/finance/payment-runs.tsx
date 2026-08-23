@@ -81,10 +81,15 @@ export function PaymentRuns() {
   const approve = useMutation(trpc.paymentRun.approve.mutationOptions())
   const execute = useMutation(trpc.paymentRun.execute.mutationOptions())
   const reconcile = useMutation(trpc.paymentRun.reconcile.mutationOptions())
+  const exportRun = useMutation(trpc.erp.exportRun.mutationOptions())
 
   function refresh() {
     queryClient.invalidateQueries(trpc.paymentRun.pathFilter())
     queryClient.invalidateQueries(trpc.invoice.pathFilter())
+    queryClient.invalidateQueries(trpc.erp.pathFilter())
+    queryClient.invalidateQueries({
+      queryKey: trpc.erp.reconcileReport.queryKey(),
+    })
   }
 
   function toggle(id: string) {
@@ -233,6 +238,25 @@ export function PaymentRuns() {
                 {minorToPhp(run.totalMinor)}
               </span>
             </div>
+
+            {run.status === "executed" ? (
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={exportRun.isPending}
+                  title="Publish the §8.5 journal export to the ERP"
+                  onClick={() =>
+                    exportRun
+                      .mutateAsync({ runId: run.id })
+                      .then(refresh)
+                      .catch(() => undefined)
+                  }
+                >
+                  Export journal
+                </Button>
+              </div>
+            ) : null}
 
             {/* Details dialog */}
             <Dialog>
