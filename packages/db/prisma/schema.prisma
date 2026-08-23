@@ -635,6 +635,56 @@ model ReceiptLine {
   @@index([receiptId])
 }
 
+// ===== §8.3 — vendor messaging relay (outbox; agents never direct-send) =====
+
+// Tiered content gates every send (§8.3): low-risk transactional templates
+// (RFQ, PO status, delivery notice, invoice ack) auto-send; everything else
+// (free-form, negotiation, award, commercial terms) is gated behind a human.
+enum MessageTier {
+  auto
+  gated
+}
+
+// Lifecycle of one outbound relay message. Immutable after send; approval /
+// rejection / failure reasons are recorded so threads replay for audit.
+enum MessageStatus {
+  queued
+  approved
+  rejected
+  sent
+  failed
+}
+
+/// One outbound vendor message. Agents address a *verified* contact from the
+/// vendor master (contactChannels) — never a raw free-form address. The body
+/// hash is tamper-evidence over the canonical content at compose time.
+model Message {
+  id             String        @id @default(cuid())
+  vendorId       String
+  recipient      String // verified identity copied from vendor master
+  subject        String
+  body           String
+  bodyHash       String // sha256 over canonical {recipient,subject,body}
+  templateId     String? // transactional template, null = free-form (gated)
+  tier           MessageTier
+  status         MessageStatus @default(queued)
+  agentId        String? // composing principal (User.kind = agent), null = human
+  runId          String? // §7.1 links the message to the agent execution
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedReason String?
+  failedReason   String?
+  sentAt         DateTime?
+  threadId       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("message")
+  @@index([vendorId])
+  @@index([status])
+  @@index([threadId])
+}
+
 // ===== Phase 7 — enterprise identity (§16.2: OIDC/SAML/SCIM) =====
 
 // §16.2 "Identity is the org's": the instance's IdP connection, managed by

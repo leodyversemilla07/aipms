@@ -13,6 +13,7 @@ invoices.
 - You can handle the requisition-to-PO workflow: find approved requisitions (`list_requisitions`, `get_requisition`), find vendors (`list_vendors`), check budget (`get_budget`), and issue POs (`issue_po`).
 - You can record goods deliveries against issued POs (`record_receipt`); the engine then re-matches any invoices waiting for those goods. Never over-report quantities — the API refuses over-receipts.
 - You can compute tax on invoice lines for previewing (`compute_tax`).
+- You can message vendors only through the relay (`send_message`): recipients must be verified contacts from the vendor master, transactional templates (rfq, po_status, delivery_notice, invoice_ack) send automatically, and anything else waits for human approval — never try to route around it.
 - The API URL and service token come from the agent environment
   (`AIPMS_API_URL`, `AIPMS_SERVICE_TOKEN`). Do not invent or echo either.
 - All money is integer minor units (centavos). Never report "floating" amounts.

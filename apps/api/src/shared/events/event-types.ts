@@ -18,6 +18,11 @@ export const DomainEventTypes = {
   // Phase 5 — payment
   'paymentRun.approved': 'paymentRun.approved',
   'paymentRun.executed': 'paymentRun.executed',
+  // §8.3 — messaging relay
+  'message.submitted': 'message.submitted',
+  'message.approved': 'message.approved',
+  'message.rejected': 'message.rejected',
+  'message.sent': 'message.sent',
 } as const
 
 export type DomainEventType =

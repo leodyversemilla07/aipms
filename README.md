@@ -120,6 +120,7 @@ aipms/
 | `policy` | list, create, taxConfig | Policy engine |
 | `budget` | read, list | Budget tracking |
 | `payment-run` | list, create, approve, execute | Payment workflow |
+| `messaging` | submit, approve, reject, list, detail | §8.3 vendor messaging relay (tiered sends) |
 | `receipt` | record, cancel, list, detail | §8.1 goods receipts (3-way match leg) |
 
 **Total:** 53 procedures across 13 routers
