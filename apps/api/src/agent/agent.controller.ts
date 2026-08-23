@@ -1,4 +1,11 @@
-import { Body, Controller, ForbiddenException, Inject, Post, UseGuards } from '@nestjs/common'
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Inject,
+  Post,
+  UseGuards,
+} from '@nestjs/common'
 import { AuditService } from '../shared/audit/audit.service'
 import { agentMayInvoke, resolveAgentScopes } from '../trpc/agent-capabilities'
 import { AgentService } from './agent.service'

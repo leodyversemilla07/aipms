@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common'
 import { TRPCError } from '@trpc/server'
+import type { SessionUser } from '@workspace/auth'
+import { db, type UserKind, type UserRole } from '@workspace/db'
 import type {
   MiddlewareOptions,
   MiddlewareResponse,
   TRPCMiddleware,
 } from 'nestjs-trpc'
-import type { SessionUser } from '@workspace/auth'
-import { db, type UserKind, type UserRole } from '@workspace/db'
 import { assertAgentCapability } from '../agent-capabilities'
 import type { AuthedTrpcContext, BaseTrpcContext } from '../context.types'
 
@@ -37,7 +37,8 @@ export class AuthMiddleware implements TRPCMiddleware {
         )?.role ?? 'user'
     } else {
       const raw = (user as SessionUser & { scopes?: unknown }).scopes
-      if (Array.isArray(raw)) scopes = raw.filter((s): s is string => typeof s === 'string')
+      if (Array.isArray(raw))
+        scopes = raw.filter((s): s is string => typeof s === 'string')
       // §7.2 default-deny: the capability map decides what agents may call.
       assertAgentCapability(opts.path, scopes)
     }

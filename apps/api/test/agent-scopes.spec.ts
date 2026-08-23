@@ -1,12 +1,12 @@
+import { TRPCError } from '@trpc/server'
 import { describe, expect, it } from 'vitest'
 import {
   AGENT_CAPABILITIES,
-  DEFAULT_AGENT_SCOPES,
   agentMayInvoke,
   assertAgentCapability,
+  DEFAULT_AGENT_SCOPES,
   resolveAgentScopes,
 } from '../src/trpc/agent-capabilities'
-import { TRPCError } from '@trpc/server'
 
 /**
  * §7.2 capability model — agents are governed by explicit scopes with
@@ -81,7 +81,9 @@ describe('Agent capability model', () => {
     })
 
     it('a narrowed grant set loses access immediately', () => {
-      expect(agentMayInvoke('purchaseOrder.issue', ['catalog.read'])).toBe(false)
+      expect(agentMayInvoke('purchaseOrder.issue', ['catalog.read'])).toBe(
+        false,
+      )
       expect(agentMayInvoke('purchaseOrder.issue', ['po.issue'])).toBe(true)
     })
   })

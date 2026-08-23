@@ -35,7 +35,7 @@ describe('AgentWakeService', () => {
     })
 
     // Manually trigger poll
-    // @ts-ignore private
+    // @ts-expect-error private
     await (relay as any).poll()
 
     const runs = await db.agentRun.findMany({ where: { agentId } })

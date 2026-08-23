@@ -107,9 +107,10 @@ describe('BirService (§8.4)', () => {
       taxWithheldMinor: 3_000,
     })
     for (const line of cert.lines) {
-      expect(typeof line.taxPolicyVersion === 'string' || line.taxPolicyVersion === null).toBe(
-        true,
-      )
+      expect(
+        typeof line.taxPolicyVersion === 'string' ||
+          line.taxPolicyVersion === null,
+      ).toBe(true)
     }
   })
 

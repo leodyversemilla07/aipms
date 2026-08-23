@@ -1,5 +1,5 @@
-import { ConflictException, Injectable } from '@nestjs/common'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { ConflictException, Injectable } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
 
 /**

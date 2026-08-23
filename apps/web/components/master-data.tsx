@@ -1,13 +1,18 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
+import { Badge } from "@workspace/ui/components/badge"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/ui/components/tabs"
 import Link from "next/link"
 import { BudgetsPanel } from "@/components/master-data/budgets"
 import { CatalogPanel } from "@/components/master-data/catalog"
 import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@workspace/ui/components/tabs"
-import { Badge } from "@workspace/ui/components/badge"
 import { SignInCard } from "@/components/sign-in"
 
 function MasterDataBody() {
@@ -33,13 +38,13 @@ function MasterDataBody() {
           <Link
             href="/intake"
             className="text-muted-foreground underline hover:text-foreground"
->          
+          >
             Intake
           </Link>
           <Link
             href="/audit"
             className="text-muted-foreground underline hover:text-foreground"
->          
+          >
             Audit
           </Link>
           <button
@@ -60,10 +65,18 @@ function MasterDataBody() {
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
           <TabsTrigger value="policies">Policies</TabsTrigger>
         </TabsList>
-        <TabsContent value="vendors"><VendorsPanel /></TabsContent>
-        <TabsContent value="catalog"><CatalogPanel /></TabsContent>
-        <TabsContent value="budgets"><BudgetsPanel /></TabsContent>
-        <TabsContent value="policies"><PoliciesPanel /></TabsContent>
+        <TabsContent value="vendors">
+          <VendorsPanel />
+        </TabsContent>
+        <TabsContent value="catalog">
+          <CatalogPanel />
+        </TabsContent>
+        <TabsContent value="budgets">
+          <BudgetsPanel />
+        </TabsContent>
+        <TabsContent value="policies">
+          <PoliciesPanel />
+        </TabsContent>
       </Tabs>
     </div>
   )

@@ -12,7 +12,10 @@ export class EventEmitterService {
    * Emit a domain event. When called with a transaction client, the event
    * is written atomically with the domain state change.
    */
-  async emit(event: DomainEventPayload, tx?: Prisma.TransactionClient | typeof db) {
+  async emit(
+    event: DomainEventPayload,
+    tx?: Prisma.TransactionClient | typeof db,
+  ) {
     const client = (tx ?? db) as typeof db
     return client.domainEvent.create({
       data: {

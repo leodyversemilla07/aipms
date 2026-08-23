@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
-import { EventsModule } from '../shared/events/events.module'
 import { InvoiceModule } from '../invoice/invoice.module'
+import { EventsModule } from '../shared/events/events.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
 import { IntakeRouter } from './intake.router'

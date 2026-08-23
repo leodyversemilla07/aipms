@@ -1,9 +1,9 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db } from '@workspace/db'
-import { EventRelayService } from '../shared/events/event-relay.service'
 import { evaluateThresholdGate } from '../policy/policy-engine'
-import { AgentService } from './agent.service'
 import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
+import { EventRelayService } from '../shared/events/event-relay.service'
+import { AgentService } from './agent.service'
 
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
@@ -12,7 +12,11 @@ import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
  */
 @Injectable()
 export class AgentWakeService implements OnModuleInit {
-  constructor(private readonly relay: EventRelayService, private readonly agent: AgentService, private readonly po: PurchaseOrderService) {}
+  constructor(
+    private readonly relay: EventRelayService,
+    private readonly agent: AgentService,
+    private readonly po: PurchaseOrderService,
+  ) {}
 
   onModuleInit() {
     // Wake on requisition approval → operator agent should issue PO
@@ -54,13 +58,21 @@ export class AgentWakeService implements OnModuleInit {
       // Threshold gate for auto-issue: reuse the same policy engine the
       // requisition submit path uses (§11). Conservative by default — no
       // applicable policy means human review, never silent auto-issue.
-      const totalMinor = requisition.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0)
-      const thresholdPolicy = await db.policy.findFirst({ where: { kind: 'threshold', enabled: true } })
+      const totalMinor = requisition.lines.reduce(
+        (sum, l) => sum + l.lineTotalMinor,
+        0,
+      )
+      const thresholdPolicy = await db.policy.findFirst({
+        where: { kind: 'threshold', enabled: true },
+      })
       let budgetRemainingMinor: number | undefined
       if (requisition.budgetId) {
-        const budget = await db.budget.findUnique({ where: { id: requisition.budgetId } })
+        const budget = await db.budget.findUnique({
+          where: { id: requisition.budgetId },
+        })
         if (budget) {
-          budgetRemainingMinor = budget.limitMinor - budget.committedMinor - budget.spentMinor
+          budgetRemainingMinor =
+            budget.limitMinor - budget.committedMinor - budget.spentMinor
         }
       }
       const decision = evaluateThresholdGate(thresholdPolicy ?? undefined, {
@@ -70,16 +82,29 @@ export class AgentWakeService implements OnModuleInit {
         budgetRemainingMinor,
       })
       if (decision.outcome !== 'PASS') {
-        console.log(`[agent-wake] run ${run.id} skipped auto PO: ${decision.reason}`)
+        console.log(
+          `[agent-wake] run ${run.id} skipped auto PO: ${decision.reason}`,
+        )
         await db.agentRun.update({
           where: { id: run.id },
-          data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), skipped: decision.outcome, totalMinor, decision } },
+          data: {
+            status: 'succeeded',
+            finishedAt: new Date(),
+            meta: {
+              ...(run.meta as any),
+              skipped: decision.outcome,
+              totalMinor,
+              decision,
+            },
+          },
         })
         return
       }
       // Policy-driven vendor selection: preferredVendor policy takes precedence
       let vendor: any = null
-      const prefPolicy = await db.policy.findFirst({ where: { kind: 'preferredVendor', enabled: true } })
+      const prefPolicy = await db.policy.findFirst({
+        where: { kind: 'preferredVendor', enabled: true },
+      })
       if (prefPolicy?.config) {
         const cfg = prefPolicy.config as any
         const vendorId = cfg.vendorId ?? cfg.vendor_id
@@ -92,18 +117,32 @@ export class AgentWakeService implements OnModuleInit {
         vendor = await db.vendor.findFirst({ where: { status: 'active' } })
       }
       if (!vendor) throw new Error('No active vendor found')
-      const result = await this.po.issue({ requisitionId: requisition.id, vendorId: vendor.id, terms: {} }, 'agent-operator')
-      const poNumber = 'outcome' in result && result.outcome === 'ISSUED' ? result.purchaseOrder.poNumber : 'N/A'
+      const result = await this.po.issue(
+        { requisitionId: requisition.id, vendorId: vendor.id, terms: {} },
+        'agent-operator',
+      )
+      const poNumber =
+        'outcome' in result && result.outcome === 'ISSUED'
+          ? result.purchaseOrder.poNumber
+          : 'N/A'
       console.log(`[agent-wake] run ${run.id} issued PO ${poNumber}`)
       await db.agentRun.update({
         where: { id: run.id },
-        data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), result } },
+        data: {
+          status: 'succeeded',
+          finishedAt: new Date(),
+          meta: { ...(run.meta as any), result },
+        },
       })
     } catch (err) {
       console.error(`[agent-wake] run ${run.id} failed`, err)
       await db.agentRun.update({
         where: { id: run.id },
-        data: { status: 'failed', finishedAt: new Date(), meta: { ...(run.meta as any), error: (err as Error).message } },
+        data: {
+          status: 'failed',
+          finishedAt: new Date(),
+          meta: { ...(run.meta as any), error: (err as Error).message },
+        },
       })
     }
   }
@@ -125,10 +164,16 @@ export class AgentWakeService implements OnModuleInit {
     try {
       if (event.type === 'intake.received') {
         const result = await this.agent.processPending(5)
-        console.log(`[agent-wake] run ${run.id} processed ${result.succeeded}/${result.documents} docs`)
+        console.log(
+          `[agent-wake] run ${run.id} processed ${result.succeeded}/${result.documents} docs`,
+        )
         await db.agentRun.update({
           where: { id: run.id },
-          data: { status: 'succeeded', finishedAt: new Date(), meta: { ...(run.meta as any), result } },
+          data: {
+            status: 'succeeded',
+            finishedAt: new Date(),
+            meta: { ...(run.meta as any), result },
+          },
         })
         return
       }
@@ -140,7 +185,11 @@ export class AgentWakeService implements OnModuleInit {
       console.error(`[agent-wake] run ${run.id} failed`, err)
       await db.agentRun.update({
         where: { id: run.id },
-        data: { status: 'failed', finishedAt: new Date(), meta: { ...(run.meta as any), error: (err as Error).message } },
+        data: {
+          status: 'failed',
+          finishedAt: new Date(),
+          meta: { ...(run.meta as any), error: (err as Error).message },
+        },
       })
     }
   }

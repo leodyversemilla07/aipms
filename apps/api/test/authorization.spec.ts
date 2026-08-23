@@ -51,15 +51,30 @@ const policyService = new PolicyService()
 beforeAll(async () => {
   await db.user.createMany({
     data: [
-      { id: users.finance, name: 'A Finance', email: `${users.finance}@test.aipms`, role: 'finance' },
+      {
+        id: users.finance,
+        name: 'A Finance',
+        email: `${users.finance}@test.aipms`,
+        role: 'finance',
+      },
       {
         id: users.procurement,
         name: 'A Procurement',
         email: `${users.procurement}@test.aipms`,
         role: 'procurement',
       },
-      { id: users.plain, name: 'A User', email: `${users.plain}@test.aipms`, role: 'user' },
-      { id: users.admin, name: 'An Admin', email: `${users.admin}@test.aipms`, role: 'admin' },
+      {
+        id: users.plain,
+        name: 'A User',
+        email: `${users.plain}@test.aipms`,
+        role: 'user',
+      },
+      {
+        id: users.admin,
+        name: 'An Admin',
+        email: `${users.admin}@test.aipms`,
+        role: 'admin',
+      },
     ],
   })
 })
@@ -79,10 +94,7 @@ afterAll(async () => {
   await db.$disconnect()
 })
 
-async function makePolicy(
-  name: string,
-  config: Record<string, unknown>,
-) {
+async function makePolicy(name: string, config: Record<string, unknown>) {
   const prior = await policyService.latest('threshold', false)
   const policy = await policyService.create({
     name: `${name} ${suffix}`,
@@ -111,7 +123,9 @@ async function makeRequisition(budgetId: string, totalMinor: number) {
     requestedBy: users.plain,
     costCenter: `CC-AUTHZ-${suffix}`,
     budgetId,
-    lines: [{ description: 'Authz line', quantity: 1, unitPriceMinor: totalMinor }],
+    lines: [
+      { description: 'Authz line', quantity: 1, unitPriceMinor: totalMinor },
+    ],
   })
   created.requisition.push(req.id)
   return req

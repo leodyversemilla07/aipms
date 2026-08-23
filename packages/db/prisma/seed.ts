@@ -67,7 +67,11 @@ async function main() {
     },
   ]
   for (const item of items) {
-    await db.catalogItem.upsert({ where: { sku: item.sku }, update: {}, create: item })
+    await db.catalogItem.upsert({
+      where: { sku: item.sku },
+      update: {},
+      create: item,
+    })
   }
   console.log("seeded catalog")
 

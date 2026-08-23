@@ -1,8 +1,8 @@
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
+import { db } from '@workspace/db'
 import request from 'supertest'
 import type { App } from 'supertest/types'
-import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AppModule } from './../src/app.module'
 
@@ -94,7 +94,9 @@ describe('Agent tRPC M2M (bearer service token)', () => {
 
     await db.intakeDocument.deleteMany({ where: { id: doc.id } })
     await db.auditEntry.deleteMany({ where: { entityId: doc.id } })
-    await db.agentRun.deleteMany({ where: { meta: { path: ['entityId'], equals: doc.id } } })
+    await db.agentRun.deleteMany({
+      where: { meta: { path: ['entityId'], equals: doc.id } },
+    })
   })
 
   afterAll(async () => {

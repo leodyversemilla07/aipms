@@ -1,20 +1,24 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { INVOICE_STATUS, netMinor } from "@/lib/finance"
-import { minorToPhp } from "@/lib/money"
-import { useTRPC } from "@/lib/trpc/client"
-import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
-  TableHeader,
   TableBody,
-  TableRow,
-  TableHead,
   TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@workspace/ui/components/table"
+import { INVOICE_STATUS, netMinor } from "@/lib/finance"
+import { minorToPhp } from "@/lib/money"
+import { useTRPC } from "@/lib/trpc/client"
 
 /**
  * Recently received invoices with their derived tax fields (§8.4) and

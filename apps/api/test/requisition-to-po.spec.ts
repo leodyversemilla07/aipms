@@ -1,12 +1,12 @@
 import { db } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { AgentWakeService } from '../src/agent/agent-wake.service'
-import { EventRelayService } from '../src/shared/events/event-relay.service'
-import { RequisitionService } from '../src/requisition/requisition.service'
 import { PolicyService } from '../src/policy/policy.service'
-import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { PurchaseOrderService } from '../src/purchase-order/purchase-order.service'
+import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
+import { EventEmitterService } from '../src/shared/events/event-emitter.service'
+import { EventRelayService } from '../src/shared/events/event-relay.service'
 
 describe('Requisition → PO automation', () => {
   let relay: EventRelayService
@@ -45,9 +45,7 @@ describe('Requisition → PO automation', () => {
       requestedBy: 'user-1',
       costCenter: 'IT-PROD',
       budgetId: budget!.id,
-      lines: [
-        { description: 'Test item', quantity: 1, unitPriceMinor: 1000 },
-      ],
+      lines: [{ description: 'Test item', quantity: 1, unitPriceMinor: 1000 }],
     })
 
     // Submit with auto-approve threshold
@@ -56,20 +54,26 @@ describe('Requisition → PO automation', () => {
 
     // Simulate event relay
     relay = new EventRelayService()
-    // @ts-ignore
-    const agentService = { processPending: async () => ({ documents:0, succeeded:0, failed:[] }) }
+    // @ts-expect-error
+    const agentService = {
+      processPending: async () => ({ documents: 0, succeeded: 0, failed: [] }),
+    }
     wake = new AgentWakeService(relay, agentService as any, poService)
     wake.onModuleInit()
 
     // Poll outbox - should spawn run and issue PO
-    // @ts-ignore
+    // @ts-expect-error
     await (relay as any).poll()
 
-    const runs = await db.agentRun.findMany({ where: { agentId: 'operator', skills: { has: 'requisition-to-po' } } })
+    const runs = await db.agentRun.findMany({
+      where: { agentId: 'operator', skills: { has: 'requisition-to-po' } },
+    })
     expect(runs.length).toBeGreaterThan(0)
     expect(runs[0].status).toBe('succeeded')
 
-    const po = await db.purchaseOrder.findFirst({ where: { requisitionId: req.id } })
+    const po = await db.purchaseOrder.findFirst({
+      where: { requisitionId: req.id },
+    })
     expect(po).toBeTruthy()
     expect(po?.vendorId).toBe(vendor!.id)
     expect(po?.status).toBe('issued')

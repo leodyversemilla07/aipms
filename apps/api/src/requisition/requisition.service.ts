@@ -228,7 +228,12 @@ export class RequisitionService {
             type: 'requisition.approved',
             entityType: 'Requisition',
             entityId: id,
-            payload: { status: 'approved', requestNumber: req.requestNumber, costCenter: req.costCenter, totalMinor },
+            payload: {
+              status: 'approved',
+              requestNumber: req.requestNumber,
+              costCenter: req.costCenter,
+              totalMinor,
+            },
           },
           tx,
         )
@@ -258,7 +263,12 @@ export class RequisitionService {
           type: 'requisition.submitted',
           entityType: 'Requisition',
           entityId: id,
-          payload: { status: nextStatus, requestNumber: req.requestNumber, costCenter: req.costCenter, totalMinor },
+          payload: {
+            status: nextStatus,
+            requestNumber: req.requestNumber,
+            costCenter: req.costCenter,
+            totalMinor,
+          },
         },
         tx,
       )

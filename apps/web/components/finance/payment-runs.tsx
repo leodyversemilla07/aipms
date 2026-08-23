@@ -1,13 +1,38 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Button } from "@workspace/ui/components/button"
-import { Alert, AlertTitle, AlertDescription } from "@workspace/ui/components/alert"
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
+import { Button } from "@workspace/ui/components/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@workspace/ui/components/dialog"
 import { Skeleton } from "@workspace/ui/components/skeleton"
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@workspace/ui/components/table"
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogFooter } from "@workspace/ui/components/dialog"
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@workspace/ui/components/tooltip"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@workspace/ui/components/table"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip"
 import { useState } from "react"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
@@ -109,25 +134,25 @@ export function PaymentRuns() {
   }
 
   if (runs.isPending || matched.isPending) {
+    return (
+      <section className="flex flex-col gap-3">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-full" />
+      </section>
+    )
+  }
+
   return (
     <section className="flex flex-col gap-3">
-      <Skeleton className="h-5 w-32" />
-      <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-full" />
-    </section>
-  )
-}
-
-return (
-  <section className="flex flex-col gap-3">
-    <div className="flex items-baseline justify-between">
-      <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-        Payment runs
-      </h2>
-      <span className="text-muted-foreground text-xs">
-        {(runs.data ?? []).length} runs
-      </span>
-    </div>
+      <div className="flex items-baseline justify-between">
+        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+          Payment runs
+        </h2>
+        <span className="text-muted-foreground text-xs">
+          {(runs.data ?? []).length} runs
+        </span>
+      </div>
 
       {error ? (
         <Alert variant="destructive">
@@ -192,17 +217,17 @@ return (
               <span className="font-medium text-sm">
                 {run.runNumber}
                 <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Badge variant="secondary" className="ml-2">
-                      {RUN_STATUS[run.status] ?? run.status}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    Run status: {RUN_STATUS[run.status] ?? run.status}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Badge variant="secondary" className="ml-2">
+                        {RUN_STATUS[run.status] ?? run.status}
+                      </Badge>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Run status: {RUN_STATUS[run.status] ?? run.status}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </span>
               <span className="font-mono text-sm">
                 {minorToPhp(run.totalMinor)}
@@ -235,8 +260,12 @@ return (
                     {run.lines.map((line) => (
                       <TableRow key={line.id}>
                         <TableCell>{line.invoiceId.slice(0, 8)}</TableCell>
-                        <TableCell>{LINE_STATUS[line.status] ?? line.status}</TableCell>
-                        <TableCell className="text-right">{minorToPhp(line.netMinor)}</TableCell>
+                        <TableCell>
+                          {LINE_STATUS[line.status] ?? line.status}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {minorToPhp(line.netMinor)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

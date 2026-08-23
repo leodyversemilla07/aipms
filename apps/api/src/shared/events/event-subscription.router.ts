@@ -1,6 +1,6 @@
+import { db } from '@workspace/db'
 import { Ctx, Input, Query, Router, UseMiddlewares } from 'nestjs-trpc'
 import { z } from 'zod'
-import { db } from '@workspace/db'
 import type { AuthedTrpcContext } from '../../trpc/context.types'
 import { AuthMiddleware } from '../../trpc/middlewares/auth.middleware'
 
@@ -27,9 +27,7 @@ export class EventSubscriptionRouter {
       where: {
         type: { in: input.types },
         publishedAt: { not: null },
-        ...(input.since
-          ? { createdAt: { gt: new Date(input.since) } }
-          : {}),
+        ...(input.since ? { createdAt: { gt: new Date(input.since) } } : {}),
       },
       orderBy: { createdAt: 'asc' },
       take: input.limit,

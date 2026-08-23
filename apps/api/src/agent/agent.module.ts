@@ -9,12 +9,19 @@ import { AgentController } from './agent.controller'
 import { AgentRouter } from './agent.router'
 import { AgentScheduler } from './agent.scheduler'
 import { AGENT_EXTRACTOR, AgentService } from './agent.service'
+import { AgentWakeService } from './agent-wake.service'
 import { extractStructuredInvoice } from './extract'
 import { ServiceTokenGuard } from './service-token.guard'
-import { AgentWakeService } from './agent-wake.service'
 
 @Module({
-  imports: [TrpcModule, SharedModule, EventsModule, IntakeModule, InvoiceModule, PurchaseOrderModule],
+  imports: [
+    TrpcModule,
+    SharedModule,
+    EventsModule,
+    IntakeModule,
+    InvoiceModule,
+    PurchaseOrderModule,
+  ],
   controllers: [AgentController],
   providers: [
     AgentService,
