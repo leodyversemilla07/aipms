@@ -77,11 +77,13 @@ describe('EventRelayService (§13)', () => {
 
     const row = await pollUntilPublished(relay, event.id)
     expect(row?.publishedAt).not.toBeNull()
-    expect(seen).toEqual([event.id])
+    // Parallel suites share the outbox, so the handler legitimately sees
+    // foreign events of the same type — assert on *our* event only.
+    expect(seen.filter((id) => id === event.id)).toHaveLength(1)
     expect(row?.attemptCount).toBe(0)
 
-    await relay.poll() // a later pass must be a no-op for published events
-    expect(seen).toEqual([event.id])
+    await relay.poll() // a later pass must not redeliver published events
+    expect(seen.filter((id) => id === event.id)).toHaveLength(1)
   })
 
   it('publishes events with no handlers without waiting on one', async () => {
