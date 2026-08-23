@@ -23,11 +23,11 @@ async function main() {
   })
   console.log("seeded budget")
 
-  const vendor = await db.vendor.findFirst({
+  let vendor = await db.vendor.findFirst({
     where: { name: "Acme Office Supplies, Inc." },
   })
   if (!vendor) {
-    await db.vendor.create({
+    vendor = await db.vendor.create({
       data: {
         name: "Acme Office Supplies, Inc.",
         status: "active",
@@ -45,6 +45,22 @@ async function main() {
         },
         bankAccountVerifiedAt: new Date(),
         bankAccountChangedAt: new Date(),
+      },
+    })
+  }
+  // §8.3 — messaging requires at least one verified contact channel; back-fill
+  // vendors created before this field existed.
+  const channels = (vendor.contactChannels ?? {}) as {
+    verifiedEmails?: unknown
+  }
+  if (
+    !Array.isArray(channels.verifiedEmails) ||
+    channels.verifiedEmails.length === 0
+  ) {
+    await db.vendor.update({
+      where: { id: vendor.id },
+      data: {
+        contactChannels: { verifiedEmails: ["billing@acme.example"] },
       },
     })
   }

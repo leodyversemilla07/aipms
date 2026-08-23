@@ -133,8 +133,8 @@ aipms/
 | Desk | Route | Purpose |
 |------|-------|---------|
 | Supervisory | `/` | Overview dashboard |
-| Finance | `/finance` | Invoice register, payment runs |
-| Procurement | `/procurement` | Request POs from requisitions |
+| Finance | `/finance` | Invoice register, payment runs, BIR 2307/1601-E reports |
+| Procurement | `/procurement` | POs from requisitions, goods receipts, vendor messaging approvals |
 | Intake | `/intake` | Email/EDI invoice queue |
 | Audit | `/audit` | Event trail viewer |
 | Master-data | `/master-data` | Vendors, catalog, budgets, policies |
@@ -295,11 +295,11 @@ pnpm db:studio     # Prisma Studio UI
 | 0 | ✓ | Foundation (db, auth, basic routers) |
 | 1 | ✓ | Core domain (catalog, vendor, policy, audit) |
 | 2 | ✓ | Requisition → PO workflow |
-| 3 | ○ | Agent skills (sourcing, ops) |
-| 4 | ○ | Invoicing & 3-way match |
-| 5 | ○ | Payment execution & ERP sync |
-| 6 | ○ | Hardening (replay, dead-letter) |
-| 7 | ○ | Enterprise packaging (Docker, offline LLM) |
+| 3 | ✓ | Agent skills (intake drain, sourcing, ops; scoped M2M) |
+| 4 | ✓ | Invoicing & 3-way match (receipts, intake, matching) |
+| 5 | ✓* | Payment runs & vendor messaging relay (*ERP sync pending) |
+| 6 | ✓ | Hardening (hash-chained audit, event DLQ, quotas) |
+| 7 | ✓ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, qualified signing) |
 
 ---
 
