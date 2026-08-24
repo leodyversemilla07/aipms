@@ -35,11 +35,13 @@ test("gated message queues, approves, and lands in sent", async ({ page }) => {
     }
   ).result?.data?.rows
   expect(vendors?.length).toBeGreaterThan(0)
+  const vendorId = vendors?.[0]?.id
+  if (!vendorId) throw new Error("seeded vendor missing")
 
   await page.request.post("http://127.0.0.1:3000/api/trpc/messaging.submit", {
     data: {
       idempotencyKey: `e2e-msg-${suffix}`,
-      vendorId: vendors![0]!.id,
+      vendorId,
       recipient: "billing@acme.example",
       subject,
       body: "We would like to discuss annual pricing for office supplies.",
@@ -68,9 +70,7 @@ test("BIR report and ERP reconciliation render against live data", async ({
   await page.goto("/finance")
 
   await expect(page.getByText("BIR withholding (2307 / 1601-E)")).toBeVisible()
-  await expect(
-    page.getByRole("combobox", { name: "Period" })
-  ).toBeVisible()
+  await expect(page.getByRole("combobox", { name: "Period" })).toBeVisible()
 
   await expect(page.getByText("QuickBooks Online")).toBeVisible()
   await expect(page.getByText(/not connected|connected/).first()).toBeVisible()

@@ -10,7 +10,9 @@ test.describe("desks render", () => {
     page,
   }) => {
     await page.goto("/")
-    await expect(page.getByRole("heading", { name: "Supervisory desk" })).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Supervisory desk" })
+    ).toBeVisible()
     await expect(page.getByText("Agent activity")).toBeVisible()
     await expect(page.getByText("Exception queue")).toBeVisible()
     await expect(page.getByText("New requisition")).toBeVisible()
