@@ -34,7 +34,11 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "pnpm --filter api dev",
+      // Watcher-free boot: the dev script's node --watch fights the
+      // nestjs-trpc codegen watcher (every regenerated server.ts restarts
+      // the API, which never settles on a fresh checkout).
+      command: "node --import @swc-node/register/esm-register src/main.ts",
+      cwd: "../api",
       url: "http://127.0.0.1:3001/",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
