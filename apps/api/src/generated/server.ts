@@ -188,7 +188,27 @@ const appRouter = t.router({
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["ingestVendors"]>>),
     reconcileReport: publicProcedure
       .input(z.object({}))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["reconcileReport"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["reconcileReport"]>>),
+    qboStatus: publicProcedure
+      .input(z.object({}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboStatus"]>>),
+    qboAuthorize: publicProcedure
+      .input(z.object({}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboAuthorize"]>>),
+    qboDisconnect: publicProcedure
+      .input(z.object({}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboDisconnect"]>>),
+    qboSyncAccounts: publicProcedure
+      .input(z.object({}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboSyncAccounts"]>>),
+    qboSetAccountMap: publicProcedure
+      .input(z.object({
+      map: z.record(z.string().min(1), z.string().min(1)),
+    }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboSetAccountMap"]>>),
+    qboPushExport: publicProcedure
+      .input(z.object({ exportId: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["qboPushExport"]>>)
     }),
   intake: t.router({
     list: publicProcedure

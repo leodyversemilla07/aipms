@@ -518,6 +518,27 @@ model ErpJournalExport {
   @@index([status])
 }
 
+// OAuth connection to an ERP instance (§8.5 v1 anchor: QuickBooks Online).
+// One row per provider+realm; tokens are encrypted at rest with the
+// instance key (AES-256-GCM over a key derived from BETTER_AUTH_SECRET).
+// The settings JSON carries the aipms→ERP chart-of-accounts map and a
+// cached account list for the mapping UI.
+model ErpConnection {
+  id              String    @id @default(cuid())
+  provider        String // 'quickbooks'
+  realmId         String
+  status          String    @default("connected") // connected | disconnected
+  accessTokenEnc  String
+  refreshTokenEnc String
+  expiresAt       DateTime // access-token expiry; refresh before use
+  settings        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([provider, realmId])
+  @@map("erpConnection")
+}
+
 // ===== §8.6 approved payment run (hand-off to finance). =====
 enum PaymentRunStatus {
   draft

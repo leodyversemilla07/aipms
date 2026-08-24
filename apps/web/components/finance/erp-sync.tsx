@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import { Input } from "@workspace/ui/components/input"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { useState } from "react"
 import { minorToPhp } from "@/lib/money"
@@ -33,6 +34,13 @@ type ExportRow = {
   exportedAt: string
 }
 
+/** aipms chart codes (§8.5 v1 defaults) → ERP account ids. */
+const CHART_CODES = [
+  { code: "2010", label: "Accounts Payable" },
+  { code: "2020", label: "EWT Withholding Payable" },
+  { code: "1010", label: "Cash Clearing" },
+]
+
 /**
  * §8.5 — ERP bridge on the finance desk. Executed runs export once as a
  * governed journal (hash-verified); the ERP's acknowledgement settles the
@@ -43,6 +51,7 @@ export function ErpSync() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [manifestFor, setManifestFor] = useState<ExportRow | null>(null)
   const [rejecting, setRejecting] = useState<ExportRow | null>(null)
   const [reason, setReason] = useState("")
@@ -53,6 +62,7 @@ export function ErpSync() {
   const rows = (exportsQuery.data?.rows ?? []) as unknown as ExportRow[]
 
   const report = useQuery(trpc.erp.reconcileReport.queryOptions({}))
+  const qbo = useQuery(trpc.erp.qboStatus.queryOptions({}))
 
   const manifest = useQuery({
     ...trpc.erp.manifest.queryOptions({ id: manifestFor?.id ?? "" }),
@@ -60,6 +70,17 @@ export function ErpSync() {
   })
 
   const acknowledge = useMutation(trpc.erp.acknowledge.mutationOptions())
+  const pushQbo = useMutation(trpc.erp.qboPushExport.mutationOptions())
+  const qboAuthorize = useMutation(trpc.erp.qboAuthorize.mutationOptions())
+  const qboDisconnect = useMutation(trpc.erp.qboDisconnect.mutationOptions())
+  const qboSyncAccounts = useMutation(
+    trpc.erp.qboSyncAccounts.mutationOptions()
+  )
+  const qboSetMap = useMutation(
+    trpc.erp.qboSetAccountMap.mutationOptions({
+      onSuccess: () => setNotice("Chart map saved."),
+    })
+  )
 
   function refresh() {
     queryClient.invalidateQueries(trpc.erp.pathFilter())
@@ -115,6 +136,53 @@ export function ErpSync() {
         ) : null}
       </div>
 
+      {notice ? (
+        <p className="rounded-lg bg-primary/10 px-3 py-2 text-primary text-xs">
+          {notice}
+        </p>
+      ) : null}
+
+      {/* QuickBooks connector (§8.5 v1 anchor adapter) */}
+      <QboPanel
+        qbo={qbo.data}
+        pending={
+          pushQbo.isPending ||
+          qboAuthorize.isPending ||
+          qboDisconnect.isPending ||
+          qboSyncAccounts.isPending ||
+          qboSetMap.isPending
+        }
+        onConnect={() =>
+          qboAuthorize
+            .mutateAsync({})
+            .then(({ url }) => {
+              window.location.href = url
+            })
+            .catch((e: Error) => setError(e.message))
+        }
+        onDisconnect={() =>
+          qboDisconnect
+            .mutateAsync({})
+            .then(refresh)
+            .catch((e: Error) => setError(e.message))
+        }
+        onSyncAccounts={() =>
+          qboSyncAccounts
+            .mutateAsync({})
+            .then(({ accounts }) => {
+              setNotice(`Synced ${accounts.length} account(s) from QuickBooks.`)
+              refresh()
+            })
+            .catch((e: Error) => setError(e.message))
+        }
+        onSaveMap={(map) =>
+          qboSetMap
+            .mutateAsync({ map })
+            .then(() => refresh())
+            .catch((e: Error) => setError(e.message))
+        }
+      />
+
       {error ? (
         <p className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-xs">
           {error}
@@ -163,6 +231,27 @@ export function ErpSync() {
                   >
                     Journal
                   </Button>
+                  {qbo.data?.connected && e.status === "exported" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pushQbo.isPending}
+                      title="Create the journal in QuickBooks and settle this export"
+                      onClick={() =>
+                        pushQbo
+                          .mutateAsync({ exportId: e.id })
+                          .then((posted) => {
+                            setNotice(
+                              `Pushed to QuickBooks as JournalEntry ${posted.externalRef}.`
+                            )
+                            refresh()
+                          })
+                          .catch((err: Error) => setError(err.message))
+                      }
+                    >
+                      Push to QBO
+                    </Button>
+                  ) : null}
                   {e.status === "exported" ? (
                     <>
                       <Button
@@ -309,5 +398,180 @@ function ConfirmReject({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+type QboStatus = {
+  connected: boolean
+  realmId: string | null
+  environment: string
+  accountMap: Record<string, string>
+  cachedAccounts: { id: string; name: string; type: string }[]
+}
+
+function QboPanel({
+  qbo,
+  pending,
+  onConnect,
+  onDisconnect,
+  onSyncAccounts,
+  onSaveMap,
+}: {
+  qbo?: QboStatus
+  pending: boolean
+  onConnect: () => void
+  onDisconnect: () => void
+  onSyncAccounts: () => void
+  onSaveMap: (map: Record<string, string>) => void
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>({})
+
+  if (!qbo) {
+    return (
+      <div className="rounded-lg border bg-card px-4 py-3 text-muted-foreground text-xs">
+        Loading QuickBooks status…
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-medium">QuickBooks Online</span>
+          <span className="text-muted-foreground text-xs">
+            {qbo.environment}
+            {qbo.connected && qbo.realmId ? ` · realm ${qbo.realmId}` : ""}
+          </span>
+          {qbo.connected ? (
+            <Badge>connected</Badge>
+          ) : (
+            <Badge variant="secondary">not connected</Badge>
+          )}
+        </div>
+        {qbo.connected ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={onDisconnect}
+          >
+            Disconnect
+          </Button>
+        ) : (
+          <Button size="sm" disabled={pending} onClick={onConnect}>
+            Connect QuickBooks…
+          </Button>
+        )}
+      </div>
+
+      {qbo.connected ? (
+        <>
+          <p className="text-muted-foreground text-xs">
+            Map aipms chart codes onto QuickBooks accounts (ids come from the
+            company&apos;s chart of accounts). Unmapped codes refuse to push —
+            never mispost silently.
+          </p>
+          <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 gap-y-1 text-xs">
+            {CHART_CODES.map((c) => (
+              <AccountMapRow
+                key={c.code}
+                code={c.code}
+                label={c.label}
+                value={draft[c.code] ?? qbo.accountMap[c.code] ?? ""}
+                cached={qbo.cachedAccounts}
+                onChange={(v) => setDraft((prev) => ({ ...prev, [c.code]: v }))}
+              />
+            ))}
+            <span />
+            <span />
+            <Button
+              size="xs"
+              disabled={pending || Object.keys(draft).length === 0}
+              title="Save the chart map"
+              onClick={() => {
+                const merged = { ...qbo.accountMap }
+                for (const c of CHART_CODES) {
+                  const v = draft[c.code]
+                  if (v !== undefined && v !== "") merged[c.code] = v
+                }
+                onSaveMap(merged)
+                setDraft({})
+              }}
+            >
+              Save map
+            </Button>
+          </div>
+          {qbo.cachedAccounts.length > 0 ? (
+            <details className="text-muted-foreground text-xs">
+              <summary className="cursor-pointer">
+                Chart of accounts cache ({qbo.cachedAccounts.length})
+              </summary>
+              <ul className="mt-1 max-h-40 overflow-y-auto">
+                {qbo.cachedAccounts.map((a) => (
+                  <li key={a.id} className="font-mono">
+                    {a.id} · {a.name} ({a.type})
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending}
+              onClick={onSyncAccounts}
+            >
+              Sync chart of accounts from QBO
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function AccountMapRow({
+  code,
+  label,
+  value,
+  cached,
+  onChange,
+}: {
+  code: string
+  label: string
+  value: string
+  cached: { id: string; name: string; type: string }[]
+  onChange: (value: string) => void
+}) {
+  const id = `qbo-map-${code}`
+  return (
+    <>
+      <label htmlFor={id} className="text-xs">
+        <span className="font-mono">{code}</span> · {label}
+      </label>
+      <Input
+        id={id}
+        placeholder="QBO account id"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        list={`qbo-accounts-${code}`}
+        className="h-7 w-32 text-xs"
+      />
+      <datalist id={`qbo-accounts-${code}`}>
+        {cached.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.type})
+          </option>
+        ))}
+      </datalist>
+      <span className="text-muted-foreground">
+        {(() => {
+          const match = cached.find((a) => a.id === value)
+          return match ? `${match.name} (${match.type})` : ""
+        })()}
+      </span>
+    </>
   )
 }
