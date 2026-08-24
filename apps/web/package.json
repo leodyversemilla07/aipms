@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "biome lint .",
     "format": "biome check --write .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
@@ -26,6 +27,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@tanstack/react-query-devtools": "^5.101.2",
     "@types/node": "^20",

@@ -10,6 +10,8 @@ allowBuilds:
   prisma: true
   esbuild: true
   "@swc/core": true
+  '@prisma/client': true
+  better-sqlite3: true
 
 minimumReleaseAgeExclude:
   - "@ai-sdk/*"

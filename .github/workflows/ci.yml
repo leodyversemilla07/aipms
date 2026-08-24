@@ -78,3 +78,60 @@ jobs:
 
       - name: Tax engine tests
         run: pnpm --filter tax test
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aipms
+          POSTGRES_PASSWORD: aipms
+          POSTGRES_DB: aipms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aipms -d aipms"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
+      BETTER_AUTH_SECRET: ci-only-not-a-secret
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4 # version comes from packageManager
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      - name: Apply migrations and seed
+        run: |
+          pnpm db:generate
+          pnpm db:deploy
+          pnpm db:seed
+
+      - name: Run E2E suite
+        run: pnpm --filter web e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
