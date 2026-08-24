@@ -47,7 +47,12 @@ const appRouter = t.router({
       .input(z.object({
   limit: z.number().int().min(1).max(100).default(10),
 }))
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["batch"]>>)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["batch"]>>),
+    runs: publicProcedure
+      .input(listInput.extend({
+  status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>)
     }),
   approval: t.router({
     pendingList: publicProcedure

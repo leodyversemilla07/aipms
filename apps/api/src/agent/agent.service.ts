@@ -2,6 +2,8 @@ import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { IntakeService } from '../intake/intake.service'
 import { InvoiceService } from '../invoice/invoice.service'
+import type { ListInput, ListResult } from '../trpc/list-input'
+import { paginate } from '../trpc/list-input'
 import { extractStructuredInvoice } from './extract'
 import { type InvoicePayload, invoicePayloadSchema } from './invoice-payload'
 
@@ -80,5 +82,30 @@ export class AgentService {
       }
     }
     return { documents: docs.length, succeeded, failed }
+  }
+
+  /**
+   * §7.1 run history — the supervisory surface over what agents actually
+   * did (status, skills, trigger metadata). Newest first.
+   */
+  listRuns(
+    input: Partial<ListInput> & {
+      status?: 'running' | 'succeeded' | 'failed' | 'cancelled'
+    } = {},
+  ): Promise<ListResult<object>> {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where = input.status ? { status: input.status } : {}
+    return Promise.all([
+      db.agentRun.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { startedAt: 'desc' },
+      }),
+      db.agentRun.count({ where }),
+    ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 }

@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
+import { AgentRuns } from "@/components/agent-runs"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { ExceptionQueue } from "./exception-queue"
@@ -113,6 +114,7 @@ function Dashboard() {
         <StatCard label="Pay runs" value={count(runs)} />
       </div>
 
+      <AgentRuns />
       <ExceptionQueue />
       <CreateRequisition />
     </div>

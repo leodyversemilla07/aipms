@@ -137,4 +137,54 @@ describe('Agent pipeline (§3 classify→register)', () => {
     expect(docs.every((d) => d.status !== 'new')).toBe(true)
     expect(docs.some((d) => d.status === 'extracted')).toBe(true)
   })
+
+  it('lists run history newest first with optional status filter', async () => {
+    const runs = [
+      await db.agentRun.create({
+        data: { agentId: 'hist-agent', skills: ['intake-classify'] },
+      }),
+      await db.agentRun.create({
+        data: {
+          agentId: 'hist-agent',
+          skills: ['requisition-to-po'],
+          status: 'succeeded',
+          finishedAt: new Date(),
+          meta: { triggeredBy: 'requisition.approved' },
+        },
+      }),
+      await db.agentRun.create({
+        data: {
+          agentId: 'hist-agent',
+          skills: ['invoice-match'],
+          status: 'failed',
+          finishedAt: new Date(),
+          meta: { error: 'boom' },
+        },
+      }),
+    ]
+
+    try {
+      const all = await agent.listRuns({ page: 1, pageSize: 50 })
+      const mine = all.rows.filter(
+        (r) => (r as { agentId: string }).agentId === 'hist-agent',
+      )
+      expect(mine.length).toBe(3)
+
+      const failedOnly = await agent.listRuns({
+        page: 1,
+        pageSize: 50,
+        status: 'failed',
+      })
+      expect(
+        failedOnly.rows.every(
+          (r) => (r as { status: string }).status === 'failed',
+        ),
+      ).toBe(true)
+      expect(failedOnly.total).toBeGreaterThanOrEqual(1)
+    } finally {
+      await db.agentRun.deleteMany({
+        where: { id: { in: runs.map((r) => r.id) } },
+      })
+    }
+  })
 })

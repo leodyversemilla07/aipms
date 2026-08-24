@@ -1,9 +1,17 @@
 import { Inject } from '@nestjs/common'
-import { Ctx, Input, Mutation, Router, UseMiddlewares } from 'nestjs-trpc'
+import {
+  Ctx,
+  Input,
+  Mutation,
+  Query,
+  Router,
+  UseMiddlewares,
+} from 'nestjs-trpc'
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { AgentService } from './agent.service'
 
@@ -14,6 +22,10 @@ const processInput = z.object({
 
 const batchInput = z.object({
   limit: z.number().int().min(1).max(100).default(10),
+})
+
+const runsInput = listInput.extend({
+  status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
 })
 
 /**
@@ -75,5 +87,11 @@ export class AgentRouter {
       after: result,
     })
     return result
+  }
+
+  /** §7.1 — run history for the supervisory desk. */
+  @Query({ input: runsInput })
+  async runs(@Input() input: z.infer<typeof runsInput>) {
+    return this.agent.listRuns(input)
   }
 }

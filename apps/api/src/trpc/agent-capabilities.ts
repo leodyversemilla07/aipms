@@ -84,6 +84,9 @@ export const AGENT_CAPABILITIES: Record<string, string> = {
   'bir.certificate': 'invoice.read',
   'bir.remittance': 'invoice.read',
   'bir.periods': 'invoice.read',
+
+  // Agent runs — scoped agents may inspect the run history (§7.1)
+  'agent.runs': 'agent.read',
 }
 
 /**
