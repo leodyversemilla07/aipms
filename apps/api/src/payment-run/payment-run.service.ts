@@ -11,6 +11,8 @@ import {
   Prisma,
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
+import { type BuiltBatch, buildPaymentBatch } from './batch'
+import { buildPain001, resolveDebtor } from './pain001'
 
 /**
  * §8.6 approved payment run (hand-off to finance, not bank-file execution).
@@ -189,6 +191,106 @@ export class PaymentRunService {
       where: { id: runId },
       data: { status: 'executed', executedBy, executedAt: new Date() },
     })
+  }
+
+  /**
+   * §8.6 hand-off artifact — the normalized PESONet batch file finance
+   * imports into the org's bank portal. Generation requires an approved or
+   * executed run (drafts are not binding; voided runs never pay) and is
+   * deterministic from frozen data, so regeneration yields byte-identical
+   * output (sha256 tamper-evidence). Beneficiary details are copied from the
+   * vendor master's verified bank account; any unusable account refuses the
+   * whole batch rather than producing partial payment instructions.
+   */
+  async generateBatch(runId: string): Promise<{
+    runNumber: string
+    status: string
+    currencyCode: string
+    totalMinor: number
+    lineCount: number
+    sha256: string
+    json: string
+    csv: string
+    /** ISO 20022 pain.001.08 — null until AIPMS_PAYMENT_DEBTOR_NAME/ACCOUNT are set. */
+    pain001: string | null
+  }> {
+    const run = await db.paymentRun.findUnique({ where: { id: runId } })
+    if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
+    if (run.status !== 'approved' && run.status !== 'executed') {
+      throw new ConflictException(
+        `Run ${run.runNumber} is ${run.status} — only approved or executed runs produce a payment batch`,
+      )
+    }
+
+    const lines = await db.paymentRunLine.findMany({ where: { runId } })
+    const invoiceIds = [...new Set(lines.map((line) => line.invoiceId))]
+    const [invoices, vendors] = await Promise.all([
+      db.invoice.findMany({ where: { id: { in: invoiceIds } } }),
+      db.vendor.findMany({
+        select: {
+          id: true,
+          name: true,
+          taxId: true,
+          bankAccount: true,
+        },
+      }),
+    ])
+    const invoiceById = new Map(invoices.map((inv) => [inv.id, inv] as const))
+    const vendorById = new Map(vendors.map((v) => [v.id, v] as const))
+
+    let built: BuiltBatch
+    try {
+      built = buildPaymentBatch({
+        runNumber: run.runNumber,
+        executedAt: run.executedAt ?? run.updatedAt,
+        currencyCode: run.currencyCode,
+        totalMinor: run.totalMinor,
+        lines: lines.map((line) => {
+          const inv = invoiceById.get(line.invoiceId)
+          if (!inv) {
+            throw new NotFoundException(
+              `Invoice ${line.invoiceId} on ${run.runNumber} not found`,
+            )
+          }
+          const vendor = vendorById.get(inv.vendorId)
+          return {
+            lineId: line.id,
+            invoiceId: inv.id,
+            invoiceNumber: inv.number,
+            vendorId: inv.vendorId,
+            vendorName: vendor?.name ?? '(unknown vendor)',
+            vendorTaxId: vendor?.taxId ?? null,
+            netMinor: line.netMinor,
+            currencyCode: run.currencyCode,
+            bankAccount: vendor?.bankAccount ?? null,
+          }
+        }),
+      })
+    } catch (error) {
+      // Builder failures (unusable beneficiaries, Σ mismatch) are domain
+      // refusals — surface as 400/409-shaped BadRequest, fail visible.
+      throw new BadRequestException(
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+
+    // Same frozen data, standards-shaped rail. The debtor (paying org) is
+    // instance configuration; without it the CSV hand-off still works and
+    // pain.001 is withheld rather than emitted with placeholder payer details.
+    const debtor = resolveDebtor()
+    const pain = debtor ? buildPain001(built.manifest, debtor) : null
+
+    return {
+      runNumber: run.runNumber,
+      status: run.status,
+      currencyCode: run.currencyCode,
+      totalMinor: run.totalMinor,
+      lineCount: lines.length,
+      sha256: built.sha256,
+      json: built.json,
+      csv: built.csv,
+      pain001: pain?.xml ?? null,
+    }
   }
 
   /**

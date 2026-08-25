@@ -56,6 +56,16 @@ export class PaymentRunRouter {
     return this.runs.detail(input.id)
   }
 
+  /** §8.6 hand-off artifact — deterministic PESONet batch (JSON + CSV + sha256). */
+  @Query({ input: runIdInput })
+  async batch(
+    @Input() input: z.infer<typeof runIdInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.batch')
+    return this.runs.generateBatch(input.id)
+  }
+
   @Mutation({ input: createInput })
   async create(
     @Input() input: z.infer<typeof createInput>,

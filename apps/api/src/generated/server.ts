@@ -353,6 +353,9 @@ const appRouter = t.router({
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["detail"]>>),
+    batch: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["batch"]>>),
     create: publicProcedure
       .input(z.object({
   idempotencyKey: z.string().min(1),
