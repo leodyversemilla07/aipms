@@ -82,6 +82,64 @@ export function PaymentRuns() {
   const reconcile = useMutation(trpc.paymentRun.reconcile.mutationOptions())
   const exportRun = useMutation(trpc.erp.exportRun.mutationOptions())
 
+  /** §8.6 hand-off: fetch the deterministic PESONet batch and save the CSV.
+   * Generation is server-side and deterministic, so the browser only writes
+   * the artifact; the returned sha256 is surfaced for out-of-band checks. */
+  async function downloadBatch(runId: string) {
+    setError(null)
+    try {
+      const batch = await queryClient.fetchQuery(
+        trpc.paymentRun.batch.queryOptions({ id: runId })
+      )
+      const blob = new Blob([batch.csv], { type: "text/csv;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `${batch.runNumber}-pesonet-batch.csv`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      setNotice(
+        `Batch saved (${batch.lineCount} credits · sha256 ${batch.sha256.slice(0, 12)}…).`
+      )
+    } catch (e) {
+      setError(`Could not generate batch: ${(e as Error).message}`)
+    }
+  }
+
+  /** §8.6 ISO 20022 rail: same frozen data rendered as pain.001.08 XML.
+   * The API withholds it (null) until AIPMS_PAYMENT_DEBTOR_NAME/ACCOUNT are
+   * configured — surface that as a readable hint instead of an empty file. */
+  async function downloadPain001(runId: string) {
+    setError(null)
+    try {
+      const batch = await queryClient.fetchQuery(
+        trpc.paymentRun.batch.queryOptions({ id: runId })
+      )
+      if (!batch.pain001) {
+        setError(
+          "pain.001 is not configured — set AIPMS_PAYMENT_DEBTOR_NAME and AIPMS_PAYMENT_DEBTOR_ACCOUNT on the instance first."
+        )
+        return
+      }
+      const blob = new Blob([batch.pain001], {
+        type: "application/xml;charset=utf-8",
+      })
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = url
+      anchor.download = `${batch.runNumber}-pain001.xml`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      URL.revokeObjectURL(url)
+      setNotice(`pain.001 saved (${batch.lineCount} credits).`)
+    } catch (e) {
+      setError(`Could not generate pain.001: ${(e as Error).message}`)
+    }
+  }
+
   function refresh() {
     queryClient.invalidateQueries(trpc.paymentRun.pathFilter())
     queryClient.invalidateQueries(trpc.invoice.pathFilter())
@@ -237,6 +295,27 @@ export function PaymentRuns() {
                 {minorToPhp(run.totalMinor)}
               </span>
             </div>
+
+            {run.status === "approved" || run.status === "executed" ? (
+              <div className="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Download the §8.6 PESONet hand-off file for this run"
+                  onClick={() => void downloadBatch(run.id)}
+                >
+                  Download batch
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  title="Download ISO 20022 pain.001.08 for this run"
+                  onClick={() => void downloadPain001(run.id)}
+                >
+                  pain.001
+                </Button>
+              </div>
+            ) : null}
 
             {run.status === "executed" ? (
               <div className="flex justify-end">
