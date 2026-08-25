@@ -132,7 +132,7 @@ aipms/
 | `audit` | list, meta | Audit trail |
 | `policy` | list, create, taxConfig | Policy engine |
 | `budget` | read, list | Budget tracking |
-| `payment-run` | list, create, approve, execute | Payment workflow |
+| `payment-run` | list, create, approve, execute, batch | Payment workflow (§8.6 PESONet hand-off file) |
 | `messaging` | submit, approve, reject, list, detail | §8.3 vendor messaging relay (tiered sends) |
 | `receipt` | record, cancel, list, detail | §8.1 goods receipts (3-way match leg) |
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
@@ -208,6 +208,18 @@ AUTH_SEED_DEMO=1
 ---
 
 ## Enterprise Deployment
+
+### Backup & restore (§16.2.1)
+
+```bash
+# One-off or cron-scheduled logical dump (keeps last 14 by default)
+./scripts/backup.sh /var/backups/aipms        # AIPMS_BACKUP_KEEP=30 to override
+
+# Rollback: stop writers, load a dump, restart on the previous image tag
+./scripts/restore.sh backups/aipms-20260825-020000.sql.gz
+```
+
+Restore verifies the archive integrity before touching the database and stops web/agent during the window; the api re-runs `prisma migrate deploy` on boot, so restoring an older schema version is safe.
 
 ### Single-tenant, Self-hostable
 
