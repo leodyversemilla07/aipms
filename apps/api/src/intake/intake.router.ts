@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { ConflictException, Inject } from '@nestjs/common'
 import {
   Ctx,
@@ -16,6 +17,7 @@ import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { IntakeService } from './intake.service'
+import { parseStructuredInvoice } from './structured-invoice'
 
 const ingestInput = z.object({
   idempotencyKey: z.string().min(1),
@@ -46,6 +48,15 @@ const listInputWithStatus = listInput.extend({
 const idInput = z.object({ id: z.string().min(1) })
 
 const bridgeInput = idInput.extend({ idempotencyKey: z.string().min(1) })
+
+// §8.2 structured channels — machine formats parsed deterministically on
+// receive (no LLM); documents enter the queue pre-extracted.
+const ingestStructuredInput = z.object({
+  idempotencyKey: z.string().min(1),
+  channel: z.enum(['EINVOICE_EIS', 'PEPPOL_UBL']),
+  content: z.string().min(1),
+  senderId: z.string().min(1).optional(),
+})
 
 @Router({ alias: 'intake' })
 @UseMiddlewares(AuthMiddleware)
@@ -79,6 +90,41 @@ export class IntakeRouter {
         input,
       })
       return doc
+    })
+  }
+
+  /**
+   * §8.2 structured e-invoicing: parse a BIR EIS JSON or Peppol UBL XML
+   * document deterministically and ingest it pre-extracted. Dedupe is over
+   * the raw content hash, so re-transmission of the same file is a no-op.
+   */
+  @Mutation({ input: ingestStructuredInput })
+  async ingestStructured(
+    @Input() input: z.infer<typeof ingestStructuredInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    return this.idempotency.run(input.idempotencyKey, async () => {
+      const classified = parseStructuredInvoice(input.channel, input.content)
+      const contentHash = createHash('sha256')
+        .update(input.content)
+        .digest('hex')
+      const doc = await this.intake.ingest({
+        channel: input.channel,
+        contentHash,
+        senderId: input.senderId ?? null,
+        raw: input.content.length <= 262144 ? input.content : undefined,
+      })
+      const extracted = await this.intake.classify({ id: doc.id, classified })
+      await this.audit.record({
+        actorId: ctx.user.id,
+        actorKind: ctx.actorKind,
+        action: 'intake.ingestStructured',
+        entity: 'IntakeDocument',
+        entityId: doc.id,
+        input: { channel: input.channel, contentHash },
+        after: { status: extracted.status },
+      })
+      return extracted
     })
   }
 
