@@ -58,6 +58,18 @@ services:
       AGENT_BATCH_SIZE: ${AGENT_BATCH_SIZE:-25}
       EVENT_RELAY_INTERVAL_MS: ${EVENT_RELAY_INTERVAL_MS:-1000}
       EVENT_RELAY_MAX_ATTEMPTS: ${EVENT_RELAY_MAX_ATTEMPTS:-5}
+      # §8.2 email intake (optional): set host/user/password in .env to poll
+      # the org's supplier mailbox and feed the normalized intake queue.
+      AIPMS_IMAP_HOST: ${AIPMS_IMAP_HOST:-}
+      AIPMS_IMAP_PORT: ${AIPMS_IMAP_PORT:-993}
+      AIPMS_IMAP_USER: ${AIPMS_IMAP_USER:-}
+      AIPMS_IMAP_PASSWORD: ${AIPMS_IMAP_PASSWORD:-}
+      AIPMS_IMAP_TLS: ${AIPMS_IMAP_TLS:-true}
+      AIPMS_IMAP_MAILBOX: ${AIPMS_IMAP_MAILBOX:-INBOX}
+      AIPMS_IMAP_INTERVAL_MS: ${AIPMS_IMAP_INTERVAL_MS:-60000}
+      # §8.6 pain.001 debtor (paying org) — set both to enable the ISO 20022 rail
+      AIPMS_PAYMENT_DEBTOR_NAME: ${AIPMS_PAYMENT_DEBTOR_NAME:-}
+      AIPMS_PAYMENT_DEBTOR_ACCOUNT: ${AIPMS_PAYMENT_DEBTOR_ACCOUNT:-}
     ports:
       - "${API_PORT:-3001}:3001"
     healthcheck:
