@@ -5,10 +5,11 @@ import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
 import { IntakeRouter } from './intake.router'
 import { IntakeService } from './intake.service'
+import { IntakeImapService } from './intake-imap.service'
 
 @Module({
   imports: [TrpcModule, SharedModule, InvoiceModule, EventsModule],
-  providers: [IntakeService, IntakeRouter],
+  providers: [IntakeService, IntakeRouter, IntakeImapService],
   exports: [IntakeService],
 })
 export class IntakeModule {}
