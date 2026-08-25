@@ -367,6 +367,7 @@ model Requisition {
   decidedAt     DateTime?
   lines         RequisitionLine[]
   approvals     Approval[]
+  quotes        Quote[]
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
 
@@ -465,6 +466,10 @@ model Approval {
   decidedBy     String?
   decidedAt     DateTime?
   evidence      String?
+  // §10.3 SLA escalation — set once by the escalator when a pending
+  // approval breaches the instance SLA window; escalation is visible,
+  // never automatic re-routing.
+  escalatedAt   DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -730,6 +735,46 @@ model Message {
   @@index([vendorId])
   @@index([status])
   @@index([threadId])
+}
+
+// ===== §8.1 sourcing — structured vendor quotes (§7.5 sourcing path) =====
+
+// Lifecycle of one quote. `requested` = RFQ sent (messaging relay); the
+// structured offer arrives through any intake channel and is recorded via
+// receive(). Award is exclusive per requisition: accepting one quote rejects
+// its siblings, and the decision cites the evaluation criterion used.
+enum QuoteStatus {
+  requested
+  received
+  accepted
+  rejected
+}
+
+/// One vendor's offer against a requisition (§8.1 Quote). Money is minor
+/// units; the payload keeps the full structured offer as received so the
+/// comparison/award decision replays for audit.
+model Quote {
+  id            String      @id @default(cuid())
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  vendorId      String
+  status        QuoteStatus @default(requested)
+  currencyCode  String      @default("PHP")
+  totalMinor    Int? // §8.4 money shape; null until the offer arrives
+  leadTimeDays  Int?
+  validUntil    DateTime?
+  lines         Json? // [{sku?, description, quantity, unitPriceMinor, amountMinor}]
+  payload       Json? // full offer as received (tamper-evident context for award)
+  awardedAt     DateTime?
+  rejectedReason String?
+  requestedBy   String
+  createdBy     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([requisitionId, vendorId])
+  @@index([status])
+  @@map("quote")
 }
 
 // ===== Phase 7 — enterprise identity (§16.2: OIDC/SAML/SCIM) =====

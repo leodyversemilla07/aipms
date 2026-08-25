@@ -26,6 +26,9 @@ export const DomainEventTypes = {
   // §8.5 — ERP bridge
   'erp.exported': 'erp.exported',
   'erp.posted': 'erp.posted',
+  // §8.1 — sourcing quotes + §10.3 approval SLA escalation
+  'quote.awarded': 'quote.awarded',
+  'approval.slaBreached': 'approval.slaBreached',
 } as const
 
 export type DomainEventType =

@@ -20,6 +20,7 @@ import { PurchaseOrderModule } from './purchase-order/purchase-order.module'
 import { ReceiptModule } from './receipt/receipt.module'
 import { RequisitionModule } from './requisition/requisition.module'
 import { EventsModule } from './shared/events/events.module'
+import { SourcingModule } from './sourcing/sourcing.module'
 import { SsoModule } from './sso/sso.module'
 import { TrpcModule } from './trpc/trpc.module'
 import { UsersModule } from './users/users.module'
@@ -35,6 +36,7 @@ import { VendorModule } from './vendor/vendor.module'
     BudgetModule,
     PolicyModule,
     RequisitionModule,
+    SourcingModule,
     PurchaseOrderModule,
     ApprovalModule,
     AgentModule,
