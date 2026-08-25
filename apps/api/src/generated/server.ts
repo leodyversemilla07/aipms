@@ -32,6 +32,7 @@ import type { PurchaseOrderRouter } from "../purchase-order/purchase-order.route
 import type { ReceiptRouter } from "../receipt/receipt.router";
 import type { RequisitionRouter } from "../requisition/requisition.router";
 import type { EventSubscriptionRouter } from "../shared/events/event-subscription.router";
+import type { SourcingRouter } from "../sourcing/sourcing.router";
 import type { SsoRouter } from "../sso/sso.router";
 import type { UsersRouter } from "../users/users.router";
 import type { VendorRouter } from "../vendor/vendor.router";
@@ -243,6 +244,14 @@ const appRouter = t.router({
   raw: z.unknown().optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["ingest"]>>),
+    ingestStructured: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  channel: z.enum(['EINVOICE_EIS', 'PEPPOL_UBL']),
+  content: z.string().min(1),
+  senderId: z.string().min(1).optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["ingestStructured"]>>),
     classify: publicProcedure
       .input(z.object({
   id: z.string().min(1),
@@ -515,6 +524,47 @@ const appRouter = t.router({
   limit: z.number().int().min(1).max(100).default(20),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>)
+    }),
+  sourcing: t.router({
+    list: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["list"]>>),
+    detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["detail"]>>),
+    request: publicProcedure
+      .input(z.object({
+  requisitionId: z.string().min(1),
+  vendorIds: z.array(z.string().min(1)).min(1),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["request"]>>),
+    receive: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  totalMinor: z.number().int().positive(),
+  currencyCode: z.string().min(3).max(3).optional(),
+  leadTimeDays: z.number().int().positive().optional(),
+  validUntil: z.date().optional(),
+  lines: z
+    .array(
+      z.object({
+        sku: z.string().optional(),
+        description: z.string(),
+        quantity: z.number().int().positive().optional(),
+        unitPriceMinor: z.number().int().nonnegative().optional(),
+        amountMinor: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
+  payload: z.unknown().optional(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["receive"]>>),
+    compare: publicProcedure
+      .input(z.object({ requisitionId: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["compare"]>>),
+    award: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["award"]>>)
     }),
   sso: t.router({
     listProviders: publicProcedure
