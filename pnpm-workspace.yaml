@@ -13,6 +13,15 @@ allowBuilds:
   '@prisma/client': true
   better-sqlite3: true
 
+# Security overrides — same-major bumps over vulnerable transitive ranges
+# (2026-07 advisories; see pnpm audit). Range-scoped so unrelated major
+# lines (e.g. brace-expansion@1.x consumers) stay untouched.
+overrides:
+  'js-yaml@<4.3.1': ^4.3.1
+  'nanoid@<3.3.18': ^3.3.18
+  'postcss@<8.5.23': ^8.5.26
+  'brace-expansion@>=5.0.0 <5.0.9': 5.0.9
+
 minimumReleaseAgeExclude:
   - "@ai-sdk/*"
   - "@rolldown/*"

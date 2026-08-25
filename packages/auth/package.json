@@ -15,7 +15,7 @@
     "clean": "node -e \"fs.rmSync('node_modules',{recursive:true,force:true});fs.rmSync('.turbo',{recursive:true,force:true})\""
   },
   "dependencies": {
-    "@better-auth/scim": "1.6.26",
+    "@better-auth/scim": "1.6.22",
     "@better-auth/sso": "1.6.26",
     "@workspace/db": "workspace:*",
     "@workspace/env": "workspace:*",
