@@ -236,7 +236,9 @@ describe('QboService connection lifecycle', () => {
 
     // Unmapped code → refused before any network call.
     const bad = JSON.parse(manifest) as typeof manifest
-    bad.entries[0]!.account = '9999'
+    const firstEntry = bad.entries[0]
+    if (!firstEntry) throw new Error('manifest has no entries')
+    firstEntry.account = '9999'
     await expect(svc.postJournal(JSON.stringify(bad))).rejects.toThrow(
       /No QuickBooks account mapped/,
     )

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml)
 
-**Status:** Enterprise-ready (v0.4) | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
+**Status:** Enterprise-ready (v0.5) | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
 
 ---
 
@@ -80,8 +80,9 @@ aipms/
 
 ### §6 Agents First
 - Agents have identities, sessions, scopes, and quotas (same as humans)
-- Scoped capabilities: `catalog.read`, `po.issue`, `invoice.match`, etc.
-- Graduated topology: Phase 1 ships one operator agent; Phase 3+ adds specialists
+- Scoped capabilities: `catalog.read`, `po.issue`, `invoice.match`, etc. — default-deny capability map on the M2M surface
+- Quotas enforced in tRPC middleware: per-agent mutation rate + concurrency caps (`AIPMS_AGENT_RATE_LIMIT`, `AIPMS_AGENT_CONCURRENCY`)
+- Graduated topology: operator agent today; specialist agents share one domain model
 
 ### §9 Data Model
 - Financial values: `{ minorUnits: int, currency: string }` (PH-first: PHP)
@@ -102,6 +103,16 @@ aipms/
 - Immutable `AuditEntry` records (append-only)
 - Every action attributed to human or agent
 - `runId` links agent execution to outcomes
+
+### §14 Observability & ERP sync
+- Hash-chained, tamper-evident audit trail with verification endpoint
+- Agent run history on the supervisory desk (`agent.runs`)
+- Governed journal export per payment run: balanced posting manifest,
+  sha256-verified, ERP-importable JSON/CSV
+- QuickBooks Online connector (OAuth2, encrypted tokens, chart mapping,
+  push → acknowledge loop) as the §8.5 v1 anchor adapter
+- Reconciliation gate surfaces un-exported runs and unacknowledged feeds
+  instead of letting them drift silently
 
 ---
 
@@ -124,9 +135,10 @@ aipms/
 | `payment-run` | list, create, approve, execute | Payment workflow |
 | `messaging` | submit, approve, reject, list, detail | §8.3 vendor messaging relay (tiered sends) |
 | `receipt` | record, cancel, list, detail | §8.1 goods receipts (3-way match leg) |
-| `bir` | report2307, report1601e | §8.4 BIR statutory withholding reports |
+| `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
+| `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 74 procedures across 18 routers
+**Total:** 87 procedures across 19 routers
 
 ---
 
