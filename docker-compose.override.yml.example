@@ -1,0 +1,15 @@
+# Per-machine Compose overrides — NOT committed; docker-compose.override.yml
+# is gitignored and merged automatically over docker-compose.yml.
+#
+# Copy this file to docker-compose.override.yml if image builds cannot reach
+# package registries through Docker's default bridge network — typical with
+# corporate proxies / VPN split-tunneling, or Docker Desktop DNS issues on
+# Windows/macOS. It switches only BUILD-TIME networking to the host stack
+# (the RUN/pnpm-install steps); runtime container networking is unchanged.
+services:
+  api:
+    build:
+      network: host
+  web:
+    build:
+      network: host
