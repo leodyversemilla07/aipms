@@ -1,6 +1,7 @@
 import '@workspace/env/load'
 import { Module } from '@nestjs/common'
 import { AgentModule } from './agent/agent.module'
+import { AnalyticsModule } from './analytics/analytics.module'
 import { AppController } from './app.controller'
 import { AppService } from './app.service'
 import { ApprovalModule } from './approval/approval.module'
@@ -46,6 +47,7 @@ import { VendorModule } from './vendor/vendor.module'
     PaymentRunModule,
     SsoModule,
     ErpModule,
+    AnalyticsModule,
     EventsModule,
   ],
   controllers: [AppController],

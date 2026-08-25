@@ -2,6 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@workspace/ui/components/badge"
+import { Button } from "@workspace/ui/components/button"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@workspace/ui/components/dialog"
+import { useState } from "react"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -35,6 +46,7 @@ const RUN_STATUS: Record<
  */
 export function AgentRuns() {
   const trpc = useTRPC()
+  const [traceFor, setTraceFor] = useState<RunRow | null>(null)
   const runsQuery = useQuery(
     trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 })
   )
@@ -104,6 +116,13 @@ export function AgentRuns() {
                       agent {r.agentId.slice(0, 12)}
                     </span>
                   </div>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setTraceFor(r)}
+                  >
+                    Trace
+                  </Button>
                   <span className="text-muted-foreground text-xs">
                     {fmtTime(r.startedAt)}
                     {duration ? ` · ${duration}` : " · …"}
@@ -123,6 +142,71 @@ export function AgentRuns() {
           })}
         </ul>
       )}
+
+      <RunTraceDialog run={traceFor} onClose={() => setTraceFor(null)} />
     </section>
+  )
+}
+
+function RunTraceDialog({
+  run,
+  onClose,
+}: {
+  run: RunRow | null
+  onClose: () => void
+}) {
+  const trpc = useTRPC()
+  const trace = useQuery({
+    ...trpc.analytics.runTrace.queryOptions({ runId: run?.id ?? "" }),
+    enabled: !!run,
+  })
+  const entries = (trace.data?.entries ?? []) as unknown as {
+    seq: number
+    actorId: string
+    actorKind: string
+    action: string
+    entity: string
+    entityId: string | null
+    at: string
+  }[]
+
+  return (
+    <Dialog open={!!run} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Run trace</DialogTitle>
+          <DialogDescription>
+            Every audited action carrying this runId, in tamper-evident chain
+            order (§14 — attributable and replayable).
+          </DialogDescription>
+        </DialogHeader>
+        {trace.isPending ? (
+          <p className="text-muted-foreground text-sm">Loading trace…</p>
+        ) : entries.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No audited actions carry this runId.
+          </p>
+        ) : (
+          <ol className="max-h-80 overflow-y-auto rounded-lg border bg-muted/30 p-3 text-xs">
+            {entries.map((e) => (
+              <li key={e.seq} className="flex items-baseline gap-2 py-0.5">
+                <span className="font-mono text-muted-foreground">
+                  #{e.seq}
+                </span>
+                <span className="font-mono">{e.action}</span>
+                <span className="text-muted-foreground">
+                  {e.entity}
+                  {e.entityId ? ` ${e.entityId.slice(0, 12)}` : ""} ·{" "}
+                  {fmtTime(e.at)}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline">Close</Button>} />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

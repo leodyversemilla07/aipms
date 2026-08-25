@@ -16,6 +16,7 @@ const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
 import { receiptLineInput } from "../receipt/receipt.router";
 import type { AgentRouter } from "../agent/agent.router";
+import type { AnalyticsRouter } from "../analytics/analytics.router";
 import type { ApprovalRouter } from "../approval/approval.router";
 import type { AuditRouter } from "../audit/audit.router";
 import type { BirRouter } from "../bir/bir.router";
@@ -53,6 +54,14 @@ const appRouter = t.router({
   status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>)
+    }),
+  analytics: t.router({
+    overview: publicProcedure
+      .input(z.object({ months: z.number().int().min(1).max(12).default(3) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["overview"]>>),
+    runTrace: publicProcedure
+      .input(z.object({ runId: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["runTrace"]>>)
     }),
   approval: t.router({
     pendingList: publicProcedure

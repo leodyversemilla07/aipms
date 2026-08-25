@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
 import { AgentRuns } from "@/components/agent-runs"
+import { AnalyticsPanel } from "@/components/analytics-panel"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { ExceptionQueue } from "./exception-queue"
@@ -115,6 +116,7 @@ function Dashboard() {
       </div>
 
       <AgentRuns />
+      <AnalyticsPanel />
       <ExceptionQueue />
       <CreateRequisition />
     </div>
