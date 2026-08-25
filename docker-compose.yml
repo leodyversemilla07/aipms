@@ -70,6 +70,8 @@ services:
       # §8.6 pain.001 debtor (paying org) — set both to enable the ISO 20022 rail
       AIPMS_PAYMENT_DEBTOR_NAME: ${AIPMS_PAYMENT_DEBTOR_NAME:-}
       AIPMS_PAYMENT_DEBTOR_ACCOUNT: ${AIPMS_PAYMENT_DEBTOR_ACCOUNT:-}
+      # §10.3 approval SLA (hours) — visible escalation of overdue pendings
+      AIPMS_APPROVAL_SLA_HOURS: ${AIPMS_APPROVAL_SLA_HOURS:-48}
     ports:
       - "${API_PORT:-3001}:3001"
     healthcheck:

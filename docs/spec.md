@@ -165,9 +165,9 @@ flowchart LR
   end
   subgraph Data
     DB[(Postgres — Prisma)]
-    BLOB[(blob storage: docs, quotes)]
+    BLOB[(blob storage: docs, quotes — deferred beyond v1; attachments are
+    content-hashed inline in Postgres with a size cap)]
   end
-
   WEB --> API
   EVE --> API
   EXT --> API
@@ -239,7 +239,8 @@ procurement API is consumed as tools. Key integration points:
 - **Wake = event subscriptions**: agents register interest (e.g.
   `invoice.received` for matching; `requisition.approved` for PO creation).
 - **Memory = per-org, per-context stores** (vendor research, negotiation state,
-  recurring-spend patterns).
+  recurring-spend patterns). *(Deferred beyond v1 — runs are stateless beyond
+  domain reads; revisit when measured cost per workflow demands it.)*
 - **Session = eve channel** with auth (Vercel OIDC / local dev) mapped to a
   `user.kind = agent` identity server-side.
 
@@ -332,7 +333,10 @@ Domain objects (work-in-progress names; §9 defines storage):
 - **CatalogItem** — purchasable goods/services, category, unit, default price.
 - **Vendor** — identity, qualification status, contracts, ratings, blacklist.
 - **Quote** — structured offer (item, price, lead time, validity) from a vendor,
-  collected by agents.
+  collected by agents. *(Implemented v0.6 as the `Quote` model + `sourcing`
+  router: RFQ open → offer receive → deterministic compare (`lowestCost`
+  default; `bestValue` via the evaluationCriterion policy's price weight) →
+  exclusive award with outbox event.)*
 - **Requisition** — a request for spend; lines reference catalog items or
   free-text; carries cost center, budget, urgency.
 - **Approval** — a gate instance: policy route, assignee(s), decision, evidence.
@@ -353,7 +357,9 @@ login/CAPTCHA, rate-limits, ToS, maintenance). Sequencing:
 
 1. **Email (IMAP) — default, highest coverage.** Any supplier can email; zero
    onboarding. The agent reads the email body + attachments, classifies, and
-   extracts arbitrary layouts without templates. Email is the riskiest
+   extracts arbitrary layouts without templates. *(Implemented v0.6: the api
+   polls the org mailbox via `intake-imap.service`, dedupes on content hash,
+   and resolves senders against the vendor master's verified channels.)* Email is the riskiest
    channel, so the intake pipe is **defensive**: SPF/DKIM/DMARC + sender
    domain matched to vendor master, bank-account-change validation,
    duplicate detection by content hash, anomalous-value flagging, and SoD
@@ -362,6 +368,9 @@ login/CAPTCHA, rate-limits, ToS, maintenance). Sequencing:
    enterprise.** The BIR e-invoicing mandate (RR 11-2025) makes a
    machine-readable receiver an obligation for PH AP, not an option. Lower
    error and fraud; complements email for high-volume suppliers.
+   *(Implemented v0.6: `structured-invoice.ts` parses BIR EIS JSON and
+   Peppol/UBL 2.1 XML deterministically on receive — documents enter the
+   queue pre-extracted via `intake.ingestStructured`; no LLM involved.)*
 3. **In-product supplier upload portal — optional, later.** Self-service,
    low-fraud, but costs UI + onboarding; roadmap item only.
 
@@ -746,7 +755,10 @@ overriding (with reason), or instructing the agent.
 
 ### 10.3 Delegation & escalation
 
-- Approvers delegate within chains (rotation, backup).
+- Approvers delegate within chains (rotation, backup). *(Partially built:
+  delegation UI is deferred; SLA breach detection shipped v0.6 — overdue
+  pendings are stamped + broadcast via `approval.slaBreached`; automatic
+  re-routing stays a human decision by design.)*
 - SLAs per gate type; on timeout, escalate one level up (agent notifies via
   events → web notification).
 - Agents can re-request approval with new evidence; they cannot bypass.

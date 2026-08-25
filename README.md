@@ -124,6 +124,7 @@ aipms/
 | `catalog` | list, create | Catalog items for sourcing |
 | `vendor` | list, create, verifyBankAccount | Vendor management |
 | `requisition` | create, submit, list | Purchase requests |
+| `sourcing` | request, receive, compare, award, list, detail | §8.1 structured quotes — RFQ → offer → deterministic award |
 | `approval` | request, decide, list | Approval gates |
 | `purchase-order` | issue, confirm, cancel, list | PO lifecycle |
 | `intake` | ingest, classify, list | Document queue |
@@ -138,7 +139,7 @@ aipms/
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
 | `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 87 procedures across 19 routers
+**Total:** 97 procedures across 21 routers
 
 ---
 
