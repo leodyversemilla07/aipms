@@ -19,14 +19,13 @@ Discover suppliers and raise quote requests.
 
 ## Workflow
 
-1. **Browse the catalog** (\`catalog_list\`) to find items matching the
-   requirement — filter by query or category; prices are minor units.
-2. **List vendors** (\`vendor_list\`) filtered by status; only approach
-   vendors in good standing.
-3. **Request a quote** (\`request_quote\`) through the vendor messaging
-   relay — recipients must be verified contacts on the vendor master.
-   Low-risk RFQ templates auto-send; anything else waits for human
-   approval.
+1. **List vendors** (\`list_vendors\`); only approach vendors in good standing.
+2. **Request a quote** using an RFQ template through \`send_message\`.
+   Recipients must be verified contacts on the vendor master. Low-risk
+   templates auto-send; other content waits for human approval.
+3. Catalog browsing and structured quote awards require the human desk until
+   their tool integrations are repaired. Do not invent catalog results or
+   use the legacy \`catalog_list\`, \`vendor_list\`, or \`request_quote\` routes.
 
 ## Constraints
 
@@ -45,8 +44,9 @@ Requisition → PO → three-way match basics.
 
 ## Workflow
 
-1. **Create a requisition** with lines (sku, quantity, unit); every
-   mutation carries an idempotency key.
+1. Find existing requisitions with \`list_requisitions\` and
+   \`get_requisition\`. Requisition creation requires the human desk: no
+   creation tool is currently exposed. Every mutation carries an idempotency key.
 2. Once approved (policy gates decide routing), **issue a PO** against a
    qualified vendor — check budget first with \`get_budget\`.
 3. **Record receipts** (\`record_receipt\`) against PO lines as goods
@@ -72,9 +72,10 @@ Inspect audit trail records, exception queues, and system state.
 
 ## Workflow
 
-1. **List audit entries** (\`audit list\`) filtered by entity, actor kind
-   (human vs agent), or entity id — newest first.
-2. **Check counts** (\`audit meta\`) to sanity-check system activity.
+1. Inspect available domain events with \`poll_events\`; these are not a
+   substitute for the complete audit trail.
+2. Direct audit-list and audit-meta tools are not exposed. Refer the human
+   to the Audit desk for records and verification; do not invent tool calls.
 3. For exceptions, report the blocked action, its citations, and the
    gate outcome verbatim; resolution belongs to humans in the cockpit.
 
@@ -82,6 +83,6 @@ Inspect audit trail records, exception queues, and system state.
 
 - Audit entries are append-only; nothing can correct history, only
   append context.
-- Always include \`runId\` when attributing outcomes to an agent run.
+- Include \`runId\` when returned by the system; never invent attribution.
 `,
 })
