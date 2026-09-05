@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common'
+import { Inject, NotFoundException } from '@nestjs/common'
 import {
   Ctx,
   Input,
@@ -67,19 +67,30 @@ export class CatalogRouter {
     @Input() input: z.infer<typeof createCatalogInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const item = await this.catalog.create(input)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'catalog.create',
-        entity: 'CatalogItem',
-        entityId: item.id,
+        operation: 'catalog.create',
+        key: input.idempotencyKey,
         input,
-        after: item,
-      })
-      return item
-    })
+      },
+      async (tx) => {
+        const item = await this.catalog.create(input, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'catalog.create',
+            entity: 'CatalogItem',
+            entityId: item.id,
+            input,
+            after: item,
+          },
+          tx,
+        )
+        return item
+      },
+    )
   }
 
   @Mutation({ input: updateCatalogInput })
@@ -87,22 +98,34 @@ export class CatalogRouter {
     @Input() input: z.infer<typeof updateCatalogInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const { id, idempotencyKey: _key, ...rest } = input
-      const before = await this.catalog.detail(id)
-      const item = await this.catalog.update(id, rest)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'catalog.update',
-        entity: 'CatalogItem',
-        entityId: id,
-        input: { id, ...rest },
-        before,
-        after: item,
-      })
-      return item
-    })
+        operation: 'catalog.update',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const { id, idempotencyKey: _key, ...rest } = input
+        const before = await tx.catalogItem.findUnique({ where: { id } })
+        if (!before) throw new NotFoundException(`Catalog item ${id} not found`)
+        const item = await this.catalog.update(id, rest, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'catalog.update',
+            entity: 'CatalogItem',
+            entityId: id,
+            input: { id, ...rest },
+            before,
+            after: item,
+          },
+          tx,
+        )
+        return item
+      },
+    )
   }
 
   @Mutation({ input: deactivateInput })
@@ -110,19 +133,34 @@ export class CatalogRouter {
     @Input() input: z.infer<typeof deactivateInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const before = await this.catalog.detail(input.id)
-      const item = await this.catalog.deactivate(input.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'catalog.deactivate',
-        entity: 'CatalogItem',
-        entityId: input.id,
-        before,
-        after: item,
-      })
-      return item
-    })
+        operation: 'catalog.deactivate',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const before = await tx.catalogItem.findUnique({
+          where: { id: input.id },
+        })
+        if (!before)
+          throw new NotFoundException(`Catalog item ${input.id} not found`)
+        const item = await this.catalog.deactivate(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'catalog.deactivate',
+            entity: 'CatalogItem',
+            entityId: input.id,
+            before,
+            after: item,
+          },
+          tx,
+        )
+        return item
+      },
+    )
   }
 }

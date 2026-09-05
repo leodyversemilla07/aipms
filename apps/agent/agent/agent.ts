@@ -4,7 +4,7 @@ import {
   buildModel,
   resolveContextWindowTokens,
   resolveProviderFromEnv,
-} from "./provider/provider"
+} from "./lib/provider"
 
 const provider = resolveProviderFromEnv(process.env)
 assertProviderGate(provider, process.env)

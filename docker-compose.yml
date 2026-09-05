@@ -116,6 +116,8 @@ services:
     environment:
       AIPMS_API_URL: http://api:3001
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
+      # Separate inbound operator credential; unset means production access denied.
+      AIPMS_AGENT_ACCESS_TOKEN: ${AIPMS_AGENT_ACCESS_TOKEN:-}
       # LLM provider gate: "cloud" (BYO OpenAI-compatible keys) or "offline"
       # (local zero-egress endpoint). The agent refuses to start when the
       # gate is not satisfied (§16.6).

@@ -71,22 +71,36 @@ export class PolicyRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['admin'], 'policy.create')
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const { idempotencyKey: _key, ...rest } = input
-      const policy = await this.policy.create({
-        ...rest,
-        updatedBy: ctx.user.id,
-      })
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'policy.create',
-        entity: 'Policy',
-        entityId: policy.id,
-        input: rest,
-        after: policy,
-      })
-      return policy
-    })
+        operation: 'policy.create',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const { idempotencyKey: _key, ...rest } = input
+        const policy = await this.policy.create(
+          {
+            ...rest,
+            updatedBy: ctx.user.id,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'policy.create',
+            entity: 'Policy',
+            entityId: policy.id,
+            input: rest,
+            after: policy,
+          },
+          tx,
+        )
+        return policy
+      },
+    )
   }
 }

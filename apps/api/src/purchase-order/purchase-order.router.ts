@@ -89,25 +89,36 @@ export class PurchaseOrderRouter {
     @Input() input: z.infer<typeof issueInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.purchaseOrder.issue(input, ctx.user.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action:
-          result.outcome === 'ISSUED'
-            ? 'purchaseOrder.issue'
-            : 'purchaseOrder.vendorGate',
-        entity: 'PurchaseOrder',
-        entityId:
-          result.outcome === 'ISSUED'
-            ? result.purchaseOrder.id
-            : input.requisitionId,
+        operation: 'purchaseOrder.issue',
+        key: input.idempotencyKey,
         input,
-        after: result,
-      })
-      return result
-    })
+      },
+      async (tx) => {
+        const result = await this.purchaseOrder.issue(input, ctx.user.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action:
+              result.outcome === 'ISSUED'
+                ? 'purchaseOrder.issue'
+                : 'purchaseOrder.vendorGate',
+            entity: 'PurchaseOrder',
+            entityId:
+              result.outcome === 'ISSUED'
+                ? result.purchaseOrder.id
+                : input.requisitionId,
+            input,
+            after: result,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 
   @Mutation({ input: confirmInput })
@@ -115,18 +126,29 @@ export class PurchaseOrderRouter {
     @Input() input: z.infer<typeof confirmInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const po = await this.purchaseOrder.confirm(input.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'purchaseOrder.confirm',
-        entity: 'PurchaseOrder',
-        entityId: po.id,
-        after: po,
-      })
-      return po
-    })
+        operation: 'purchaseOrder.confirm',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const po = await this.purchaseOrder.confirm(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'purchaseOrder.confirm',
+            entity: 'PurchaseOrder',
+            entityId: po.id,
+            after: po,
+          },
+          tx,
+        )
+        return po
+      },
+    )
   }
 
   @Mutation({ input: cancellationInput })
@@ -134,21 +156,33 @@ export class PurchaseOrderRouter {
     @Input() input: z.infer<typeof cancellationInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const approval = await this.purchaseOrder.requestCancellation(
-        input.id,
-        input.reason,
-      )
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'purchaseOrder.cancelRequest',
-        entity: 'PurchaseOrder',
-        entityId: input.id,
-        input: { id: input.id, reason: input.reason },
-        after: approval,
-      })
-      return approval
-    })
+        operation: 'purchaseOrder.cancelRequest',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const approval = await this.purchaseOrder.requestCancellation(
+          input.id,
+          input.reason,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'purchaseOrder.cancelRequest',
+            entity: 'PurchaseOrder',
+            entityId: input.id,
+            input: { id: input.id, reason: input.reason },
+            after: approval,
+          },
+          tx,
+        )
+        return approval
+      },
+    )
   }
 }

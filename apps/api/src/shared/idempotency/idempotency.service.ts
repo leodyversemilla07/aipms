@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { ConflictException, Injectable } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
@@ -29,6 +30,52 @@ function isInflight(resultJson: unknown): boolean {
 
 @Injectable()
 export class IdempotencyService {
+  /** All callback writes MUST use tx, including the audit append. No network effects. */
+  async runAtomic<T>(
+    scope: { actorId: string; operation: string; key: string; input: unknown },
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    const digest = (value: unknown) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify(value, (_key, item) => {
+            if (item && typeof item === 'object' && !Array.isArray(item)) {
+              return Object.fromEntries(
+                Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
+              )
+            }
+            return item
+          }),
+        )
+        .digest('hex')
+    const key = `atomic:v1:${digest([scope.actorId, scope.operation, scope.key])}`
+    const inputHash = digest(scope.input)
+    return db.$transaction(
+      async (tx) => {
+        // Transaction-owned lock disappears on rollback/crash; no orphan claim.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`
+        const existing = await tx.idempotencyKey.findUnique({ where: { key } })
+        if (existing) {
+          const stored = existing.resultJson as {
+            inputHash?: string
+            result?: unknown
+          }
+          if (stored.inputHash !== inputHash)
+            throw new ConflictException(
+              'Idempotency key was used with different input',
+            )
+          return stored.result as T
+        }
+        const result = await fn(tx)
+        // Serialize before committing so persistence errors roll back domain + audit.
+        const stored = JSON.parse(JSON.stringify({ inputHash, result }))
+        await tx.idempotencyKey.create({ data: { key, resultJson: stored } })
+        return result
+      },
+      { timeout: 15_000 },
+    )
+  }
+
   async run<T = object>(key: string, fn: () => Promise<T>): Promise<T> {
     const existing = await db.idempotencyKey.findUnique({ where: { key } })
 

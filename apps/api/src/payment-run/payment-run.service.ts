@@ -49,7 +49,11 @@ export class PaymentRunService {
     return invoice.amountMinor + invoice.vatMinor - invoice.ewtMinor
   }
 
-  async create(input: CreateRunInput, createdBy: string) {
+  async create(
+    input: CreateRunInput,
+    createdBy: string,
+    outerTx?: Prisma.TransactionClient,
+  ) {
     if (input.invoiceIds.length === 0) {
       throw new BadRequestException('A run needs at least one invoice')
     }
@@ -82,112 +86,111 @@ export class PaymentRunService {
     // transaction under FOR UPDATE row locks (serializes concurrent creates
     // claiming the same invoices), and the run number is minted in the same
     // transaction — a runNumber collision retries with a fresh number.
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await db.$transaction(async (tx) => {
-          const locked = await tx.$queryRaw<{ id: string }[]>(
-            Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) FOR UPDATE`,
-          )
-          if (locked.length !== uniqueIds.length) {
-            throw new NotFoundException('One or more invoices do not exist')
-          }
+    // With an outer (idempotent/atomic) transaction a collision aborts the
+    // whole transaction, so attempt once and let the caller retry the key.
+    const attempt = async (tx: Prisma.TransactionClient) => {
+      const locked = await tx.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) FOR UPDATE`,
+      )
+      if (locked.length !== uniqueIds.length) {
+        throw new NotFoundException('One or more invoices do not exist')
+      }
 
-          // Only matched invoices are payable; anything already claimed by
-          // another run (unique line) or already paid is refused.
-          const fresh = await tx.invoice.findMany({
-            where: { id: { in: uniqueIds } },
-          })
-          for (const invoice of fresh) {
-            if (invoice.status !== 'matched') {
-              throw new BadRequestException(
-                `Invoice ${invoice.number} is ${invoice.status}, not payable`,
-              )
-            }
-          }
-          const freshVendorIds = [
-            ...new Set(fresh.map((invoice) => invoice.vendorId)),
-          ].sort()
-          await tx.$queryRaw(
-            Prisma.sql`SELECT id FROM vendor WHERE id IN (${Prisma.join(freshVendorIds)}) ORDER BY id FOR UPDATE`,
+      // Only matched invoices are payable; anything already claimed by
+      // another run (unique line) or already paid is refused.
+      const fresh = await tx.invoice.findMany({
+        where: { id: { in: uniqueIds } },
+      })
+      for (const invoice of fresh) {
+        if (invoice.status !== 'matched') {
+          throw new BadRequestException(
+            `Invoice ${invoice.number} is ${invoice.status}, not payable`,
           )
-          const freshVendors = await tx.vendor.findMany({
-            where: { id: { in: freshVendorIds } },
-          })
-          const snapshots = new Map(
-            fresh.map((invoice) => {
-              const vendor = freshVendors.find(
-                (row) => row.id === invoice.vendorId,
-              )
-              if (!vendor)
-                throw new NotFoundException('Invoice vendor not found')
-              try {
-                return [
-                  invoice.id,
-                  freezeBeneficiary(invoice.number, vendor),
-                ] as const
-              } catch (error) {
-                throw new BadRequestException(
-                  error instanceof Error
-                    ? error.message
-                    : 'Invalid beneficiary',
-                )
-              }
-            }),
-          )
-          if (fresh.some((invoice) => invoice.currencyCode !== 'PHP')) {
+        }
+      }
+      const freshVendorIds = [
+        ...new Set(fresh.map((invoice) => invoice.vendorId)),
+      ].sort()
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM vendor WHERE id IN (${Prisma.join(freshVendorIds)}) ORDER BY id FOR UPDATE`,
+      )
+      const freshVendors = await tx.vendor.findMany({
+        where: { id: { in: freshVendorIds } },
+      })
+      const snapshots = new Map(
+        fresh.map((invoice) => {
+          const vendor = freshVendors.find((row) => row.id === invoice.vendorId)
+          if (!vendor) throw new NotFoundException('Invoice vendor not found')
+          try {
+            return [
+              invoice.id,
+              freezeBeneficiary(invoice.number, vendor),
+            ] as const
+          } catch (error) {
             throw new BadRequestException(
-              'Payment runs currently support PHP invoices only',
+              error instanceof Error ? error.message : 'Invalid beneficiary',
             )
           }
-          const netByInvoice = new Map(
-            fresh.map((invoice) => [invoice.id, this.netPayable(invoice)]),
-          )
-          const totalMinor = [...netByInvoice.values()].reduce(
-            (sum, amount) => sum + amount,
-            0,
-          )
-          const claimed = await tx.paymentRunLine.findMany({
-            where: { invoiceId: { in: uniqueIds } },
-            select: { invoiceId: true },
-          })
-          if (claimed.length > 0) {
-            throw new ConflictException(
-              'One or more invoices are already in a payment run',
-            )
-          }
+        }),
+      )
+      if (fresh.some((invoice) => invoice.currencyCode !== 'PHP')) {
+        throw new BadRequestException(
+          'Payment runs currently support PHP invoices only',
+        )
+      }
+      const netByInvoice = new Map(
+        fresh.map((invoice) => [invoice.id, this.netPayable(invoice)]),
+      )
+      const totalMinor = [...netByInvoice.values()].reduce(
+        (sum, amount) => sum + amount,
+        0,
+      )
+      const claimed = await tx.paymentRunLine.findMany({
+        where: { invoiceId: { in: uniqueIds } },
+        select: { invoiceId: true },
+      })
+      if (claimed.length > 0) {
+        throw new ConflictException(
+          'One or more invoices are already in a payment run',
+        )
+      }
 
-          // Serialize the run-number mint with a transaction advisory lock so
-          // parallel creates on disjoint invoices cannot collide; the retry
-          // loop below is a belt-and-braces net for any residual race.
-          const runNumber = await this.documentNumber.next('RUN-', async () => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('payment_run_number'))`
-            const last = await tx.paymentRun.findFirst({
-              orderBy: { runNumber: 'desc' },
-            })
-            return last?.runNumber ?? null
-          })
-
-          const run = await tx.paymentRun.create({
-            data: {
-              runNumber,
-              status: 'draft',
-              totalMinor,
-              currencyCode: 'PHP',
-              notes: input.notes ?? undefined,
-              createdBy,
-              lines: {
-                create: fresh.map((invoice) => ({
-                  invoiceId: invoice.id,
-                  beneficiarySnapshot: snapshots.get(invoice.id),
-                  netMinor: netByInvoice.get(invoice.id) ?? 0,
-                  status: 'planned',
-                })),
-              },
-            },
-            include: { lines: true },
-          })
-          return { run, netMinor: totalMinor }
+      // Serialize the run-number mint with a transaction advisory lock so
+      // parallel creates on disjoint invoices cannot collide; the retry
+      // loop below is a belt-and-braces net for any residual race.
+      const runNumber = await this.documentNumber.next('RUN-', async () => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('payment_run_number'))`
+        const last = await tx.paymentRun.findFirst({
+          orderBy: { runNumber: 'desc' },
         })
+        return last?.runNumber ?? null
+      })
+
+      const run = await tx.paymentRun.create({
+        data: {
+          runNumber,
+          status: 'draft',
+          totalMinor,
+          currencyCode: 'PHP',
+          notes: input.notes ?? undefined,
+          createdBy,
+          lines: {
+            create: fresh.map((invoice) => ({
+              invoiceId: invoice.id,
+              beneficiarySnapshot: snapshots.get(invoice.id),
+              netMinor: netByInvoice.get(invoice.id) ?? 0,
+              status: 'planned',
+            })),
+          },
+        },
+        include: { lines: true },
+      })
+      return { run, netMinor: totalMinor }
+    }
+    if (outerTx) return attempt(outerTx)
+    for (let retries = 0; ; retries++) {
+      try {
+        return await db.$transaction(attempt)
       } catch (error) {
         const target = (error as { meta?: { target?: unknown } }).meta?.target
         const isRunNumberCollision =
@@ -195,22 +198,27 @@ export class PaymentRunService {
           error.code === 'P2002' &&
           Array.isArray(target) &&
           target.includes('runNumber')
-        if (isRunNumberCollision && attempt < 3) continue
+        if (isRunNumberCollision && retries < 3) continue
         throw error
       }
     }
   }
 
   /** Maker/checker: the approver cannot be the creator (§16.4 separation). */
-  async approve(runId: string, approverId: string) {
-    const run = await this.detail(runId)
+  async approve(
+    runId: string,
+    approverId: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const run = await tx.paymentRun.findUnique({ where: { id: runId } })
+    if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
     if (run.status !== 'draft') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
     if (run.createdBy === approverId) {
       throw new BadRequestException('Maker and checker must differ')
     }
-    const changed = await db.paymentRun.updateMany({
+    const changed = await tx.paymentRun.updateMany({
       where: { id: runId, status: 'draft', createdBy: { not: approverId } },
       data: {
         status: 'approved',
@@ -222,15 +230,24 @@ export class PaymentRunService {
       throw new ConflictException(
         'Payment run changed; reload before approving',
       )
-    return this.detail(runId)
+    const approved = await tx.paymentRun.findUniqueOrThrow({
+      where: { id: runId },
+      include: { lines: true },
+    })
+    return approved
   }
 
-  async execute(runId: string, executedBy: string) {
-    const run = await this.detail(runId)
+  async execute(
+    runId: string,
+    executedBy: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const run = await tx.paymentRun.findUnique({ where: { id: runId } })
+    if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
     if (run.status !== 'approved') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
-    const changed = await db.paymentRun.updateMany({
+    const changed = await tx.paymentRun.updateMany({
       where: { id: runId, status: 'approved' },
       data: { status: 'executed', executedBy, executedAt: new Date() },
     })
@@ -238,7 +255,10 @@ export class PaymentRunService {
       throw new ConflictException(
         'Payment run changed; reload before executing',
       )
-    return this.detail(runId)
+    return tx.paymentRun.findUniqueOrThrow({
+      where: { id: runId },
+      include: { lines: true },
+    })
   }
 
   /**
@@ -325,6 +345,7 @@ export class PaymentRunService {
     runId: string,
     lineId: string,
     status: 'paid' | 'dishonored' | 'rejected',
+    outerTx?: Prisma.TransactionClient,
   ) {
     const run = await this.detail(runId)
     if (run.status !== 'executed') {
@@ -337,7 +358,7 @@ export class PaymentRunService {
       )
     }
 
-    return db.$transaction(async (tx) => {
+    const runTx = async (tx: Prisma.TransactionClient) => {
       await tx.paymentRunLine.update({
         where: { id: lineId },
         data: { status: status as PaymentStatus },
@@ -362,18 +383,24 @@ export class PaymentRunService {
         status,
         runStatus: remaining === 0 ? 'reconciled' : run.status,
       }
-    })
+    }
+    if (outerTx) return runTx(outerTx)
+    return db.$transaction(runTx)
   }
 
-  async voidRun(runId: string) {
-    const run = await this.detail(runId)
+  async voidRun(runId: string, tx: Prisma.TransactionClient = db) {
+    const run = await tx.paymentRun.findUnique({ where: { id: runId } })
+    if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
     if (run.status !== 'draft' && run.status !== 'approved') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
-    return db.paymentRun.update({
-      where: { id: runId },
+    const changed = await tx.paymentRun.updateMany({
+      where: { id: runId, status: { in: ['draft', 'approved'] } },
       data: { status: 'voided' },
     })
+    if (changed.count !== 1)
+      throw new ConflictException('Payment run changed; reload before voiding')
+    return tx.paymentRun.findUniqueOrThrow({ where: { id: runId } })
   }
 
   list(where: { status?: PaymentRunStatus } = {}) {

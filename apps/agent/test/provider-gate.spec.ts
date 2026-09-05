@@ -8,7 +8,7 @@ import {
   parseGatePolicies,
   resolveContextWindowTokens,
   resolveProviderFromEnv,
-} from "../agent/provider/provider"
+} from "../agent/lib/provider"
 
 function env(
   overrides: Record<string, string | undefined> = {}

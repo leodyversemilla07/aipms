@@ -1,4 +1,5 @@
-import { Inject } from '@nestjs/common'
+import { Inject, NotFoundException } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -72,19 +73,30 @@ export class VendorRouter {
     @Input() input: z.infer<typeof createVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const vendor = await this.vendor.create(input)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'vendor.create',
-        entity: 'Vendor',
-        entityId: vendor.id,
+        operation: 'vendor.create',
+        key: input.idempotencyKey,
         input,
-        after: vendor,
-      })
-      return vendor
-    })
+      },
+      async (tx) => {
+        const vendor = await this.vendor.create(input, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'vendor.create',
+            entity: 'Vendor',
+            entityId: vendor.id,
+            input,
+            after: vendor,
+          },
+          tx,
+        )
+        return vendor
+      },
+    )
   }
 
   @Mutation({ input: updateVendorInput })
@@ -92,22 +104,34 @@ export class VendorRouter {
     @Input() input: z.infer<typeof updateVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const { id, idempotencyKey: _key, ...rest } = input
-      const before = await this.vendor.detail(id)
-      const vendor = await this.vendor.update(id, rest)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'vendor.update',
-        entity: 'Vendor',
-        entityId: id,
-        input: { id, ...rest },
-        before,
-        after: vendor,
-      })
-      return vendor
-    })
+        operation: 'vendor.update',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const { id, idempotencyKey: _key, ...rest } = input
+        const before = await tx.vendor.findUnique({ where: { id } })
+        if (!before) throw new NotFoundException(`Vendor ${id} not found`)
+        const vendor = await this.vendor.update(id, rest, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'vendor.update',
+            entity: 'Vendor',
+            entityId: id,
+            input: { id, ...rest },
+            before,
+            after: vendor,
+          },
+          tx,
+        )
+        return vendor
+      },
+    )
   }
 
   /** §8.6: record + verify a vendor's beneficiary bank account. */
@@ -122,19 +146,25 @@ export class VendorRouter {
       ['finance'],
       'vendor.verifyBankAccount',
     )
-    const vendor = await this.vendor.verifyBankAccount(
-      input.id,
-      input.bankAccount,
-    )
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'vendor.verifyBankAccount',
-      entity: 'Vendor',
-      entityId: vendor.id,
-      input,
-      after: vendor,
+    return db.$transaction(async (tx) => {
+      const vendor = await this.vendor.verifyBankAccount(
+        input.id,
+        input.bankAccount,
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'vendor.verifyBankAccount',
+          entity: 'Vendor',
+          entityId: vendor.id,
+          input,
+          after: vendor,
+        },
+        tx,
+      )
+      return vendor
     })
-    return vendor
   }
 }

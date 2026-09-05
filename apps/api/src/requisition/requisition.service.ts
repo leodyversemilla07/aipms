@@ -99,7 +99,10 @@ export class RequisitionService {
     return req
   }
 
-  async create(input: CreateRequisition): Promise<RequisitionWith> {
+  async create(
+    input: CreateRequisition,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<RequisitionWith> {
     if (!input.lines.length) {
       throw new BadRequestException('Requisition needs at least one line')
     }
@@ -115,30 +118,36 @@ export class RequisitionService {
       lineTotalMinor: line.quantity * line.unitPriceMinor,
     }))
 
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Number mint serializes on an advisory lock inside a transaction, so
+    // concurrent creators cannot collide. Standalone calls keep a retry net.
+    const attempt = async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('requisition_number'))`
       const requestNumber = await this.numbers.next('REQ-', () =>
-        db.requisition
+        tx.requisition
           .findFirst({
             orderBy: { requestNumber: 'desc' },
             select: { requestNumber: true },
           })
           .then((r) => r?.requestNumber ?? null),
       )
-
+      return tx.requisition.create({
+        data: {
+          requestNumber,
+          requestedBy: input.requestedBy,
+          costCenter: input.costCenter,
+          budgetId: input.budgetId ?? null,
+          priority: input.priority ?? 'normal',
+          note: input.note ?? null,
+          status: 'draft',
+          lines: { create: lines },
+        },
+        include: { lines: true, approvals: true },
+      })
+    }
+    if (outerTx) return attempt(outerTx)
+    for (let retries = 0; retries < 3; retries++) {
       try {
-        return await db.requisition.create({
-          data: {
-            requestNumber,
-            requestedBy: input.requestedBy,
-            costCenter: input.costCenter,
-            budgetId: input.budgetId ?? null,
-            priority: input.priority ?? 'normal',
-            note: input.note ?? null,
-            status: 'draft',
-            lines: { create: lines },
-          },
-          include: { lines: true, approvals: true },
-        })
+        return await db.$transaction(attempt)
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -172,42 +181,58 @@ export class RequisitionService {
    * PASS → auto-approves; NEED_APPROVAL → `submitted` + pending gate;
    * BLOCK → `exception` + pending gate (surfaced in the exception queue).
    */
-  async submit(id: string): Promise<SubmitResult> {
-    const requisition = await this.detail(id)
-    if (requisition.status !== 'draft') {
-      throw new ConflictException('Only draft requisitions can be submitted')
-    }
-
-    const totalMinor = requisition.lines.reduce(
-      (sum, line) => sum + line.lineTotalMinor,
-      0,
-    )
-
-    const thresholdPolicy = await this.policy.latest('threshold')
-    let budgetRemainingMinor: number | undefined
-    if (requisition.budgetId) {
-      const budget = await db.budget.findUnique({
-        where: { id: requisition.budgetId },
+  async submit(
+    id: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<SubmitResult> {
+    const run = async (tx: Prisma.TransactionClient) => {
+      // Lock the requisition first: concurrent submits serialize here and
+      // the conditional updates below make double-submit impossible.
+      await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${id} FOR UPDATE`
+      const requisition = await tx.requisition.findUnique({
+        where: { id },
+        include: { lines: true },
       })
-      if (!budget) throw new NotFoundException('Budget not found')
-      budgetRemainingMinor =
-        budget.limitMinor - budget.committedMinor - budget.spentMinor
-    }
+      if (!requisition)
+        throw new NotFoundException(`Requisition ${id} not found`)
+      if (requisition.status !== 'draft') {
+        throw new ConflictException('Only draft requisitions can be submitted')
+      }
 
-    const decision = evaluateThresholdGate(thresholdPolicy ?? undefined, {
-      costCenter: requisition.costCenter,
-      amountMinor: totalMinor,
-      budgetAssigned: Boolean(requisition.budgetId),
-      budgetRemainingMinor,
-    })
+      const totalMinor = requisition.lines.reduce(
+        (sum, line) => sum + line.lineTotalMinor,
+        0,
+      )
 
-    return db.$transaction(async (tx) => {
+      const thresholdPolicy = await this.policy.latest('threshold')
+      let budgetRemainingMinor: number | undefined
+      if (requisition.budgetId) {
+        const budget = await tx.budget.findUnique({
+          where: { id: requisition.budgetId },
+        })
+        if (!budget) throw new NotFoundException('Budget not found')
+        budgetRemainingMinor =
+          budget.limitMinor - budget.committedMinor - budget.spentMinor
+      }
+
+      const decision = evaluateThresholdGate(thresholdPolicy ?? undefined, {
+        costCenter: requisition.costCenter,
+        amountMinor: totalMinor,
+        budgetAssigned: Boolean(requisition.budgetId),
+        budgetRemainingMinor,
+      })
+
       const now = new Date()
 
       if (decision.outcome === 'PASS') {
-        const req = await tx.requisition.update({
-          where: { id },
+        const updated = await tx.requisition.updateMany({
+          where: { id, status: 'draft' },
           data: { status: 'approved', submittedAt: now, decidedAt: now },
+        })
+        if (updated.count !== 1)
+          throw new ConflictException('Requisition changed; reload and retry')
+        const req = await tx.requisition.findUniqueOrThrow({
+          where: { id },
           include: { lines: true, approvals: true },
         })
         await tx.approval.create({
@@ -242,9 +267,14 @@ export class RequisitionService {
 
       const nextStatus =
         decision.outcome === 'BLOCK' ? 'exception' : 'submitted'
-      const req = await tx.requisition.update({
-        where: { id },
+      const moved = await tx.requisition.updateMany({
+        where: { id, status: 'draft' },
         data: { status: nextStatus, submittedAt: now },
+      })
+      if (moved.count !== 1)
+        throw new ConflictException('Requisition changed; reload and retry')
+      const req = await tx.requisition.findUniqueOrThrow({
+        where: { id },
         include: { lines: true, approvals: true },
       })
       await tx.approval.create({
@@ -273,6 +303,8 @@ export class RequisitionService {
         tx,
       )
       return { requisition: req, decision }
-    })
+    }
+    if (outerTx) return run(outerTx)
+    return db.$transaction(run)
   }
 }

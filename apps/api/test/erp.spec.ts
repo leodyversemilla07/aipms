@@ -58,7 +58,11 @@ async function makeExecutedRun(tag: string) {
       status: 'active',
       taxId: `000-erp-${suffix}`,
       // §8.6 beneficiary control: a run will not plan unverified vendors.
-      bankAccount: { bank: 'BDO', accountNumber: suffix },
+      bankAccount: {
+        bank: 'BDO',
+        accountNumber: suffix,
+        holder: `ERP Vendor ${suffix}`,
+      },
       bankAccountVerifiedAt: new Date(),
       // Fresh account = verified at creation; a *change* would force
       // re-verification (§8.6), so changedAt stays null.
@@ -173,7 +177,11 @@ describe('ErpService', () => {
       data: {
         name: `Draft-only ${Date.now()}`,
         status: 'active',
-        bankAccount: { bank: 'BDO', accountNumber: 'draft' },
+        bankAccount: {
+          bank: 'BDO',
+          accountNumber: 'draft',
+          holder: 'Draft-only Co',
+        },
         bankAccountVerifiedAt: new Date(),
         bankAccountChangedAt: null,
       },

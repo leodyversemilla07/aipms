@@ -23,9 +23,11 @@ Discover suppliers and raise quote requests.
 2. **Request a quote** using an RFQ template through \`send_message\`.
    Recipients must be verified contacts on the vendor master. Low-risk
    templates auto-send; other content waits for human approval.
-3. Catalog browsing and structured quote awards require the human desk until
-   their tool integrations are repaired. Do not invent catalog results or
-   use the legacy \`catalog_list\`, \`vendor_list\`, or \`request_quote\` routes.
+3. Browse items with \`catalog_list\`, searching with q and paging with
+   page/pageSize. Returned monetary fields are integer minor units.
+4. \`request_quote\` sends an RFQ message to a verified recipient; custom
+   notes require review. It does not create a structured sourcing Quote.
+   Structured quote awards still require the human desk.
 
 ## Constraints
 

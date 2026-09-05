@@ -58,8 +58,8 @@ export class CatalogService {
     return item
   }
 
-  create(input: CreateCatalogItem) {
-    return db.catalogItem.create({
+  create(input: CreateCatalogItem, tx: Prisma.TransactionClient = db) {
+    return tx.catalogItem.create({
       data: {
         sku: input.sku,
         name: input.name,
@@ -71,9 +71,14 @@ export class CatalogService {
     })
   }
 
-  async update(id: string, input: UpdateCatalogItem) {
-    await this.detail(id)
-    return db.catalogItem.update({
+  async update(
+    id: string,
+    input: UpdateCatalogItem,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const existing = await tx.catalogItem.findUnique({ where: { id } })
+    if (!existing) throw new NotFoundException(`Catalog item ${id} not found`)
+    return tx.catalogItem.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),
@@ -90,9 +95,10 @@ export class CatalogService {
     })
   }
 
-  async deactivate(id: string) {
-    await this.detail(id)
-    return db.catalogItem.update({
+  async deactivate(id: string, tx: Prisma.TransactionClient = db) {
+    const existing = await tx.catalogItem.findUnique({ where: { id } })
+    if (!existing) throw new NotFoundException(`Catalog item ${id} not found`)
+    return tx.catalogItem.update({
       where: { id },
       data: { active: false },
     })

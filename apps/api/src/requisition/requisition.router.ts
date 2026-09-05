@@ -71,26 +71,40 @@ export class RequisitionRouter {
     @Input() input: z.infer<typeof createRequisitionInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const requisition = await this.requisition.create({
-        requestedBy: ctx.user.id,
-        costCenter: input.costCenter,
-        budgetId: input.budgetId,
-        priority: input.priority,
-        note: input.note,
-        lines: input.lines,
-      })
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'requisition.create',
-        entity: 'Requisition',
-        entityId: requisition.id,
+        operation: 'requisition.create',
+        key: input.idempotencyKey,
         input,
-        after: requisition,
-      })
-      return requisition
-    })
+      },
+      async (tx) => {
+        const requisition = await this.requisition.create(
+          {
+            requestedBy: ctx.user.id,
+            costCenter: input.costCenter,
+            budgetId: input.budgetId,
+            priority: input.priority,
+            note: input.note,
+            lines: input.lines,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'requisition.create',
+            entity: 'Requisition',
+            entityId: requisition.id,
+            input,
+            after: requisition,
+          },
+          tx,
+        )
+        return requisition
+      },
+    )
   }
 
   @Mutation({ input: submitInput })
@@ -98,18 +112,29 @@ export class RequisitionRouter {
     @Input() input: z.infer<typeof submitInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.requisition.submit(input.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'requisition.submit',
-        entity: 'Requisition',
-        entityId: input.id,
-        input: { id: input.id, outcome: result.decision.outcome },
-        after: result.requisition,
-      })
-      return result
-    })
+        operation: 'requisition.submit',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const result = await this.requisition.submit(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'requisition.submit',
+            entity: 'Requisition',
+            entityId: input.id,
+            input: { id: input.id, outcome: result.decision.outcome },
+            after: result.requisition,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 }

@@ -17,7 +17,8 @@
    without touching the agent skill logic.
 ────────────────────────────────────────────────────────────────────────────── */
 
-import { createGateway, type LanguageModel } from "ai"
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import type { LanguageModel } from "ai"
 import { z } from "zod"
 
 /* ── Provider kind ─────────────────────────────────────────────────────────── */
@@ -259,16 +260,21 @@ export function assertProviderGate(
 }
 
 /* ── Build the eve LanguageModel for the resolved provider ─────────────────
-   Both paths use an OpenAI-compatible client (createGateway with an explicit
-   baseURL and apiKey); only the endpoint, model, and credential differ.
+   Both paths use the OpenAI chat-completions protocol, not the Vercel
+   Gateway wire protocol. Only endpoint, model, and credential differ.
 ────────────────────────────────────────────────────────────────────────────── */
 export function buildModel(cfg: ProviderConfig): LanguageModel {
   const apiKey = cfg.kind === "offline" ? OFFLINE_API_KEY : cfg.apiKey
-  const provider = createGateway({
+  const provider = createOpenAICompatible({
+    name: "aipms",
     baseURL: cfg.endpoint,
     apiKey,
+    headers:
+      cfg.kind === "cloud" && cfg.organization
+        ? { "OpenAI-Organization": cfg.organization }
+        : undefined,
   })
-  return provider(cfg.model)
+  return provider.chatModel(cfg.model)
 }
 
 /* ── Example: reading from env (the instance sets these at deploy time) ──────

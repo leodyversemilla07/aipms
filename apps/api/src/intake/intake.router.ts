@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { ConflictException, Inject } from '@nestjs/common'
+import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -79,18 +80,29 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof ingestInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const doc = await this.intake.ingest(input)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'intake.ingest',
-        entity: 'IntakeDocument',
-        entityId: doc.id,
+        operation: 'intake.ingest',
+        key: input.idempotencyKey,
         input,
-      })
-      return doc
-    })
+      },
+      async (tx) => {
+        const doc = await this.intake.ingest(input, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.ingest',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
   /**
@@ -103,29 +115,46 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof ingestStructuredInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const classified = parseStructuredInvoice(input.channel, input.content)
-      const contentHash = createHash('sha256')
-        .update(input.content)
-        .digest('hex')
-      const doc = await this.intake.ingest({
-        channel: input.channel,
-        contentHash,
-        senderId: input.senderId ?? null,
-        raw: input.content.length <= 262144 ? input.content : undefined,
-      })
-      const extracted = await this.intake.classify({ id: doc.id, classified })
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'intake.ingestStructured',
-        entity: 'IntakeDocument',
-        entityId: doc.id,
-        input: { channel: input.channel, contentHash },
-        after: { status: extracted.status },
-      })
-      return extracted
-    })
+        operation: 'intake.ingestStructured',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const classified = parseStructuredInvoice(input.channel, input.content)
+        const contentHash = createHash('sha256')
+          .update(input.content)
+          .digest('hex')
+        const doc = await this.intake.ingest(
+          {
+            channel: input.channel,
+            contentHash,
+            senderId: input.senderId ?? null,
+            raw: input.content.length <= 262144 ? input.content : undefined,
+          },
+          tx,
+        )
+        const extracted = await this.intake.classify(
+          { id: doc.id, classified },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.ingestStructured',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input: { channel: input.channel, contentHash },
+            after: { status: extracted.status },
+          },
+          tx,
+        )
+        return extracted
+      },
+    )
   }
 
   @Mutation({ input: classifyInput })
@@ -133,17 +162,22 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof classifyInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    const doc = await this.intake.classify(input)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'intake.classify',
-      entity: 'IntakeDocument',
-      entityId: doc.id,
-      input,
-      after: doc,
+    return db.$transaction(async (tx) => {
+      const doc = await this.intake.classify(input, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'intake.classify',
+          entity: 'IntakeDocument',
+          entityId: doc.id,
+          input,
+          after: doc,
+        },
+        tx,
+      )
+      return doc
     })
-    return doc
   }
 
   @Mutation({ input: idInput })
@@ -151,16 +185,21 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof idInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    const doc = await this.intake.drop(input.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'intake.drop',
-      entity: 'IntakeDocument',
-      entityId: doc.id,
-      input,
+    return db.$transaction(async (tx) => {
+      const doc = await this.intake.drop(input.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'intake.drop',
+          entity: 'IntakeDocument',
+          entityId: doc.id,
+          input,
+        },
+        tx,
+      )
+      return doc
     })
-    return doc
   }
 
   @Mutation({ input: idInput })
@@ -168,16 +207,21 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof idInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    const doc = await this.intake.requeue(input.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'intake.requeue',
-      entity: 'IntakeDocument',
-      entityId: doc.id,
-      input,
+    return db.$transaction(async (tx) => {
+      const doc = await this.intake.requeue(input.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'intake.requeue',
+          entity: 'IntakeDocument',
+          entityId: doc.id,
+          input,
+        },
+        tx,
+      )
+      return doc
     })
-    return doc
   }
 
   /**
@@ -191,41 +235,56 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof bridgeInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const doc = await this.intake.detail(input.id)
-      if (doc.status === 'dropped') {
-        throw new ConflictException(
-          'Dropped document cannot bridge to an invoice',
-        )
-      }
-      const parsed = classifiedInvoiceSchema.safeParse(doc.classified)
-      if (!parsed.success) {
-        throw new ConflictException(
-          `Classified payload is not an invoice: ${parsed.error.message}`,
-        )
-      }
-      const { invoice, match } = await this.invoice.register(parsed.data)
-      const invoiceId = (invoice as { id: string }).id
-      const invoiceStatus = (invoice as { status: string }).status
-      const bridged = await this.intake.attachInvoice(
-        doc.id,
-        invoiceId,
-        invoiceStatus,
-      )
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'intake.registerInvoice',
-        entity: 'IntakeDocument',
-        entityId: doc.id,
-        input: { id: input.id, invoiceId },
-        after: {
-          doc: bridged.status,
+        operation: 'intake.registerInvoice',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await tx.intakeDocument.findUnique({
+          where: { id: input.id },
+        })
+        if (!doc) throw new NotFoundException(`Intake ${input.id} not found`)
+        if (doc.status === 'dropped') {
+          throw new ConflictException(
+            'Dropped document cannot bridge to an invoice',
+          )
+        }
+        const parsed = classifiedInvoiceSchema.safeParse(doc.classified)
+        if (!parsed.success) {
+          throw new ConflictException(
+            `Classified payload is not an invoice: ${parsed.error.message}`,
+          )
+        }
+        const { invoice, match } = await this.invoice.register(parsed.data, tx)
+        const invoiceId = (invoice as { id: string }).id
+        const invoiceStatus = (invoice as { status: string }).status
+        const bridged = await this.intake.attachInvoice(
+          doc.id,
+          invoiceId,
           invoiceStatus,
-          matchOutcome: match?.outcome,
-        },
-      })
-      return { doc: bridged, invoice, match }
-    })
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.registerInvoice',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input: { id: input.id, invoiceId },
+            after: {
+              doc: bridged.status,
+              invoiceStatus,
+              matchOutcome: match?.outcome,
+            },
+          },
+          tx,
+        )
+        return { doc: bridged, invoice, match }
+      },
+    )
   }
 }

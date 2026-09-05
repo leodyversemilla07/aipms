@@ -67,24 +67,38 @@ export class ReceiptRouter {
     @Input() input: z.infer<typeof recordInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const { receipt, rematch } = await this.receipts.record({
-        poId: input.poId,
-        lines: input.lines,
-        note: input.note ?? null,
-        recordedBy: ctx.user.id,
-      })
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'receipt.record',
-        entity: 'Receipt',
-        entityId: (receipt as { id: string }).id,
-        input: { poId: input.poId, lines: input.lines },
-        after: { rematch },
-      })
-      return { receipt, rematch }
-    })
+        operation: 'receipt.record',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const { receipt, rematch } = await this.receipts.record(
+          {
+            poId: input.poId,
+            lines: input.lines,
+            note: input.note ?? null,
+            recordedBy: ctx.user.id,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'receipt.record',
+            entity: 'Receipt',
+            entityId: (receipt as { id: string }).id,
+            input: { poId: input.poId, lines: input.lines },
+            after: { rematch },
+          },
+          tx,
+        )
+        return { receipt, rematch }
+      },
+    )
   }
 
   @Mutation({ input: idInput })

@@ -47,8 +47,8 @@ export class BudgetService {
     return budget
   }
 
-  create(input: CreateBudget) {
-    return db.budget.create({
+  create(input: CreateBudget, tx: Prisma.TransactionClient = db) {
+    return tx.budget.create({
       data: {
         name: input.name,
         costCenter: input.costCenter,

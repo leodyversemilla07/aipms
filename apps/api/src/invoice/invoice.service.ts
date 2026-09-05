@@ -1,9 +1,5 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common'
-import { db, type InvoiceStatus } from '@workspace/db'
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { db, type InvoiceStatus, Prisma } from '@workspace/db'
 import { computeTax } from '@workspace/tax'
 import { PolicyService } from '../policy/policy.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
@@ -88,9 +84,25 @@ export class InvoiceService {
    */
   async register(
     input: RegisterInvoiceInput,
+    outerTx?: Prisma.TransactionClient,
   ): Promise<{ invoice: unknown; match: MatchResult | null }> {
     const taxConfig = await this.policy.taxConfig()
     const computation = computeTax(input.lines, taxConfig)
+    const client = outerTx ?? db
+
+    // Dedupe up front: [vendorId, number] is unique, and a unique
+    // violation would abort an outer transaction, so never race the insert.
+    const duplicate = await client.invoice.findUnique({
+      where: {
+        vendorId_number: { vendorId: input.vendorId, number: input.number },
+      },
+    })
+    if (duplicate) {
+      return {
+        invoice: duplicate,
+        match: (duplicate.matchResult as unknown as MatchResult | null) ?? null,
+      }
+    }
 
     const match =
       input.poId != null
@@ -98,6 +110,7 @@ export class InvoiceService {
             input.poId,
             input.vendorId,
             computation.grossMinor,
+            client,
           )
         : null
 
@@ -118,38 +131,21 @@ export class InvoiceService {
       matchResult: match ?? undefined,
     }
 
-    let invoice: Awaited<ReturnType<typeof db.invoice.create>>
-    try {
-      invoice = await db.invoice.create({ data })
-      await this.events.emit({
+    // A concurrent insert between the pre-check and this create surfaces as
+    // P2002; the caller retries the idempotency key, and the pre-check then
+    // returns the winner's row. Never swallow it into a second read here —
+    // inside an outer transaction the transaction is already aborted.
+    const invoice = await client.invoice.create({ data })
+    await this.events.emit(
+      {
         type: 'invoice.received',
         entityType: 'Invoice',
         entityId: invoice.id,
         payload: { vendorId: invoice.vendorId, number: invoice.number },
-      })
-      await this.emitStatusEvents(invoice.id, status)
-    } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        (error as { code?: string }).code === 'P2002'
-      ) {
-        // [vendorId, number] already ingested — dedupe to the existing row.
-        const existing = await db.invoice.findUnique({
-          where: {
-            vendorId_number: { vendorId: input.vendorId, number: input.number },
-          },
-        })
-        if (!existing) throw new ConflictException('Duplicate invoice')
-        return {
-          invoice: existing,
-          match:
-            (existing.matchResult as unknown as MatchResult | null) ?? null,
-        }
-      }
-      throw error
-    }
+      },
+      outerTx,
+    )
+    await this.emitStatusEvents(invoice.id, status, outerTx)
     return { invoice, match }
   }
 
@@ -164,8 +160,9 @@ export class InvoiceService {
     poId: string,
     invoiceVendorId: string,
     invoiceTotalMinor: number,
+    client: Prisma.TransactionClient | typeof db = db,
   ): Promise<MatchResult> {
-    const po = await db.purchaseOrder.findUnique({ where: { id: poId } })
+    const po = await client.purchaseOrder.findUnique({ where: { id: poId } })
     if (!po) {
       return {
         poId,
@@ -197,7 +194,7 @@ export class InvoiceService {
     // Receipt leg: only evaluated once vendor and PO amount are clean.
     let receivedValueMinor: number | null = null
     if (outcome === 'matched') {
-      receivedValueMinor = await this.receivedValueForPo(po.id)
+      receivedValueMinor = await this.receivedValueForPo(po.id, client)
       if (receivedValueMinor === 0) {
         outcome = 'awaiting_receipt'
       } else if (
@@ -230,13 +227,16 @@ export class InvoiceService {
    * an under-count is conservative (it can only raise exceptions, never
    * silently pass a match).
    */
-  private async receivedValueForPo(poId: string): Promise<number> {
+  private async receivedValueForPo(
+    poId: string,
+    client: Prisma.TransactionClient | typeof db = db,
+  ): Promise<number> {
     const [receipts, poLines] = await Promise.all([
-      db.receipt.findMany({
+      client.receipt.findMany({
         where: { poId, status: 'recorded' },
         select: { lines: { select: { quantity: true, lineNo: true } } },
       }),
-      db.purchaseOrderLine.findMany({
+      client.purchaseOrderLine.findMany({
         where: { poId },
         select: { lineNo: true, unitPriceMinor: true },
       }),
@@ -271,21 +271,28 @@ export class InvoiceService {
   private async emitStatusEvents(
     id: string,
     status: InvoiceStatus,
+    tx?: Prisma.TransactionClient,
   ): Promise<void> {
     if (status === 'matched') {
-      await this.events.emit({
-        type: 'invoice.matched',
-        entityType: 'Invoice',
-        entityId: id,
-        payload: { status: 'matched' },
-      })
+      await this.events.emit(
+        {
+          type: 'invoice.matched',
+          entityType: 'Invoice',
+          entityId: id,
+          payload: { status: 'matched' },
+        },
+        tx,
+      )
     } else if (status === 'exception') {
-      await this.events.emit({
-        type: 'invoice.exception',
-        entityType: 'Invoice',
-        entityId: id,
-        payload: { status: 'exception' },
-      })
+      await this.events.emit(
+        {
+          type: 'invoice.exception',
+          entityType: 'Invoice',
+          entityId: id,
+          payload: { status: 'exception' },
+        },
+        tx,
+      )
     }
   }
 
@@ -294,8 +301,12 @@ export class InvoiceService {
    * as `received` (awaiting_receipt) get a fresh three-way evaluation; newly
    * matched ones flow on to payment planning.
    */
-  async rematchOpenForPo(poId: string): Promise<RematchSummary> {
-    const open = await db.invoice.findMany({
+  async rematchOpenForPo(
+    poId: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<RematchSummary> {
+    const client = outerTx ?? db
+    const open = await client.invoice.findMany({
       where: { poId, status: 'received' },
     })
     const summary: RematchSummary = {
@@ -309,13 +320,14 @@ export class InvoiceService {
         poId,
         invoice.vendorId,
         invoice.amountMinor,
+        client,
       )
       const status = InvoiceService.statusFor(match)
-      await db.invoice.update({
+      await client.invoice.update({
         where: { id: invoice.id },
         data: { status, matchResult: match },
       })
-      await this.emitStatusEvents(invoice.id, status)
+      await this.emitStatusEvents(invoice.id, status, outerTx)
       if (status === 'matched') summary.matched += 1
       else if (status === 'exception') summary.exceptions += 1
       else summary.stillWaiting += 1

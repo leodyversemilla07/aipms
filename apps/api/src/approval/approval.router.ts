@@ -48,27 +48,39 @@ export class ApprovalRouter {
     @Input() input: z.infer<typeof decideInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.approval.decide(
-        input.id,
-        input.verdict,
-        ctx.user.id,
-        input.evidence,
-      )
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'approval.decide',
-        entity: 'Approval',
-        entityId: input.id,
-        input: {
-          id: input.id,
-          verdict: input.verdict,
-          evidence: input.evidence,
-        },
-        after: result,
-      })
-      return result
-    })
+        operation: 'approval.decide',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const result = await this.approval.decide(
+          input.id,
+          input.verdict,
+          ctx.user.id,
+          input.evidence,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'approval.decide',
+            entity: 'Approval',
+            entityId: input.id,
+            input: {
+              id: input.id,
+              verdict: input.verdict,
+              evidence: input.evidence,
+            },
+            after: result,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 }

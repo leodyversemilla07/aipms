@@ -61,8 +61,11 @@ export class AuditService {
     return createHash('sha256').update(stable).digest('hex')
   }
 
-  async record(input: AuditRecordInput): Promise<void> {
-    await db.$transaction(async (tx) => {
+  async record(
+    input: AuditRecordInput,
+    transaction?: Prisma.TransactionClient,
+  ): Promise<void> {
+    const append = async (tx: Prisma.TransactionClient) => {
       // Serialize chain appends: read-then-insert of prevHash must be linear
       // or concurrent writers would fork the chain.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('aipms-audit-chain'))`
@@ -109,7 +112,9 @@ export class AuditService {
           entryHash,
         },
       })
-    })
+    }
+    if (transaction) await append(transaction)
+    else await db.$transaction(append)
   }
 
   /**

@@ -84,24 +84,35 @@ export class InvoiceRouter {
     @Input() input: z.infer<typeof registerInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.invoice.register(input)
-      const id = (result.invoice as { id?: string }).id
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'invoice.register',
-        entity: 'Invoice',
-        entityId: id,
+        operation: 'invoice.register',
+        key: input.idempotencyKey,
         input,
-        after: result.invoice as object,
-      })
-      return {
-        ...result,
-        taxPolicyVersion: (
-          result.invoice as { taxPolicyVersion?: string | null }
-        ).taxPolicyVersion,
-      }
-    })
+      },
+      async (tx) => {
+        const result = await this.invoice.register(input, tx)
+        const id = (result.invoice as { id?: string }).id
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'invoice.register',
+            entity: 'Invoice',
+            entityId: id,
+            input,
+            after: result.invoice as object,
+          },
+          tx,
+        )
+        return {
+          ...result,
+          taxPolicyVersion: (
+            result.invoice as { taxPolicyVersion?: string | null }
+          ).taxPolicyVersion,
+        }
+      },
+    )
   }
 }

@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import type { Prisma } from '@workspace/db'
-import { db, type VendorStatus } from '@workspace/db'
+import { db, Prisma, type VendorStatus } from '@workspace/db'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
 export interface CreateVendor {
@@ -62,8 +61,13 @@ export class VendorService {
    * verified; a later change (new account payload) clears that stamp so the
    * payment service refuses to plan it until it is re-verified.
    */
-  async verifyBankAccount(vendorId: string, bankAccount: unknown) {
-    const vendor = await this.detail(vendorId)
+  async verifyBankAccount(
+    vendorId: string,
+    bankAccount: unknown,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
+    if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
     const prev = vendor.bankAccount as Record<string, unknown> | null
     const next = bankAccount as Record<string, unknown>
     // A *change* only when a prior account existed and differs; a fresh,
@@ -71,7 +75,7 @@ export class VendorService {
     const changed =
       prev != null && JSON.stringify(prev) !== JSON.stringify(next)
 
-    return db.vendor.update({
+    return tx.vendor.update({
       where: { id: vendorId },
       data: {
         bankAccount: next as Prisma.InputJsonValue,
@@ -81,8 +85,8 @@ export class VendorService {
     })
   }
 
-  create(input: CreateVendor) {
-    return db.vendor.create({
+  create(input: CreateVendor, tx: Prisma.TransactionClient = db) {
+    return tx.vendor.create({
       data: {
         name: input.name,
         email: input.email ?? null,
@@ -94,9 +98,14 @@ export class VendorService {
     })
   }
 
-  async update(id: string, input: UpdateVendor) {
-    await this.detail(id)
-    return db.vendor.update({
+  async update(
+    id: string,
+    input: UpdateVendor,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const existing = await tx.vendor.findUnique({ where: { id } })
+    if (!existing) throw new NotFoundException(`Vendor ${id} not found`)
+    return tx.vendor.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),

@@ -50,8 +50,9 @@ export class ApprovalService {
     verdict: DecideVerdict,
     actorId: string,
     evidence?: string,
+    outerTx?: Prisma.TransactionClient,
   ): Promise<DecideResult> {
-    return db.$transaction(async (tx) => {
+    const run = async (tx: Prisma.TransactionClient): Promise<DecideResult> => {
       const approval = await tx.approval.findUnique({ where: { id } })
       if (!approval) throw new NotFoundException(`Approval ${id} not found`)
       if (approval.status !== 'pending') {
@@ -199,7 +200,9 @@ export class ApprovalService {
       }
 
       return { approval: updated, outcome: 'KEPT' }
-    })
+    }
+    if (outerTx) return run(outerTx)
+    return db.$transaction(run)
   }
 
   /** Release the committed amount when a PO is cancelled (floor at 0). */

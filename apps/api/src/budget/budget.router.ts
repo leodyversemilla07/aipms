@@ -57,18 +57,29 @@ export class BudgetRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'budget.create')
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const budget = await this.budget.create(input)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'budget.create',
-        entity: 'Budget',
-        entityId: budget.id,
+        operation: 'budget.create',
+        key: input.idempotencyKey,
         input,
-        after: budget,
-      })
-      return budget
-    })
+      },
+      async (tx) => {
+        const budget = await this.budget.create(input, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'budget.create',
+            entity: 'Budget',
+            entityId: budget.id,
+            input,
+            after: budget,
+          },
+          tx,
+        )
+        return budget
+      },
+    )
   }
 }

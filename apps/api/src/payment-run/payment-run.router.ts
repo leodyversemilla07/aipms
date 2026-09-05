@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -72,19 +73,30 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.create')
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.runs.create(input, ctx.user.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'paymentRun.create',
-        entity: 'PaymentRun',
-        entityId: result.run.id,
+        operation: 'paymentRun.create',
+        key: input.idempotencyKey,
         input,
-        after: result.run as object,
-      })
-      return result
-    })
+      },
+      async (tx) => {
+        const result = await this.runs.create(input, ctx.user.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'paymentRun.create',
+            entity: 'PaymentRun',
+            entityId: result.run.id,
+            input,
+            after: result.run as object,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 
   @Mutation({ input: runIdInput })
@@ -93,17 +105,22 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.approve')
-    const run = await this.runs.approve(input.id, ctx.user.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'paymentRun.approve',
-      entity: 'PaymentRun',
-      entityId: run.id,
-      input,
-      after: run as object,
+    return db.$transaction(async (tx) => {
+      const run = await this.runs.approve(input.id, ctx.user.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'paymentRun.approve',
+          entity: 'PaymentRun',
+          entityId: run.id,
+          input,
+          after: run as object,
+        },
+        tx,
+      )
+      return run
     })
-    return run
   }
 
   @Mutation({ input: runIdInput })
@@ -112,17 +129,22 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.execute')
-    const run = await this.runs.execute(input.id, ctx.user.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'paymentRun.execute',
-      entity: 'PaymentRun',
-      entityId: run.id,
-      input,
-      after: run as object,
+    return db.$transaction(async (tx) => {
+      const run = await this.runs.execute(input.id, ctx.user.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'paymentRun.execute',
+          entity: 'PaymentRun',
+          entityId: run.id,
+          input,
+          after: run as object,
+        },
+        tx,
+      )
+      return run
     })
-    return run
   }
 
   @Mutation({ input: reconcileInput })
@@ -131,21 +153,27 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.reconcile')
-    const result = await this.runs.reconcile(
-      input.runId,
-      input.lineId,
-      input.status,
-    )
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'paymentRun.reconcile',
-      entity: 'PaymentRunLine',
-      entityId: input.lineId,
-      input,
-      after: result as object,
+    return db.$transaction(async (tx) => {
+      const result = await this.runs.reconcile(
+        input.runId,
+        input.lineId,
+        input.status,
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'paymentRun.reconcile',
+          entity: 'PaymentRunLine',
+          entityId: input.lineId,
+          input,
+          after: result as object,
+        },
+        tx,
+      )
+      return result
     })
-    return result
   }
 
   @Mutation({ input: runIdInput })
@@ -154,16 +182,21 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.void')
-    const run = await this.runs.voidRun(input.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'paymentRun.void',
-      entity: 'PaymentRun',
-      entityId: run.id,
-      input,
-      after: run as object,
+    return db.$transaction(async (tx) => {
+      const run = await this.runs.voidRun(input.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'paymentRun.void',
+          entity: 'PaymentRun',
+          entityId: run.id,
+          input,
+          after: run as object,
+        },
+        tx,
+      )
+      return run
     })
-    return run
   }
 }

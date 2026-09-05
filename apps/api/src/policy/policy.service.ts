@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import type { Prisma } from '@workspace/db'
-import { db, type PolicyKind } from '@workspace/db'
+import { db, type PolicyKind, Prisma } from '@workspace/db'
 import {
   normalizeTaxPolicy,
   PH_DEFAULT_POLICY,
@@ -80,12 +79,14 @@ export class PolicyService {
     return normalizeTaxPolicy(policy.config)
   }
 
-  async create(input: CreatePolicyInput) {
+  async create(input: CreatePolicyInput, tx: Prisma.TransactionClient = db) {
     const supersedes = input.supersedesId
-      ? await this.detail(input.supersedesId)
+      ? await tx.policy.findUnique({ where: { id: input.supersedesId } })
       : null
+    if (input.supersedesId && !supersedes)
+      throw new NotFoundException(`Policy ${input.supersedesId} not found`)
 
-    return db.policy.create({
+    return tx.policy.create({
       data: {
         name: input.name,
         kind: input.kind,

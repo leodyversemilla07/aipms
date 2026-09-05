@@ -73,32 +73,49 @@ export class MessagingRouter {
     @Input() input: z.infer<typeof submitInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const { message } = await this.messaging.submit({
-        vendorId: input.vendorId,
-        recipient: input.recipient,
-        subject: input.subject,
-        body: input.body,
-        templateId: input.templateId ?? null,
-        threadId: input.threadId ?? null,
-        agentId: ctx.actorKind === 'agent' ? ctx.user.id : null,
-        runId: input.runId ?? null,
-      })
-      await this.audit.record({
+    // Staged atomically (message + outbox + audit), then released after
+    // commit: the transport send must never precede its durable outbox row.
+    const staged = await this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'messaging.submit',
-        entity: 'Message',
-        entityId: (message as { id: string }).id,
-        input: {
-          vendorId: input.vendorId,
-          recipient: input.recipient,
-          subject: input.subject,
-          templateId: input.templateId ?? null,
-        },
-      })
-      return { message }
-    })
+        operation: 'messaging.submit',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const { message } = await this.messaging.submit(
+          {
+            vendorId: input.vendorId,
+            recipient: input.recipient,
+            subject: input.subject,
+            body: input.body,
+            templateId: input.templateId ?? null,
+            threadId: input.threadId ?? null,
+            agentId: ctx.actorKind === 'agent' ? ctx.user.id : null,
+            runId: input.runId ?? null,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'messaging.submit',
+            entity: 'Message',
+            entityId: (message as { id: string }).id,
+            input: {
+              vendorId: input.vendorId,
+              recipient: input.recipient,
+              subject: input.subject,
+              templateId: input.templateId ?? null,
+            },
+          },
+          tx,
+        )
+        return { message }
+      },
+    )
+    return this.messaging.releaseIfAuto(staged)
   }
 
   @Mutation({ input: decideInput })

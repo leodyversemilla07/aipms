@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, type MessageStatus, type MessageTier } from '@workspace/db'
+import { db, type MessageStatus, type MessageTier, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
@@ -145,68 +145,95 @@ export class MessagingService {
    * server-side: known transactional templates → `auto`; everything else
    * (including any unrecognised template and all free-form) → `gated`.
    */
-  async submit(input: SubmitMessageInput): Promise<{ message: object }> {
-    const vendor = await db.vendor.findUnique({
-      where: { id: input.vendorId },
-    })
-    if (!vendor)
-      throw new NotFoundException(`Vendor ${input.vendorId} not found`)
+  async submit(
+    input: SubmitMessageInput,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{ message: object }> {
+    // Creation + outbox + audit commit atomically via the caller's
+    // idempotent transaction. The transport send happens after commit
+    // through dispatchIfQueued, which only transitions queued → sent, so a
+    // retry after a crash can never double-send (residual risk: a crash
+    // between the provider accepting the email and the status update —
+    // same window as any send-then-record pipeline; the outbox records it).
+    const run = async (tx: Prisma.TransactionClient) => {
+      const vendor = await tx.vendor.findUnique({
+        where: { id: input.vendorId },
+      })
+      if (!vendor)
+        throw new NotFoundException(`Vendor ${input.vendorId} not found`)
 
-    if (vendor.status === 'blacklisted') {
-      throw new ForbiddenException(
-        `Vendor ${vendor.name} is blacklisted — outbound messaging blocked`,
+      if (vendor.status === 'blacklisted') {
+        throw new ForbiddenException(
+          `Vendor ${vendor.name} is blacklisted — outbound messaging blocked`,
+        )
+      }
+
+      // Recipients are verified identities, not raw addresses (§8.3).
+      const verified = verifiedEmails(vendor.contactChannels)
+      if (!verified.includes(input.recipient)) {
+        throw new ForbiddenException(
+          verified.length === 0
+            ? `Vendor ${vendor.name} has no verified contact channels — add one on the vendor master before messaging`
+            : `Recipient ${input.recipient} is not a verified contact for ${vendor.name}`,
+        )
+      }
+
+      const tier: MessageTier =
+        input.templateId &&
+        (AUTO_TEMPLATES as readonly string[]).includes(input.templateId)
+          ? 'auto'
+          : 'gated'
+
+      const message = await tx.message.create({
+        data: {
+          vendorId: vendor.id,
+          recipient: input.recipient,
+          subject: input.subject,
+          body: input.body,
+          bodyHash: canonicalBodyHash(input),
+          templateId: input.templateId ?? null,
+          tier,
+          status: 'queued',
+          agentId: input.agentId ?? null,
+          runId: input.runId ?? null,
+          threadId: input.threadId ?? null,
+        },
+      })
+
+      await this.events.emit(
+        {
+          type: 'message.submitted',
+          entityType: 'Message',
+          entityId: message.id,
+          payload: {
+            vendorId: vendor.id,
+            tier,
+            templateId: input.templateId ?? null,
+          },
+        },
+        tx,
       )
+
+      return { message }
     }
+    // Staged but not sent: the caller dispatches after the surrounding
+    // transaction commits (a send must never precede its durable outbox row).
+    if (outerTx) return run(outerTx)
+    const created = await db.$transaction(run)
+    return this.releaseIfAuto(created)
+  }
 
-    // Recipients are verified identities, not raw addresses (§8.3).
-    const verified = verifiedEmails(vendor.contactChannels)
-    if (!verified.includes(input.recipient)) {
-      throw new ForbiddenException(
-        verified.length === 0
-          ? `Vendor ${vendor.name} has no verified contact channels — add one on the vendor master before messaging`
-          : `Recipient ${input.recipient} is not a verified contact for ${vendor.name}`,
-      )
+  /** Post-commit release for auto-tier messages (idempotent, never double-sends). */
+  async releaseIfAuto(created: { message: object }) {
+    const m = created.message as {
+      id: string
+      tier: MessageTier
+      status: MessageStatus
     }
-
-    const tier: MessageTier =
-      input.templateId &&
-      (AUTO_TEMPLATES as readonly string[]).includes(input.templateId)
-        ? 'auto'
-        : 'gated'
-
-    let message = await db.message.create({
-      data: {
-        vendorId: vendor.id,
-        recipient: input.recipient,
-        subject: input.subject,
-        body: input.body,
-        bodyHash: canonicalBodyHash(input),
-        templateId: input.templateId ?? null,
-        tier,
-        status: 'queued',
-        agentId: input.agentId ?? null,
-        runId: input.runId ?? null,
-        threadId: input.threadId ?? null,
-      },
-    })
-
-    await this.events.emit({
-      type: 'message.submitted',
-      entityType: 'Message',
-      entityId: message.id,
-      payload: {
-        vendorId: vendor.id,
-        tier,
-        templateId: input.templateId ?? null,
-      },
-    })
-
-    // Low-risk transactional content releases immediately; gated waits.
-    if (tier === 'auto') {
-      message = (await this.dispatch(message.id)) as typeof message
+    if (m.tier === 'auto' && m.status === 'queued') {
+      return { message: await this.dispatchIfQueued(m.id) }
     }
-
-    return { message }
+    return created
   }
 
   /**
@@ -269,9 +296,52 @@ export class MessagingService {
     return updated
   }
 
+  /**
+   * Conditional send: only a still-queued message transitions to sent, so
+   * concurrent retries or a post-crash replay can never double-send.
+   * Approved messages release through approve(); only queued rows qualify.
+   */
+  async dispatchIfQueued(id: string): Promise<object> {
+    const queued = await this.detail(id)
+    if (queued.status !== 'queued') return queued
+    const message = queued
+    try {
+      await this.transport.send({
+        to: message.recipient,
+        subject: message.subject,
+        body: message.body,
+      })
+    } catch (error) {
+      await db.message.updateMany({
+        where: { id: message.id, status: 'queued' },
+        data: {
+          status: 'failed',
+          failedReason: error instanceof Error ? error.message : String(error),
+        },
+      })
+      return this.detail(message.id)
+    }
+
+    const updated = await db.message.updateMany({
+      where: { id: message.id, status: 'queued' },
+      data: { status: 'sent', sentAt: new Date() },
+    })
+    if (updated.count === 1) {
+      await this.events.emit({
+        type: 'message.sent',
+        entityType: 'Message',
+        entityId: message.id,
+        payload: { recipient: message.recipient, tier: message.tier },
+      })
+    }
+
+    return this.detail(message.id)
+  }
+
   /** Release a queued/approved message through the transport seam. */
   private async dispatch(id: string): Promise<object> {
     const message = await this.detail(id)
+    if (message.status === 'queued') return this.dispatchIfQueued(id)
     try {
       await this.transport.send({
         to: message.recipient,

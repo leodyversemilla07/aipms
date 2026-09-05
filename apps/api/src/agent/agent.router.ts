@@ -48,23 +48,34 @@ export class AgentRouter {
     @Input() input: z.infer<typeof processInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.run(input.idempotencyKey, async () => {
-      const result = await this.agent.classifyAndRegister(input.id)
-      await this.audit.record({
+    return this.idempotency.runAtomic(
+      {
         actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'agent.process',
-        entity: 'IntakeDocument',
-        entityId: input.id,
+        operation: 'agent.process',
+        key: input.idempotencyKey,
         input,
-        after: {
-          docStatus: result.doc.status,
-          invoiceId: (result.invoice as { id?: string }).id,
-          matchOutcome: result.match?.outcome,
-        },
-      })
-      return result
-    })
+      },
+      async (tx) => {
+        const result = await this.agent.classifyAndRegister(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'agent.process',
+            entity: 'IntakeDocument',
+            entityId: input.id,
+            input,
+            after: {
+              docStatus: result.doc.status,
+              invoiceId: (result.invoice as { id?: string }).id,
+              matchOutcome: result.match?.outcome,
+            },
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 
   /**
@@ -76,6 +87,9 @@ export class AgentRouter {
     @Input() input: z.infer<typeof batchInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    // Per-document pipelines commit independently (one bad document cannot
+    // block the queue); the batch summary audit commits atomically with
+    // nothing else outstanding. Retries only pick up still-new documents.
     const result = await this.agent.processPending(input.limit)
     await this.audit.record({
       actorId: ctx.user.id,
