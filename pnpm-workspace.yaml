@@ -12,6 +12,8 @@ allowBuilds:
   "@swc/core": true
   '@prisma/client': true
   better-sqlite3: true
+  '@mongodb-js/zstd': true
+  node-liblzma: true
 
 # Security overrides — same-major bumps over vulnerable transitive ranges
 # (2026-07 advisories; see pnpm audit). Range-scoped so unrelated major
