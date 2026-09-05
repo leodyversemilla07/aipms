@@ -592,6 +592,9 @@ model PaymentRunLine {
   run     PaymentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
   invoiceId String
   netMinor Int
+  // Frozen, verified beneficiary and invoice metadata at run creation.
+  // Legacy null snapshots must never fall back to mutable vendor details.
+  beneficiarySnapshot Json?
   status  PaymentStatus @default(planned)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt

@@ -12,6 +12,10 @@ import {
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { type BuiltBatch, buildPaymentBatch } from './batch'
+import {
+  freezeBeneficiary,
+  readBeneficiarySnapshot,
+} from './beneficiary-snapshot'
 import { buildPain001, resolveDebtor } from './pain001'
 
 /**
@@ -74,14 +78,6 @@ export class PaymentRunService {
       )
     }
 
-    const netByInvoice = new Map(
-      invoices.map((invoice) => [invoice.id, this.netPayable(invoice)]),
-    )
-    const totalMinor = invoices.reduce(
-      (sum, invoice) => sum + (netByInvoice.get(invoice.id) ?? 0),
-      0,
-    )
-
     // §8.6 race-hardened create: invoice eligibility is re-checked inside the
     // transaction under FOR UPDATE row locks (serializes concurrent creates
     // claiming the same invoices), and the run number is minted in the same
@@ -100,7 +96,6 @@ export class PaymentRunService {
           // another run (unique line) or already paid is refused.
           const fresh = await tx.invoice.findMany({
             where: { id: { in: uniqueIds } },
-            select: { id: true, status: true, number: true },
           })
           for (const invoice of fresh) {
             if (invoice.status !== 'matched') {
@@ -109,6 +104,48 @@ export class PaymentRunService {
               )
             }
           }
+          const freshVendorIds = [
+            ...new Set(fresh.map((invoice) => invoice.vendorId)),
+          ].sort()
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM vendor WHERE id IN (${Prisma.join(freshVendorIds)}) ORDER BY id FOR UPDATE`,
+          )
+          const freshVendors = await tx.vendor.findMany({
+            where: { id: { in: freshVendorIds } },
+          })
+          const snapshots = new Map(
+            fresh.map((invoice) => {
+              const vendor = freshVendors.find(
+                (row) => row.id === invoice.vendorId,
+              )
+              if (!vendor)
+                throw new NotFoundException('Invoice vendor not found')
+              try {
+                return [
+                  invoice.id,
+                  freezeBeneficiary(invoice.number, vendor),
+                ] as const
+              } catch (error) {
+                throw new BadRequestException(
+                  error instanceof Error
+                    ? error.message
+                    : 'Invalid beneficiary',
+                )
+              }
+            }),
+          )
+          if (fresh.some((invoice) => invoice.currencyCode !== 'PHP')) {
+            throw new BadRequestException(
+              'Payment runs currently support PHP invoices only',
+            )
+          }
+          const netByInvoice = new Map(
+            fresh.map((invoice) => [invoice.id, this.netPayable(invoice)]),
+          )
+          const totalMinor = [...netByInvoice.values()].reduce(
+            (sum, amount) => sum + amount,
+            0,
+          )
           const claimed = await tx.paymentRunLine.findMany({
             where: { invoiceId: { in: uniqueIds } },
             select: { invoiceId: true },
@@ -139,8 +176,9 @@ export class PaymentRunService {
               notes: input.notes ?? undefined,
               createdBy,
               lines: {
-                create: invoices.map((invoice) => ({
+                create: fresh.map((invoice) => ({
                   invoiceId: invoice.id,
+                  beneficiarySnapshot: snapshots.get(invoice.id),
                   netMinor: netByInvoice.get(invoice.id) ?? 0,
                   status: 'planned',
                 })),
@@ -172,14 +210,19 @@ export class PaymentRunService {
     if (run.createdBy === approverId) {
       throw new BadRequestException('Maker and checker must differ')
     }
-    return db.paymentRun.update({
-      where: { id: runId },
+    const changed = await db.paymentRun.updateMany({
+      where: { id: runId, status: 'draft', createdBy: { not: approverId } },
       data: {
         status: 'approved',
         approvedBy: approverId,
         approvedAt: new Date(),
       },
     })
+    if (changed.count !== 1)
+      throw new ConflictException(
+        'Payment run changed; reload before approving',
+      )
+    return this.detail(runId)
   }
 
   async execute(runId: string, executedBy: string) {
@@ -187,10 +230,15 @@ export class PaymentRunService {
     if (run.status !== 'approved') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
-    return db.paymentRun.update({
-      where: { id: runId },
+    const changed = await db.paymentRun.updateMany({
+      where: { id: runId, status: 'approved' },
       data: { status: 'executed', executedBy, executedAt: new Date() },
     })
+    if (changed.count !== 1)
+      throw new ConflictException(
+        'Payment run changed; reload before executing',
+      )
+    return this.detail(runId)
   }
 
   /**
@@ -223,46 +271,21 @@ export class PaymentRunService {
     }
 
     const lines = await db.paymentRunLine.findMany({ where: { runId } })
-    const invoiceIds = [...new Set(lines.map((line) => line.invoiceId))]
-    const [invoices, vendors] = await Promise.all([
-      db.invoice.findMany({ where: { id: { in: invoiceIds } } }),
-      db.vendor.findMany({
-        select: {
-          id: true,
-          name: true,
-          taxId: true,
-          bankAccount: true,
-        },
-      }),
-    ])
-    const invoiceById = new Map(invoices.map((inv) => [inv.id, inv] as const))
-    const vendorById = new Map(vendors.map((v) => [v.id, v] as const))
-
     let built: BuiltBatch
     try {
       built = buildPaymentBatch({
         runNumber: run.runNumber,
-        executedAt: run.executedAt ?? run.updatedAt,
+        executedAt: run.createdAt,
         currencyCode: run.currencyCode,
         totalMinor: run.totalMinor,
         lines: lines.map((line) => {
-          const inv = invoiceById.get(line.invoiceId)
-          if (!inv) {
-            throw new NotFoundException(
-              `Invoice ${line.invoiceId} on ${run.runNumber} not found`,
-            )
-          }
-          const vendor = vendorById.get(inv.vendorId)
+          const snapshot = readBeneficiarySnapshot(line.beneficiarySnapshot)
           return {
+            ...snapshot,
             lineId: line.id,
-            invoiceId: inv.id,
-            invoiceNumber: inv.number,
-            vendorId: inv.vendorId,
-            vendorName: vendor?.name ?? '(unknown vendor)',
-            vendorTaxId: vendor?.taxId ?? null,
+            invoiceId: line.invoiceId,
             netMinor: line.netMinor,
             currencyCode: run.currencyCode,
-            bankAccount: vendor?.bankAccount ?? null,
           }
         }),
       })

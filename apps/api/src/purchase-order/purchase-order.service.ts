@@ -109,10 +109,39 @@ export class PurchaseOrderService {
     const vendor = await db.vendor.findUnique({ where: { id: input.vendorId } })
     if (!vendor) throw new NotFoundException('Vendor not found')
 
-    const vendorDecision = evaluateVendorGate(vendor.status)
-
     const runTransaction = () =>
       db.$transaction(async (tx) => {
+        // Serialize issuance per requisition and revalidate mutable gates after
+        // acquiring locks. Different idempotency keys must not double-order.
+        await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${input.requisitionId} FOR UPDATE`
+        const requisition = await tx.requisition.findUnique({
+          where: { id: input.requisitionId },
+          include: { lines: true },
+        })
+        if (!requisition || requisition.status !== 'approved') {
+          throw new ConflictException(
+            'Requisition must be approved before a PO is issued',
+          )
+        }
+        const budgetId = requisition.budgetId
+        if (!budgetId) throw new ConflictException('Requisition has no budget')
+        const existing = await tx.purchaseOrder.findFirst({
+          where: {
+            requisitionId: requisition.id,
+            status: { not: 'cancelled' },
+          },
+        })
+        if (existing)
+          throw new ConflictException(
+            'Requisition already has a purchase order',
+          )
+        await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${input.vendorId} FOR UPDATE`
+        const vendor = await tx.vendor.findUnique({
+          where: { id: input.vendorId },
+        })
+        if (!vendor) throw new NotFoundException('Vendor not found')
+        const vendorDecision = evaluateVendorGate(vendor.status)
+        await tx.$queryRaw`SELECT id FROM budget WHERE id = ${budgetId} FOR UPDATE`
         // Vendor gate: BLACKLIST is a hard block; unqualified needs human approval.
         if (vendorDecision.outcome === 'BLOCK') {
           throw new ConflictException(vendorDecision.reason)

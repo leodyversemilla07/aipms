@@ -63,16 +63,18 @@ export function SignInCard() {
         onSubmit={submit}
         className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm"
       >
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Name</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required={mode === "signup"}
-            placeholder="Finance Officer"
-            className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-        </label>
+        {mode === "signup" ? (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-muted-foreground">Name</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              placeholder="Finance Officer"
+              className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+          </label>
+        ) : null}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Email</span>
           <input

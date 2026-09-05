@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { AgentRuns } from "@/components/agent-runs"
 import { AnalyticsPanel } from "@/components/analytics-panel"
 import { useTRPC } from "@/lib/trpc/client"
@@ -125,8 +126,15 @@ function Dashboard() {
 
 export function Cockpit() {
   const { data: session, isPending } = authClient.useSession()
+  // Only show the loading state on the initial check. Background session
+  // refetches (e.g. on window focus) must not unmount the sign-in card —
+  // remounting would wipe whatever the user already typed/pasted.
+  const [initialCheckDone, setInitialCheckDone] = useState(false)
+  useEffect(() => {
+    if (!isPending) setInitialCheckDone(true)
+  }, [isPending])
 
-  if (isPending) {
+  if (!initialCheckDone) {
     return (
       <p className="py-24 text-center text-muted-foreground text-sm">
         Checking session…

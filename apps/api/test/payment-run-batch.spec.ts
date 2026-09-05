@@ -258,13 +258,26 @@ describe('generateBatch integration (approved run hand-off)', () => {
       delete process.env.AIPMS_PAYMENT_DEBTOR_ACCOUNT
     }
 
-    // Deterministic regeneration → identical sha256.
+    // Live master data and execution timestamps cannot change approved bytes.
+    await db.vendor.update({
+      where: { id: vendor.id },
+      data: {
+        bankAccount: {
+          bank: 'OTHER',
+          accountNumber: 'changed-account',
+          holder: 'Changed',
+        },
+        bankAccountVerifiedAt: null,
+        bankAccountChangedAt: new Date(),
+      },
+    })
+    await runs.execute(runId, actorB)
     const again = await runs.generateBatch(runId)
     expect(again.sha256).toBe(batch.sha256)
     expect(again.json).toBe(batch.json)
   })
 
-  it('refuses generation when the vendor master lost its bank account', async () => {
+  it('refuses legacy runs with no frozen beneficiary snapshot', async () => {
     const vendor = await db.vendor.create({
       data: { name: `NoBank ${suffix}`, status: 'active' },
     })
@@ -279,8 +292,7 @@ describe('generateBatch integration (approved run hand-off)', () => {
     })
     created.invoice.push(invoice.id)
 
-    // create() would refuse unverified banks; simulate a verified account that
-    // was wiped after compose (data drift must fail visible, §13).
+    // Legacy rows are deliberately not backfilled from mutable master data.
     const made = await db.paymentRun.create({
       data: {
         runNumber: `RUN-NB-${suffix}`,
