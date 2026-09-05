@@ -3,6 +3,7 @@
 import { authClient } from "@workspace/auth/client"
 import { Button } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 /**
@@ -16,6 +17,7 @@ export function SignInCard() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const router = useRouter()
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -29,9 +31,11 @@ export function SignInCard() {
         callbackURL: "/",
       })
       if (res.error) setError(res.error.message ?? "Sign up failed")
+      else router.refresh()
     } else {
       const res = await authClient.signIn.email({ email, password })
       if (res.error) setError(res.error.message ?? "Sign in failed")
+      else router.refresh()
     }
     setBusy(false)
   }
@@ -67,6 +71,8 @@ export function SignInCard() {
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">Name</span>
             <input
+              name="name"
+              autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -79,6 +85,8 @@ export function SignInCard() {
           <span className="text-muted-foreground">Email</span>
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -90,10 +98,14 @@ export function SignInCard() {
           <span className="text-muted-foreground">Password</span>
           <input
             type="password"
+            name="password"
+            autoComplete={
+              mode === "signup" ? "new-password" : "current-password"
+            }
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={8}
+            minLength={mode === "signup" ? 8 : undefined}
             className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
         </label>
@@ -110,7 +122,10 @@ export function SignInCard() {
 
         <button
           type="button"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+          onClick={() => {
+            setMode(mode === "signin" ? "signup" : "signin")
+            setError(null)
+          }}
           className={cn("text-muted-foreground text-xs underline")}
         >
           {mode === "signin"
