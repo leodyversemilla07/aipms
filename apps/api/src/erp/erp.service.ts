@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db } from '@workspace/db'
+import { db, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
@@ -116,9 +116,16 @@ export class ErpService {
    * row; a changed run (should be impossible post-execution) conflicts so
    * divergence surfaces instead of silently drifting (§13).
    */
-  async exportRun(runId: string, exportedBy: string) {
+  async exportRun(
+    runId: string,
+    exportedBy: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
     const built = await this.buildForRun(runId)
-    const existing = await db.erpJournalExport.findUnique({
+    // Pre-check first: runId is unique, and a violation would abort an
+    // outer transaction. A concurrent create racing the pre-check surfaces
+    // as P2002; the caller retries and the pre-check returns the winner.
+    const existing = await tx.erpJournalExport.findUnique({
       where: { runId },
     })
     if (existing) {
@@ -130,7 +137,7 @@ export class ErpService {
       return { export: existing, created: false, ...built }
     }
 
-    const created = await db.erpJournalExport.create({
+    const created = await tx.erpJournalExport.create({
       data: {
         runId: built.run.id,
         runNumber: built.run.runNumber,
@@ -141,16 +148,19 @@ export class ErpService {
         exportedBy,
       },
     })
-    await this.events.emit({
-      type: 'erp.exported',
-      entityType: 'PaymentRun',
-      entityId: built.run.id,
-      payload: {
-        runNumber: built.run.runNumber,
-        manifestHash: built.hash,
-        totalMinor: built.manifest.totalMinor,
+    await this.events.emit(
+      {
+        type: 'erp.exported',
+        entityType: 'PaymentRun',
+        entityId: built.run.id,
+        payload: {
+          runNumber: built.run.runNumber,
+          manifestHash: built.hash,
+          totalMinor: built.manifest.totalMinor,
+        },
       },
-    })
+      tx,
+    )
     return { export: created, created: true, ...built }
   }
 
@@ -193,13 +203,16 @@ export class ErpService {
    * consumed journal. Line-level payment outcomes still flow through the
    * payment-run reconcile path; this settles the journal itself.
    */
-  async acknowledge(input: {
-    exportId: string
-    status: 'posted' | 'rejected'
-    externalRef?: string | null
-    rejectedReason?: string | null
-  }) {
-    const row = await db.erpJournalExport.findUnique({
+  async acknowledge(
+    input: {
+      exportId: string
+      status: 'posted' | 'rejected'
+      externalRef?: string | null
+      rejectedReason?: string | null
+    },
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const row = await tx.erpJournalExport.findUnique({
       where: { id: input.exportId },
     })
     if (!row) throw new NotFoundException(`Export ${input.exportId} not found`)
@@ -211,9 +224,10 @@ export class ErpService {
     if (input.status === 'rejected' && !input.rejectedReason) {
       throw new ConflictException('A rejection reason is required')
     }
-
-    const updated = await db.erpJournalExport.update({
-      where: { id: row.id },
+    // Conditional transition: concurrent ack attempts serialize — only the
+    // first moves exported → posted/rejected.
+    const changed = await tx.erpJournalExport.updateMany({
+      where: { id: row.id, status: 'exported' },
       data: {
         status: input.status,
         externalRef: input.externalRef ?? null,
@@ -222,16 +236,27 @@ export class ErpService {
         acknowledgedAt: new Date(),
       },
     })
+    if (changed.count !== 1) {
+      throw new ConflictException(
+        `Export for ${row.runNumber} is no longer exported — reload before acknowledging`,
+      )
+    }
+    const updated = await tx.erpJournalExport.findUniqueOrThrow({
+      where: { id: row.id },
+    })
     if (input.status === 'posted') {
-      await this.events.emit({
-        type: 'erp.posted',
-        entityType: 'PaymentRun',
-        entityId: row.runId,
-        payload: {
-          runNumber: row.runNumber,
-          externalRef: input.externalRef ?? null,
+      await this.events.emit(
+        {
+          type: 'erp.posted',
+          entityType: 'PaymentRun',
+          entityId: row.runId,
+          payload: {
+            runNumber: row.runNumber,
+            externalRef: input.externalRef ?? null,
+          },
         },
-      })
+        tx,
+      )
     }
     return updated
   }
@@ -247,40 +272,48 @@ export class ErpService {
       email?: string | null
       paymentTermsDays?: number | null
     }[],
+    outerTx?: Prisma.TransactionClient,
   ) {
-    let created = 0
-    let updated = 0
-    for (const v of vendors) {
-      const existing = v.taxId
-        ? await db.vendor.findFirst({ where: { taxId: v.taxId } })
-        : await db.vendor.findFirst({ where: { name: v.name } })
-      if (existing) {
-        // Never clobber local lifecycle state (status/blacklist); only
-        // refresh descriptive fields the ERP owns.
-        await db.vendor.update({
-          where: { id: existing.id },
-          data: {
-            name: v.name,
-            email: v.email ?? existing.email,
-            paymentTermsDays: v.paymentTermsDays ?? existing.paymentTermsDays,
-            ...(existing.taxId ? {} : { taxId: v.taxId ?? null }),
-          },
-        })
-        updated += 1
-      } else {
-        await db.vendor.create({
-          data: {
-            name: v.name,
-            status: 'prospective',
-            email: v.email ?? null,
-            taxId: v.taxId ?? null,
-            paymentTermsDays: v.paymentTermsDays ?? null,
-          },
-        })
-        created += 1
+    // Bulk sync commits all-or-nothing. Serialized on an advisory lock so
+    // concurrent syncs cannot create duplicate master rows.
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('erp_vendor_ingest'))`
+      let created = 0
+      let updated = 0
+      for (const v of vendors) {
+        const existing = v.taxId
+          ? await tx.vendor.findFirst({ where: { taxId: v.taxId } })
+          : await tx.vendor.findFirst({ where: { name: v.name } })
+        if (existing) {
+          // Never clobber local lifecycle state (status/blacklist); only
+          // refresh descriptive fields the ERP owns.
+          await tx.vendor.update({
+            where: { id: existing.id },
+            data: {
+              name: v.name,
+              email: v.email ?? existing.email,
+              paymentTermsDays: v.paymentTermsDays ?? existing.paymentTermsDays,
+              ...(existing.taxId ? {} : { taxId: v.taxId ?? null }),
+            },
+          })
+          updated += 1
+        } else {
+          await tx.vendor.create({
+            data: {
+              name: v.name,
+              status: 'prospective',
+              email: v.email ?? null,
+              taxId: v.taxId ?? null,
+              paymentTermsDays: v.paymentTermsDays ?? null,
+            },
+          })
+          created += 1
+        }
       }
+      return { received: vendors.length, created, updated }
     }
-    return { received: vendors.length, created, updated }
+    if (outerTx) return run(outerTx)
+    return db.$transaction(run)
   }
 
   /**

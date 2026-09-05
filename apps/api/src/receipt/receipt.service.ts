@@ -199,14 +199,18 @@ export class ReceiptService {
   }
 
   /** Cancel a receipt. Recorded history is preserved; no delete path exists. */
-  async cancel(id: string): Promise<object> {
-    const receipt = await this.detail(id)
+  async cancel(id: string, tx: Prisma.TransactionClient = db): Promise<object> {
+    const receipt = await tx.receipt.findUnique({ where: { id } })
+    if (!receipt) throw new NotFoundException(`Receipt ${id} not found`)
     if (receipt.status === 'cancelled') {
       throw new ConflictException(`Receipt ${id} is already cancelled`)
     }
-    return db.receipt.update({
-      where: { id },
+    const changed = await tx.receipt.updateMany({
+      where: { id, status: 'recorded' },
       data: { status: 'cancelled' },
     })
+    if (changed.count !== 1)
+      throw new ConflictException('Receipt changed; reload before cancelling')
+    return tx.receipt.findUniqueOrThrow({ where: { id } })
   }
 }

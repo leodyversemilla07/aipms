@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -106,14 +107,19 @@ export class ReceiptRouter {
     @Input() input: z.infer<typeof idInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    const receipt = await this.receipts.cancel(input.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'receipt.cancel',
-      entity: 'Receipt',
-      entityId: input.id,
+    return db.$transaction(async (tx) => {
+      const receipt = await this.receipts.cancel(input.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'receipt.cancel',
+          entity: 'Receipt',
+          entityId: input.id,
+        },
+        tx,
+      )
+      return receipt
     })
-    return receipt
   }
 }

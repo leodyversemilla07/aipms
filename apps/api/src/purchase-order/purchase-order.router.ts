@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -72,16 +73,21 @@ export class PurchaseOrderRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     PoSigningService.assertHumanSigner(ctx)
-    const result = await this.signing.sign(input.id, ctx)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'purchaseOrder.sign',
-      entity: 'PurchaseOrder',
-      entityId: input.id,
-      after: result,
+    return db.$transaction(async (tx) => {
+      const result = await this.signing.sign(input.id, ctx, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'purchaseOrder.sign',
+          entity: 'PurchaseOrder',
+          entityId: input.id,
+          after: result,
+        },
+        tx,
+      )
+      return result
     })
-    return result
   }
 
   @Mutation({ input: issueInput })

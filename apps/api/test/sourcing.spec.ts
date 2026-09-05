@@ -164,6 +164,37 @@ describe('sourcing quotes (§8.1)', () => {
     )
   })
 
+  it('keeps awards exclusive under concurrent attempts', async () => {
+    const requisition = await makeApprovedRequisition('race')
+    const [vendorA, vendorB] = [
+      await makeVendor('RaceA'),
+      await makeVendor('RaceB'),
+    ]
+    const quotes = await sourcing.request(
+      requisition.id,
+      [vendorA.id, vendorB.id],
+      actor,
+    )
+    for (const q of quotes) created.quote.push(q.id)
+    await sourcing.receive(quotes[0].id, { totalMinor: 100_000 })
+    await sourcing.receive(quotes[1].id, { totalMinor: 110_000 })
+
+    const results = await Promise.allSettled([
+      sourcing.award(quotes[0].id, actor),
+      sourcing.award(quotes[1].id, actor),
+    ])
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    expect(
+      results.filter(
+        (r) => r.status === 'rejected' && r.reason instanceof ConflictException,
+      ),
+    ).toHaveLength(1)
+    const accepted = await db.quote.count({
+      where: { requisitionId: requisition.id, status: 'accepted' },
+    })
+    expect(accepted).toBe(1)
+  })
+
   it('respects a superseding evaluationCriterion policy (latest version wins)', async () => {
     const prior = await policyService.latest('evaluationCriterion', false)
     const offPolicy = await policyService.create({

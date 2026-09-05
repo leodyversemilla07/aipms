@@ -1,4 +1,5 @@
 import { ConflictException, Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -129,19 +130,30 @@ export class MessagingRouter {
       ['procurement', 'finance'],
       'messaging.approve',
     )
-    const message = await this.messaging.approve({
-      id: input.id,
-      approverId: ctx.user.id,
+    // Staged atomically (approval + outbox + audit), then released after
+    // commit: the transport send must never precede its durable approval row.
+    await db.$transaction(async (tx) => {
+      const message = await this.messaging.approve(
+        {
+          id: input.id,
+          approverId: ctx.user.id,
+        },
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'messaging.approve',
+          entity: 'Message',
+          entityId: input.id,
+          after: message as object,
+        },
+        tx,
+      )
+      return { message }
     })
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'messaging.approve',
-      entity: 'Message',
-      entityId: input.id,
-      after: message as object,
-    })
-    return { message }
+    return { message: await this.messaging.releaseApproved(input.id) }
   }
 
   @Mutation({ input: decideInput })
@@ -158,20 +170,28 @@ export class MessagingRouter {
     if (!input.reason) {
       throw new ConflictException('A rejection reason is required')
     }
-    const message = await this.messaging.reject({
-      id: input.id,
-      approverId: ctx.user.id,
-      reason: input.reason,
+    return db.$transaction(async (tx) => {
+      const message = await this.messaging.reject(
+        {
+          id: input.id,
+          approverId: ctx.user.id,
+          reason: input.reason,
+        },
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'messaging.reject',
+          entity: 'Message',
+          entityId: input.id,
+          input: { reason: input.reason },
+          after: message as object,
+        },
+        tx,
+      )
+      return { message }
     })
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'messaging.reject',
-      entity: 'Message',
-      entityId: input.id,
-      input: { reason: input.reason },
-      after: message as object,
-    })
-    return { message }
   }
 }

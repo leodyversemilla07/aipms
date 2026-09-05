@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -72,20 +73,26 @@ export class SourcingRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['procurement'], 'sourcing.request')
-    const quotes = await this.sourcing.request(
-      input.requisitionId,
-      input.vendorIds,
-      ctx.user.id,
-    )
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'sourcing.request',
-      entity: 'Quote',
-      entityId: quotes.map((q) => q.id).join(','),
-      input,
+    return db.$transaction(async (tx) => {
+      const quotes = await this.sourcing.request(
+        input.requisitionId,
+        input.vendorIds,
+        ctx.user.id,
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'sourcing.request',
+          entity: 'Quote',
+          entityId: quotes.map((q) => q.id).join(','),
+          input,
+        },
+        tx,
+      )
+      return quotes
     })
-    return quotes
   }
 
   @Mutation({ input: receiveInput })
@@ -94,17 +101,22 @@ export class SourcingRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['procurement'], 'sourcing.receive')
-    const { id, ...offer } = input
-    const quote = await this.sourcing.receive(id, offer)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'sourcing.receive',
-      entity: 'Quote',
-      entityId: id,
-      after: quote as object,
+    return db.$transaction(async (tx) => {
+      const { id, ...offer } = input
+      const quote = await this.sourcing.receive(id, offer, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'sourcing.receive',
+          entity: 'Quote',
+          entityId: id,
+          after: quote as object,
+        },
+        tx,
+      )
+      return quote
     })
-    return quote
   }
 
   /** Pure ranking — read-only, any authenticated principal may consult it. */
@@ -121,15 +133,20 @@ export class SourcingRouter {
     // Award commits spend direction — procurement role, human-gated (§7.2:
     // agents may propose; the award decision is deliberately not grantable).
     requireRole(ctx.user, ctx.actorKind, ['procurement'], 'sourcing.award')
-    const quote = await this.sourcing.award(input.id, ctx.user.id)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'sourcing.award',
-      entity: 'Quote',
-      entityId: input.id,
-      after: quote as object,
+    return db.$transaction(async (tx) => {
+      const quote = await this.sourcing.award(input.id, ctx.user.id, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'sourcing.award',
+          entity: 'Quote',
+          entityId: input.id,
+          after: quote as object,
+        },
+        tx,
+      )
+      return quote
     })
-    return quote
   }
 }

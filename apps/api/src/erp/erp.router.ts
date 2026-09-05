@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -59,17 +60,23 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.exportRun')
-    const result = await this.erp.exportRun(input.runId, ctx.user.id)
-    if (result.created) {
-      await this.audit.record({
-        actorId: ctx.user.id,
-        actorKind: ctx.actorKind,
-        action: 'erp.export',
-        entity: 'PaymentRun',
-        entityId: input.runId,
-        after: { manifestHash: result.hash },
-      })
-    }
+    const result = await db.$transaction(async (tx) => {
+      const exported = await this.erp.exportRun(input.runId, ctx.user.id, tx)
+      if (exported.created) {
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'erp.export',
+            entity: 'PaymentRun',
+            entityId: input.runId,
+            after: { manifestHash: exported.hash },
+          },
+          tx,
+        )
+      }
+      return exported
+    })
     return {
       export: result.export,
       created: result.created,
@@ -94,17 +101,25 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.acknowledge')
-    const updated = await this.erp.acknowledge(input)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'erp.acknowledge',
-      entity: 'ErpJournalExport',
-      entityId: updated.id,
-      input: { status: input.status, externalRef: input.externalRef ?? null },
-      after: updated as object,
+    return db.$transaction(async (tx) => {
+      const updated = await this.erp.acknowledge(input, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'erp.acknowledge',
+          entity: 'ErpJournalExport',
+          entityId: updated.id,
+          input: {
+            status: input.status,
+            externalRef: input.externalRef ?? null,
+          },
+          after: updated as object,
+        },
+        tx,
+      )
+      return updated
     })
-    return updated
   }
 
   @Mutation({ input: vendorIngestInput })
@@ -113,16 +128,21 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.ingestVendors')
-    const result = await this.erp.ingestVendors(input.vendors)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'erp.vendorIngest',
-      entity: 'Vendor',
-      entityId: null,
-      input: result as unknown as Record<string, unknown>,
+    return db.$transaction(async (tx) => {
+      const result = await this.erp.ingestVendors(input.vendors, tx)
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'erp.vendorIngest',
+          entity: 'Vendor',
+          entityId: null,
+          input: result as unknown as Record<string, unknown>,
+        },
+        tx,
+      )
+      return result
     })
-    return result
   }
 
   @Query({ input: z.object({}) })

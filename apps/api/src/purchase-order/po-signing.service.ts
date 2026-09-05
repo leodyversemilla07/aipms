@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { TRPCError } from '@trpc/server'
-import { db, type UserRole } from '@workspace/db'
+import { db, Prisma, type UserRole } from '@workspace/db'
 import {
   type DetachedSignature,
   SIGNATURE_ALGORITHM,
@@ -58,7 +58,11 @@ export class PoSigningService {
     }
   }
 
-  async sign(poId: string, ctx: AuthedTrpcContext): Promise<PoSignatureView> {
+  async sign(
+    poId: string,
+    ctx: AuthedTrpcContext,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<PoSignatureView> {
     const po = await this.load(poId)
     if (po.status !== 'issued' && po.status !== 'confirmed') {
       throw new TRPCError({
@@ -81,7 +85,7 @@ export class PoSigningService {
       throw error
     }
 
-    const created = await db.poSignature.create({
+    const created = await tx.poSignature.create({
       data: {
         poId: po.id,
         keyId: sig.keyId,

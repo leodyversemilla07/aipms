@@ -170,12 +170,19 @@ describe('MessagingService (§8.3 relay)', () => {
     expect(queued.status).toBe('queued')
     expect(transport.sent.length).toBe(before) // nothing dispatched
 
+    // Approval stages durably; the transport releases only after commit.
     const approved = (await svc.approve({
       id: queued.id,
       approverId: 'human-finance-1',
     })) as { status: string; approvedBy: string }
-    expect(approved.status).toBe('sent')
+    expect(approved.status).toBe('approved')
     expect(approved.approvedBy).toBe('human-finance-1')
+    expect(transport.sent.length).toBe(before) // not sent yet
+
+    const released = (await svc.releaseApproved(queued.id)) as {
+      status: string
+    }
+    expect(released.status).toBe('sent')
     expect(transport.sent.length).toBe(before + 1)
   })
 
@@ -231,7 +238,7 @@ describe('MessagingService (§8.3 relay)', () => {
     await svc.reject({ id: queued.id, approverId: 'h1', reason: 'no' })
     await expect(
       svc.approve({ id: queued.id, approverId: 'h2' }),
-    ).rejects.toThrow(/only queued drafts/)
+    ).rejects.toThrow(/no longer queued/)
   })
 
   it('marks messages failed when the transport errors, with the reason recorded', async () => {

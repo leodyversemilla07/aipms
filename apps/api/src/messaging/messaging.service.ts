@@ -240,44 +240,91 @@ export class MessagingService {
    * Human approval of a gated draft (§8.3): reviewer sees agent + rationale +
    * thread, approves, and only then is it released — logged.
    */
-  async approve(input: DecideMessageInput): Promise<object> {
-    const message = await this.detail(input.id)
-    if (message.status !== 'queued') {
-      throw new ConflictException(
-        `Message ${input.id} is ${message.status}, only queued drafts can be approved`,
-      )
-    }
-
-    await db.message.update({
-      where: { id: message.id },
+  async approve(
+    input: DecideMessageInput,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<object> {
+    const message = await tx.message.findUnique({
+      where: { id: input.id },
+    })
+    if (!message) throw new NotFoundException(`Message ${input.id} not found`)
+    // Conditional transition: concurrent approve/reject attempts serialize —
+    // only one wins, the other reloads instead of overwriting.
+    const changed = await tx.message.updateMany({
+      where: { id: message.id, status: 'queued' },
       data: {
         status: 'approved',
         approvedBy: input.approverId,
         approvedAt: new Date(),
       },
     })
-
-    await this.events.emit({
-      type: 'message.approved',
-      entityType: 'Message',
-      entityId: message.id,
-      payload: { approvedBy: input.approverId },
-    })
-
-    return this.dispatch(message.id)
-  }
-
-  /** Human rejection of a gated draft, with a recorded reason. */
-  async reject(input: DecideMessageInput): Promise<object> {
-    const message = await this.detail(input.id)
-    if (message.status !== 'queued') {
+    if (changed.count !== 1) {
       throw new ConflictException(
-        `Message ${input.id} is ${message.status}, only queued drafts can be rejected`,
+        `Message ${input.id} is no longer queued — reload before deciding`,
       )
     }
 
-    const updated = await db.message.update({
-      where: { id: message.id },
+    await this.events.emit(
+      {
+        type: 'message.approved',
+        entityType: 'Message',
+        entityId: message.id,
+        payload: { approvedBy: input.approverId },
+      },
+      tx,
+    )
+
+    // Staged but not sent: the caller releases after commit (a send must
+    // never precede its durable approval row).
+    return tx.message.findUniqueOrThrow({ where: { id: message.id } })
+  }
+
+  /** Post-commit release for an approved draft (idempotent, never double-sends). */
+  async releaseApproved(id: string): Promise<object> {
+    const message = await this.detail(id)
+    if (message.status !== 'approved') return message
+    try {
+      await this.transport.send({
+        to: message.recipient,
+        subject: message.subject,
+        body: message.body,
+      })
+    } catch (error) {
+      await db.message.updateMany({
+        where: { id: message.id, status: 'approved' },
+        data: {
+          status: 'failed',
+          failedReason: error instanceof Error ? error.message : String(error),
+        },
+      })
+      return this.detail(message.id)
+    }
+    const updated = await db.message.updateMany({
+      where: { id: message.id, status: 'approved' },
+      data: { status: 'sent', sentAt: new Date() },
+    })
+    if (updated.count === 1) {
+      await this.events.emit({
+        type: 'message.sent',
+        entityType: 'Message',
+        entityId: message.id,
+        payload: { recipient: message.recipient, tier: message.tier },
+      })
+    }
+    return this.detail(message.id)
+  }
+
+  /** Human rejection of a gated draft, with a recorded reason. */
+  async reject(
+    input: DecideMessageInput,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<object> {
+    const message = await tx.message.findUnique({
+      where: { id: input.id },
+    })
+    if (!message) throw new NotFoundException(`Message ${input.id} not found`)
+    const changed = await tx.message.updateMany({
+      where: { id: message.id, status: 'queued' },
       data: {
         status: 'rejected',
         approvedBy: input.approverId,
@@ -285,13 +332,24 @@ export class MessagingService {
         rejectedReason: input.reason ?? null,
       },
     })
-
-    await this.events.emit({
-      type: 'message.rejected',
-      entityType: 'Message',
-      entityId: message.id,
-      payload: { approvedBy: input.approverId, reason: input.reason ?? null },
+    if (changed.count !== 1) {
+      throw new ConflictException(
+        `Message ${input.id} is no longer queued — reload before deciding`,
+      )
+    }
+    const updated = await tx.message.findUniqueOrThrow({
+      where: { id: message.id },
     })
+
+    await this.events.emit(
+      {
+        type: 'message.rejected',
+        entityType: 'Message',
+        entityId: message.id,
+        payload: { approvedBy: input.approverId, reason: input.reason ?? null },
+      },
+      tx,
+    )
 
     return updated
   }
@@ -336,40 +394,5 @@ export class MessagingService {
     }
 
     return this.detail(message.id)
-  }
-
-  /** Release a queued/approved message through the transport seam. */
-  private async dispatch(id: string): Promise<object> {
-    const message = await this.detail(id)
-    if (message.status === 'queued') return this.dispatchIfQueued(id)
-    try {
-      await this.transport.send({
-        to: message.recipient,
-        subject: message.subject,
-        body: message.body,
-      })
-    } catch (error) {
-      return db.message.update({
-        where: { id: message.id },
-        data: {
-          status: 'failed',
-          failedReason: error instanceof Error ? error.message : String(error),
-        },
-      })
-    }
-
-    const sent = await db.message.update({
-      where: { id: message.id },
-      data: { status: 'sent', sentAt: new Date() },
-    })
-
-    await this.events.emit({
-      type: 'message.sent',
-      entityType: 'Message',
-      entityId: message.id,
-      payload: { recipient: sent.recipient, tier: sent.tier },
-    })
-
-    return sent
   }
 }
