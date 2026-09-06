@@ -109,37 +109,69 @@ export class ReceiptService {
       }
 
       // §8.1 over-receipt gate: cumulative recorded + new ≤ ordered per line.
+      // In-request quantities accumulate in the running totals as each line
+      // is accepted, so duplicate lines in one receipt cannot each pass
+      // against the same historical baseline.
       const prior = await tx.receipt.findMany({
         where: { poId: po.id, status: 'recorded' },
         select: { lines: { select: { quantity: true, lineNo: true } } },
       })
-      const receivedByLine = new Map<number, number>()
+      const runningByLine = new Map<number, number>()
       for (const receipt of prior) {
         for (const line of receipt.lines) {
           if (line.lineNo == null) continue
-          receivedByLine.set(
+          runningByLine.set(
             line.lineNo,
-            (receivedByLine.get(line.lineNo) ?? 0) + line.quantity,
+            (runningByLine.get(line.lineNo) ?? 0) + line.quantity,
           )
         }
       }
-      for (const line of input.lines) {
+      const poLineById = new Map(po.lines.map((l) => [l.id, l] as const))
+      const poLineByNo = new Map(po.lines.map((l) => [l.lineNo, l] as const))
+      const prepared = input.lines.map((line) => {
         if (line.quantity <= 0 || !Number.isInteger(line.quantity)) {
           throw new ConflictException(
             'Receipt quantities must be positive integers',
           )
         }
-        if (line.lineNo == null) continue
-        const poLine = po.lines.find((l) => l.lineNo === line.lineNo)
-        if (!poLine) continue
-        const already = receivedByLine.get(line.lineNo) ?? 0
-        if (already + line.quantity > poLine.quantity) {
-          throw new ConflictException(
-            `Over-receipt on PO ${po.poNumber} line ${line.lineNo}: ` +
-              `${already} already received, ${line.quantity} more exceeds the ordered ${poLine.quantity}`,
-          )
+        // poLineId and lineNo must identify the same PO line: otherwise the
+        // quantity cap and the received-value pricing diverge.
+        let poLine = null as (typeof po.lines)[number] | null
+        if (line.poLineId != null) {
+          poLine = poLineById.get(line.poLineId) ?? null
+          if (!poLine) {
+            throw new ConflictException(
+              `PO line ${line.poLineId} is not on PO ${po.poNumber}`,
+            )
+          }
+          if (line.lineNo != null && line.lineNo !== poLine.lineNo) {
+            throw new ConflictException(
+              `poLineId ${line.poLineId} is line ${poLine.lineNo} on PO ${po.poNumber}, not line ${line.lineNo}`,
+            )
+          }
+        } else if (line.lineNo != null) {
+          poLine = poLineByNo.get(line.lineNo) ?? null
         }
-      }
+        const effectiveLineNo = poLine?.lineNo ?? line.lineNo ?? null
+        if (poLine && effectiveLineNo != null) {
+          const already = runningByLine.get(effectiveLineNo) ?? 0
+          if (already + line.quantity > poLine.quantity) {
+            throw new ConflictException(
+              `Over-receipt on PO ${po.poNumber} line ${effectiveLineNo}: ` +
+                `${already} already received, ${line.quantity} more exceeds the ordered ${poLine.quantity}`,
+            )
+          }
+          runningByLine.set(effectiveLineNo, already + line.quantity)
+        }
+        return {
+          poLineId: line.poLineId ?? poLine?.id ?? null,
+          lineNo: effectiveLineNo,
+          sku: line.sku ?? null,
+          description: line.description,
+          quantity: line.quantity,
+          unit: line.unit ?? 'ea',
+        }
+      })
 
       // Receipt numbers are minted under the advisory lock above: no two
       // holders compute the same next number, so no create-retry is needed.
@@ -156,19 +188,7 @@ export class ReceiptService {
           status: 'recorded',
           note: input.note ?? undefined,
           recordedBy: input.recordedBy,
-          lines: {
-            create: input.lines.map((line) => ({
-              poLineId:
-                line.poLineId ??
-                po.lines.find((l) => l.lineNo === line.lineNo)?.id ??
-                null,
-              lineNo: line.lineNo ?? null,
-              sku: line.sku ?? null,
-              description: line.description,
-              quantity: line.quantity,
-              unit: line.unit ?? 'ea',
-            })),
-          },
+          lines: { create: prepared },
         },
         include: { lines: true },
       })
@@ -198,19 +218,35 @@ export class ReceiptService {
     return db.$transaction(run)
   }
 
-  /** Cancel a receipt. Recorded history is preserved; no delete path exists. */
-  async cancel(id: string, tx: Prisma.TransactionClient = db): Promise<object> {
-    const receipt = await tx.receipt.findUnique({ where: { id } })
-    if (!receipt) throw new NotFoundException(`Receipt ${id} not found`)
-    if (receipt.status === 'cancelled') {
-      throw new ConflictException(`Receipt ${id} is already cancelled`)
+  /**
+   * Cancel a receipt. Recorded history is preserved; no delete path exists.
+   * Cancellation and invoice eligibility change in one transaction: matched
+   * invoices on the PO are re-evaluated (demoted when their goods cover
+   * evaporates), and the cancel is refused while a matched invoice is
+   * claimed by a live payment run.
+   */
+  async cancel(
+    id: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<object> {
+    const run = async (tx: Prisma.TransactionClient) => {
+      const receipt = await tx.receipt.findUnique({ where: { id } })
+      if (!receipt) throw new NotFoundException(`Receipt ${id} not found`)
+      if (receipt.status === 'cancelled') {
+        throw new ConflictException(`Receipt ${id} is already cancelled`)
+      }
+      // Serialize with recorders and invoice registrations on this PO.
+      await tx.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${receipt.poId} FOR UPDATE`
+      const changed = await tx.receipt.updateMany({
+        where: { id, status: 'recorded' },
+        data: { status: 'cancelled' },
+      })
+      if (changed.count !== 1)
+        throw new ConflictException('Receipt changed; reload before cancelling')
+      await this.invoice.reevaluateMatchedForPo(receipt.poId, tx)
+      return tx.receipt.findUniqueOrThrow({ where: { id } })
     }
-    const changed = await tx.receipt.updateMany({
-      where: { id, status: 'recorded' },
-      data: { status: 'cancelled' },
-    })
-    if (changed.count !== 1)
-      throw new ConflictException('Receipt changed; reload before cancelling')
-    return tx.receipt.findUniqueOrThrow({ where: { id } })
+    if (outerTx) return run(outerTx)
+    return db.$transaction(run)
   }
 }
