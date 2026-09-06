@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -7,6 +8,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { db, type MessageStatus, type MessageTier, Prisma } from '@workspace/db'
+import { z } from 'zod'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
@@ -18,8 +20,10 @@ import { paginate } from '../trpc/list-input'
  *  - addresses **verified identities** only — the recipient must appear in the
  *    vendor master's `contactChannels` (fraud SoD; unknown/changed addresses
  *    are refused at the tool boundary);
- *  - classifies every send into a tier server-side: transactional templates
- *    auto-send; free-form or binding content is queued for human approval.
+ *  - classifies every send into a tier server-side and renders auto-tier
+ *    content from server-owned templates plus validated data-only
+ *    parameters: transactional templates auto-send; free-form or binding
+ *    content is queued for human approval.
  *    The caller cannot escalate itself to `auto` by claiming it;
  *  - records an immutable `Message` row (body hash = tamper-evidence) so
  *    threads replay for procurement and audit;
@@ -39,6 +43,70 @@ export const AUTO_TEMPLATES = [
 
 export type AutoTemplateId = (typeof AUTO_TEMPLATES)[number]
 
+/**
+ * §8.3 server-owned auto templates. `auto` tier content is rendered here from
+ * validated data-only parameters — callers never supply free-form subject or
+ * body for an allowlisted templateId, so a caller cannot smuggle binding
+ * commercial language past human review by labelling it transactional.
+ */
+const AUTO_TEMPLATE_SCHEMAS = {
+  rfq: z.object({
+    sku: z.string().min(1).max(120),
+    quantity: z.number().int().min(1).max(999_999),
+  }),
+  po_status: z.object({
+    poNumber: z.string().min(1).max(60),
+    status: z.enum(['issued', 'confirmed', 'cancelled']),
+  }),
+  delivery_notice: z.object({
+    poNumber: z.string().min(1).max(60),
+    quantity: z.number().int().min(1).max(999_999),
+  }),
+  invoice_ack: z.object({
+    invoiceNumber: z.string().min(1).max(60),
+  }),
+} satisfies Record<AutoTemplateId, z.ZodType>
+
+export type AutoTemplateParams = {
+  [K in AutoTemplateId]: z.infer<(typeof AUTO_TEMPLATE_SCHEMAS)[K]>
+}
+
+export function renderAutoTemplate(
+  templateId: AutoTemplateId,
+  params: AutoTemplateParams[AutoTemplateId],
+): { subject: string; body: string } {
+  switch (templateId) {
+    case 'rfq': {
+      const p = params as AutoTemplateParams['rfq']
+      return {
+        subject: `Request for quotation: ${p.sku}`,
+        body: `Please provide a quotation for ${p.quantity} unit(s) of ${p.sku}.`,
+      }
+    }
+    case 'po_status': {
+      const p = params as AutoTemplateParams['po_status']
+      return {
+        subject: `Purchase order ${p.poNumber}: ${p.status}`,
+        body: `This is a status update for purchase order ${p.poNumber}. Current status: ${p.status}.`,
+      }
+    }
+    case 'delivery_notice': {
+      const p = params as AutoTemplateParams['delivery_notice']
+      return {
+        subject: `Delivery notice for ${p.poNumber}`,
+        body: `Please expect delivery of ${p.quantity} unit(s) against purchase order ${p.poNumber}.`,
+      }
+    }
+    case 'invoice_ack': {
+      const p = params as AutoTemplateParams['invoice_ack']
+      return {
+        subject: `Invoice ${p.invoiceNumber} received`,
+        body: `We received your invoice ${p.invoiceNumber}. It is queued for matching against the purchase order and goods receipts.`,
+      }
+    }
+  }
+}
+
 /** DI token for the delivery seam. */
 export const MESSAGE_TRANSPORT = Symbol('MESSAGE_TRANSPORT')
 
@@ -50,9 +118,12 @@ interface VendorContactChannels {
 export interface SubmitMessageInput {
   vendorId: string
   recipient: string
-  subject: string
-  body: string
+  /** Free-form path only: required without an allowlisted templateId. */
+  subject?: string
+  body?: string
+  /** Auto path only: allowlisted template + validated data-only params. */
   templateId?: string | null
+  templateParams?: Record<string, unknown> | null
   threadId?: string | null
   agentId?: string | null
   runId?: string | null
@@ -142,8 +213,14 @@ export class MessagingService {
 
   /**
    * Submit an outbound message through the relay. Tier is derived
-   * server-side: known transactional templates → `auto`; everything else
-   * (including any unrecognised template and all free-form) → `gated`.
+   * server-side and content for the auto tier is rendered server-side:
+   *
+   * - allowlisted `templateId` + valid `templateParams` (and NO caller
+   *   subject/body) → `auto`, content from `renderAutoTemplate`;
+   * - everything else (free-form, unrecognised template, or an allowlisted
+   *   template used with caller-supplied prose/invalid params) → `gated`
+   *   for free-form, or a 400 for a malformed auto request. The caller can
+   *   never escalate its own prose to `auto` by claiming a template.
    */
   async submit(
     input: SubmitMessageInput,
@@ -178,19 +255,48 @@ export class MessagingService {
         )
       }
 
-      const tier: MessageTier =
+      let tier: MessageTier
+      let rendered: { subject: string; body: string }
+      if (
         input.templateId &&
         (AUTO_TEMPLATES as readonly string[]).includes(input.templateId)
-          ? 'auto'
-          : 'gated'
+      ) {
+        const templateId = input.templateId as AutoTemplateId
+        if (input.subject !== undefined || input.body !== undefined) {
+          throw new BadRequestException(
+            `subject/body must be omitted when templateId "${templateId}" is set — the server renders them from templateParams`,
+          )
+        }
+        const parsed = AUTO_TEMPLATE_SCHEMAS[templateId].safeParse(
+          input.templateParams ?? {},
+        )
+        if (!parsed.success) {
+          throw new BadRequestException(
+            `Invalid parameters for template "${templateId}": ${parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')}`,
+          )
+        }
+        tier = 'auto'
+        rendered = renderAutoTemplate(templateId, parsed.data)
+      } else {
+        if (!input.subject || !input.body) {
+          throw new BadRequestException(
+            'subject and body are required without a transactional templateId',
+          )
+        }
+        tier = 'gated'
+        rendered = { subject: input.subject, body: input.body }
+      }
 
       const message = await tx.message.create({
         data: {
           vendorId: vendor.id,
           recipient: input.recipient,
-          subject: input.subject,
-          body: input.body,
-          bodyHash: canonicalBodyHash(input),
+          subject: rendered.subject,
+          body: rendered.body,
+          bodyHash: canonicalBodyHash({
+            recipient: input.recipient,
+            ...rendered,
+          }),
           templateId: input.templateId ?? null,
           tier,
           status: 'queued',

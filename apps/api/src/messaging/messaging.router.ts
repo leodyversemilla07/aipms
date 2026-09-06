@@ -17,18 +17,44 @@ import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { MessagingService } from './messaging.service'
 
-const submitInput = z.object({
-  idempotencyKey: z.string().min(1),
-  vendorId: z.string().min(1),
-  recipient: z.string().email(),
-  subject: z.string().min(1).max(200),
-  body: z.string().min(1).max(20_000),
-  /** Transactional template id; omit/unknown ⇒ gated tier (§8.3). */
-  templateId: z.string().min(1).max(60).optional(),
-  threadId: z.string().min(1).optional(),
-  /** §7.1 agent execution tag when submitted by an agent. */
-  runId: z.string().min(1).optional(),
-})
+const submitInput = z
+  .object({
+    idempotencyKey: z.string().min(1),
+    vendorId: z.string().min(1),
+    recipient: z.string().email(),
+    /** Free-form path: required without a transactional templateId. */
+    subject: z.string().min(1).max(200).optional(),
+    body: z.string().min(1).max(20_000).optional(),
+    /** Auto path: allowlisted id; the server renders subject/body. */
+    templateId: z.string().min(1).max(60).optional(),
+    /** Data-only parameters for the template (validated per template). */
+    templateParams: z.record(z.string(), z.unknown()).optional(),
+    threadId: z.string().min(1).optional(),
+    /** §7.1 agent execution tag when submitted by an agent. */
+    runId: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.templateId) {
+      if (value.subject !== undefined || value.body !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'subject/body must be omitted when templateId is set — the server renders them from templateParams',
+        })
+      }
+      if (value.templateParams === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'templateParams are required when templateId is set',
+        })
+      }
+    } else if (!value.subject || !value.body) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'subject and body are required without a templateId',
+      })
+    }
+  })
 
 const decideInput = z.object({
   id: z.string().min(1),
@@ -48,6 +74,8 @@ const idInput = z.object({ id: z.string().min(1) })
  * §8.3 relay surface. `submit` is open to scoped agents (`messaging.submit`);
  * `approve`/`reject` are human-only — absent from the agent capability map
  * (default deny) AND role-gated here, so neither layer alone is trusted.
+ * Auto-tier content is rendered server-side from templateParams; callers
+ * cannot attach their own prose to an allowlisted templateId.
  */
 @Router({ alias: 'messaging' })
 @UseMiddlewares(AuthMiddleware)
@@ -91,6 +119,7 @@ export class MessagingRouter {
             subject: input.subject,
             body: input.body,
             templateId: input.templateId ?? null,
+            templateParams: input.templateParams ?? null,
             threadId: input.threadId ?? null,
             agentId: ctx.actorKind === 'agent' ? ctx.user.id : null,
             runId: input.runId ?? null,
@@ -107,8 +136,9 @@ export class MessagingRouter {
             input: {
               vendorId: input.vendorId,
               recipient: input.recipient,
-              subject: input.subject,
               templateId: input.templateId ?? null,
+              templateParams: input.templateParams ?? null,
+              subject: input.subject ?? null,
             },
           },
           tx,

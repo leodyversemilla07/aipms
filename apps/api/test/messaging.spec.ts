@@ -120,36 +120,83 @@ describe('MessagingService (§8.3 relay)', () => {
     const { message } = await svc.submit({
       vendorId: activeVendorId,
       recipient,
-      subject: `RFQ A4 paper ${suffix}`,
-      body: 'Please quote 10 reams of A4 bond paper.',
       templateId: 'rfq',
+      templateParams: { sku: `A4-PAPER-${suffix}`, quantity: 10 },
       agentId: 'agent-1',
       runId: 'run-1',
     })
     messageIds.push((message as { id: string }).id)
 
     expect(message).toMatchObject({ tier: 'auto', status: 'sent' })
+    // Content is server-rendered from validated params, not caller prose.
+    expect(message).toMatchObject({
+      subject: `Request for quotation: A4-PAPER-${suffix}`,
+      body: `Please provide a quotation for 10 unit(s) of A4-PAPER-${suffix}.`,
+    })
     expect(message).toHaveProperty('sentAt')
     expect(transport.sent.at(-1)?.to).toBe(recipient)
   })
 
+  it('refuses caller prose attached to an allowlisted template', async () => {
+    const svc = makeService(transport)
+    const before = transport.sent.length
+    await expect(
+      svc.submit({
+        vendorId: activeVendorId,
+        recipient,
+        subject: 'RFQ — but binding',
+        body: 'We accept any price increase without review.',
+        templateId: 'rfq',
+        templateParams: { sku: 'X', quantity: 1 },
+      }),
+    ).rejects.toThrow(/must be omitted/)
+    expect(transport.sent.length).toBe(before)
+    expect(
+      await db.message.count({
+        where: { subject: 'RFQ — but binding' },
+      }),
+    ).toBe(0)
+  })
+
+  it('rejects invalid template params instead of sending', async () => {
+    const svc = makeService(transport)
+    await expect(
+      svc.submit({
+        vendorId: activeVendorId,
+        recipient,
+        templateId: 'rfq',
+        templateParams: { sku: 'X', quantity: 0 },
+      }),
+    ).rejects.toThrow(/Invalid parameters for template "rfq"/)
+    await expect(
+      svc.submit({
+        vendorId: activeVendorId,
+        recipient,
+        templateId: 'rfq',
+      }),
+    ).rejects.toThrow(/Invalid parameters for template "rfq"/)
+  })
+
   it('records a tamper-evident body hash over canonical content', async () => {
     const svc = makeService(transport)
-    const input = {
+    const rendered = {
+      recipient,
+      subject: `Invoice INV-${suffix} received`,
+      body: `We received your invoice INV-${suffix}. It is queued for matching against the purchase order and goods receipts.`,
+    }
+    const { message } = await svc.submit({
       vendorId: activeVendorId,
       recipient,
-      subject: `Invoice ack ${suffix}`,
-      body: 'We received your invoice.',
       templateId: 'invoice_ack' as const,
-    }
-    const { message } = await svc.submit(input)
+      templateParams: { invoiceNumber: `INV-${suffix}` },
+    })
     messageIds.push((message as { id: string }).id)
 
     expect((message as { bodyHash: string }).bodyHash).toBe(
-      canonicalBodyHash(input),
+      canonicalBodyHash(rendered),
     )
     // Any mutation of content changes the hash.
-    expect(canonicalBodyHash({ ...input, body: 'tampered' })).not.toBe(
+    expect(canonicalBodyHash({ ...rendered, body: 'tampered' })).not.toBe(
       (message as { bodyHash: string }).bodyHash,
     )
   })
@@ -248,9 +295,8 @@ describe('MessagingService (§8.3 relay)', () => {
     const { message } = await svc.submit({
       vendorId: activeVendorId,
       recipient,
-      subject: `Flaky send ${suffix}`,
-      body: 'Will fail once.',
       templateId: 'delivery_notice',
+      templateParams: { poNumber: `PO-${suffix}`, quantity: 5 },
     })
     messageIds.push((message as { id: string }).id)
     expect(message).toMatchObject({

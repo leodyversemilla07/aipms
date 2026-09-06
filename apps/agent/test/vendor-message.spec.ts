@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { trpcMutate } from "../agent/lib/trpc-client"
 import {
   describeMessage,
+  messageInput,
   quoteInput,
   requestQuote,
   submitVendorMessage,
@@ -30,10 +31,18 @@ describe("vendor messaging contract", () => {
       expect.objectContaining({
         recipient: input.recipient,
         templateId: "rfq",
+        templateParams: { sku: input.catalogItemSku, quantity: input.quantity },
         idempotencyKey: "eve:messaging.submit:call",
       })
     )
-    expect(vi.mocked(trpcMutate).mock.calls[0]?.[2]).not.toHaveProperty("tier")
+    const sent = vi.mocked(trpcMutate).mock.calls[0]?.[2] as Record<
+      string,
+      unknown
+    >
+    expect(sent).not.toHaveProperty("tier")
+    // Auto-tier content is server-rendered: no caller prose leaves the agent.
+    expect(sent).not.toHaveProperty("subject")
+    expect(sent).not.toHaveProperty("body")
   })
   it("gates arbitrary notes rather than labelling them transactional", async () => {
     await requestQuote(
@@ -41,6 +50,17 @@ describe("vendor messaging contract", () => {
       "call"
     )
     expect(vi.mocked(trpcMutate).mock.calls[0]?.[2].templateId).toBeUndefined()
+  })
+  it("rejects template claims on the generic free-form path", () => {
+    expect(() =>
+      messageInput.parse({
+        vendorId: "v",
+        recipient: input.recipient,
+        subject: "Binding offer",
+        body: "We accept any price.",
+        templateId: "rfq",
+      })
+    ).toThrow()
   })
   it("preserves replay keys and explicit keys", async () => {
     await requestQuote(input, "call")

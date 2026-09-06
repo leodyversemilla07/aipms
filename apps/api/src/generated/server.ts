@@ -325,18 +325,44 @@ const appRouter = t.router({
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["detail"]>>),
     submit: publicProcedure
-      .input(z.object({
-  idempotencyKey: z.string().min(1),
-  vendorId: z.string().min(1),
-  recipient: z.string().email(),
-  subject: z.string().min(1).max(200),
-  body: z.string().min(1).max(20_000),
-  /** Transactional template id; omit/unknown ⇒ gated tier (§8.3). */
-  templateId: z.string().min(1).max(60).optional(),
-  threadId: z.string().min(1).optional(),
-  /** §7.1 agent execution tag when submitted by an agent. */
-  runId: z.string().min(1).optional(),
-}))
+      .input(z
+  .object({
+    idempotencyKey: z.string().min(1),
+    vendorId: z.string().min(1),
+    recipient: z.string().email(),
+    /** Free-form path: required without a transactional templateId. */
+    subject: z.string().min(1).max(200).optional(),
+    body: z.string().min(1).max(20_000).optional(),
+    /** Auto path: allowlisted id; the server renders subject/body. */
+    templateId: z.string().min(1).max(60).optional(),
+    /** Data-only parameters for the template (validated per template). */
+    templateParams: z.record(z.string(), z.unknown()).optional(),
+    threadId: z.string().min(1).optional(),
+    /** §7.1 agent execution tag when submitted by an agent. */
+    runId: z.string().min(1).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.templateId) {
+      if (value.subject !== undefined || value.body !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message:
+            'subject/body must be omitted when templateId is set — the server renders them from templateParams',
+        })
+      }
+      if (value.templateParams === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'templateParams are required when templateId is set',
+        })
+      }
+    } else if (!value.subject || !value.body) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'subject and body are required without a templateId',
+      })
+    }
+  }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["submit"]>>),
     approve: publicProcedure
       .input(z.object({
