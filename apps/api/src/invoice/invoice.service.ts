@@ -463,8 +463,15 @@ export class InvoiceService {
     })
     const ids = matched.map((row) => row.id)
     if (ids.length > 0) {
+      // Same active-reservation definition as payment-run creation: a
+      // planned line on a live run. Released claims (voided runs,
+      // terminally reconciled lines) do not block corrections.
       const claimed = await tx.paymentRunLine.findMany({
-        where: { invoiceId: { in: ids }, run: { status: { not: 'voided' } } },
+        where: {
+          invoiceId: { in: ids },
+          status: 'planned',
+          run: { status: { not: 'voided' } },
+        },
         include: { run: { select: { runNumber: true, status: true } } },
       })
       if (claimed.length > 0) {

@@ -29,6 +29,10 @@ import { buildPain001, resolveDebtor } from './pain001'
  * - Approval is maker/checker: the approver must differ from the creator.
  * - Reconciliation (paid/dishonored/rejected) happens after finance executes
  *   the hand-off; when every line is reconciled the run closes.
+ * - Claims are reservations, not history: a planned line on a live run
+ *   blocks replanning, but voided runs and terminally reconciled lines
+ *   release their invoices so corrected replacement runs can proceed. Paid
+ *   invoices stay paid and are never replannable.
  */
 
 export interface CreateRunInput {
@@ -96,8 +100,12 @@ export class PaymentRunService {
         throw new NotFoundException('One or more invoices do not exist')
       }
 
-      // Only matched invoices are payable; anything already claimed by
-      // another run (unique line) or already paid is refused.
+      // Only matched invoices are payable; anything already reserved by a
+      // live run is refused. Reservations release: voided runs and
+      // terminally reconciled lines (paid/dishonored/rejected) no longer
+      // claim — paid invoices are still refused by the status gate above,
+      // while dishonored/rejected/voided invoices return to the pool so a
+      // corrected replacement run can proceed.
       const fresh = await tx.invoice.findMany({
         where: { id: { in: uniqueIds } },
       })
@@ -146,12 +154,16 @@ export class PaymentRunService {
         0,
       )
       const claimed = await tx.paymentRunLine.findMany({
-        where: { invoiceId: { in: uniqueIds } },
+        where: {
+          invoiceId: { in: uniqueIds },
+          status: 'planned',
+          run: { status: { not: 'voided' } },
+        },
         select: { invoiceId: true },
       })
       if (claimed.length > 0) {
         throw new ConflictException(
-          'One or more invoices are already in a payment run',
+          'One or more invoices are reserved by a live payment run',
         )
       }
 
@@ -338,8 +350,15 @@ export class PaymentRunService {
 
   /**
    * Reconcile one supplier line back from the bank/ERP after finance executes
-   * the hand-off. Paid flips the invoice to paid; when every line is
-   * reconciled the run closes (reconciledAt).
+   * the hand-off. Paid flips the invoice to paid; dishonored/rejected leave
+   * the invoice matched and release its reservation for a replacement run.
+   * When every line is reconciled the run closes (reconciledAt).
+   *
+   * Serialized at the run row: concurrent reconciliations of different lines
+   * count a consistent committed state, so the last close cannot be lost.
+   * Line transitions are conditional (planned → terminal only): a decided
+   * line never moves again, so a paid line and its paid invoice cannot be
+   * rewritten to a contradictory outcome.
    */
   async reconcile(
     runId: string,
@@ -347,22 +366,37 @@ export class PaymentRunService {
     status: 'paid' | 'dishonored' | 'rejected',
     outerTx?: Prisma.TransactionClient,
   ) {
-    const run = await this.detail(runId)
-    if (run.status !== 'executed') {
-      throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
-    }
-    const line = await db.paymentRunLine.findUnique({ where: { id: lineId } })
-    if (!line || line.runId !== runId) {
-      throw new NotFoundException(
-        `Line ${lineId} is not on run ${run.runNumber}`,
-      )
-    }
-
     const runTx = async (tx: Prisma.TransactionClient) => {
-      await tx.paymentRunLine.update({
+      const locked = await tx.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT id FROM "paymentRun" WHERE id = ${runId} FOR UPDATE`,
+      )
+      if (locked.length !== 1) {
+        throw new NotFoundException(`Payment run ${runId} not found`)
+      }
+      const run = await tx.paymentRun.findUniqueOrThrow({
+        where: { id: runId },
+      })
+      if (run.status !== 'executed') {
+        throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
+      }
+      const line = await tx.paymentRunLine.findUnique({
         where: { id: lineId },
+      })
+      if (!line || line.runId !== runId) {
+        throw new NotFoundException(
+          `Line ${lineId} is not on run ${run.runNumber}`,
+        )
+      }
+
+      const decided = await tx.paymentRunLine.updateMany({
+        where: { id: lineId, status: 'planned' },
         data: { status: status as PaymentStatus },
       })
+      if (decided.count !== 1) {
+        throw new ConflictException(
+          `Line ${lineId} is already reconciled — reload before deciding`,
+        )
+      }
       if (status === 'paid') {
         await tx.invoice.update({
           where: { id: line.invoiceId },
@@ -370,7 +404,7 @@ export class PaymentRunService {
         })
       }
       const remaining = await tx.paymentRunLine.count({
-        where: { runId, status: { notIn: ['paid', 'dishonored', 'rejected'] } },
+        where: { runId, status: 'planned' },
       })
       if (remaining === 0) {
         await tx.paymentRun.update({

@@ -235,7 +235,9 @@ export class ErpRouter {
 
   /**
    * Push a verified journal export to QBO and settle it on success.
-   * Orchestrates the §8.5 loop end-to-end for one export.
+   * Orchestrates the §8.5 loop end-to-end for one export. The export must
+   * still be unsettled BEFORE the provider is touched: settled pushes are
+   * refused without a second POST.
    */
   @Mutation({ input: z.object({ exportId: z.string().min(1) }) })
   async qboPushExport(
@@ -243,7 +245,7 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.qboPushExport')
-    const { json, export: row } = await this.erp.manifest(input.exportId)
+    const { json, export: row } = await this.erp.prepareQboPush(input.exportId)
     const { qboJournalEntryId } = await this.qbo.postJournal(json)
     const acknowledged = await this.erp.acknowledge({
       exportId: input.exportId,
@@ -255,7 +257,7 @@ export class ErpRouter {
       actorKind: ctx.actorKind,
       action: 'erp.qbo.pushExport',
       entity: 'PaymentRun',
-      entityId: row.runId,
+      entityId: (row as { runId: string }).runId,
       after: { qboJournalEntryId },
     })
     return acknowledged

@@ -31,7 +31,7 @@ import {
 export class ErpService {
   constructor(private readonly events: EventEmitterService) {}
 
-  /** Deterministic manifest for one executed run. */
+  /** Deterministic manifest for one exported or exportable run. */
   private async buildForRun(runId: string): Promise<{
     run: {
       id: string
@@ -48,9 +48,11 @@ export class ErpService {
   }> {
     const run = await db.paymentRun.findUnique({ where: { id: runId } })
     if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
-    if (run.status !== 'executed') {
+    // Reconciliation closes the run but must not revoke its export: finance
+    // exports after the bank feed settles, and settled exports stay readable.
+    if (run.status !== 'executed' && run.status !== 'reconciled') {
       throw new ConflictException(
-        `Run ${run.runNumber} is ${run.status} — only executed runs export`,
+        `Run ${run.runNumber} is ${run.status} — only executed or reconciled runs export`,
       )
     }
 
@@ -142,6 +144,9 @@ export class ErpService {
         runId: built.run.id,
         runNumber: built.run.runNumber,
         manifestHash: built.hash,
+        // Freeze the exact artifact: later reads serve this, never a
+        // rebuild from mutable vendor master data.
+        manifestJson: built.json,
         lineCount: built.manifest.entries.length,
         totalMinor: built.manifest.totalMinor,
         currencyCode: built.run.currencyCode,
@@ -183,12 +188,29 @@ export class ErpService {
     ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
-  /** Re-derive and verify a stored export's manifest (tamper check). */
+  /**
+   * Re-derive and verify a stored export's manifest (tamper check). Exports
+   * created with a frozen artifact serve it directly, so later master-data
+   * edits cannot break verification; legacy rows rebuild and verify.
+   */
   async manifest(exportId: string) {
     const row = await db.erpJournalExport.findUnique({
       where: { id: exportId },
     })
     if (!row) throw new NotFoundException(`Export ${exportId} not found`)
+    if (row.manifestJson != null) {
+      if (manifestHash(row.manifestJson) !== row.manifestHash) {
+        throw new ConflictException(
+          `Stored artifact for ${row.runNumber} no longer matches its hash`,
+        )
+      }
+      const manifest = JSON.parse(row.manifestJson) as JournalManifest
+      return {
+        export: row,
+        json: row.manifestJson,
+        csv: manifestToCsv(manifest),
+      }
+    }
     const built = await this.buildForRun(row.runId)
     if (built.hash !== row.manifestHash) {
       throw new ConflictException(
@@ -196,6 +218,38 @@ export class ErpService {
       )
     }
     return { export: row, json: built.json, csv: built.csv }
+  }
+
+  /**
+   * Pre-dispatch gate for pushing an export to QuickBooks: the export must
+   * still be unsettled, verified BEFORE any external POST. Repeating a
+   * posted/rejected push is refused here — never after a duplicate journal
+   * hits the provider. (Residual: a crash between the provider accepting the
+   * journal and the acknowledgement write leaves an ambiguous outcome; the
+   * provider offers no idempotency key, so that retry needs human review of
+   * the QBO journal list. Concurrent pushes serialize on the advisory lock;
+   * only the winner proceeds while the export is still exported.)
+   */
+  async prepareQboPush(
+    exportId: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<{ export: object; json: string }> {
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`qbo-push:${exportId}`}))`
+      const row = await tx.erpJournalExport.findUnique({
+        where: { id: exportId },
+      })
+      if (!row) throw new NotFoundException(`Export ${exportId} not found`)
+      if (row.status !== 'exported') {
+        throw new ConflictException(
+          `Export for ${row.runNumber} is already ${row.status} — refusing a second push`,
+        )
+      }
+      return row
+    }
+    const row = outerTx ? await run(outerTx) : await db.$transaction(run)
+    const { json } = await this.manifest(exportId)
+    return { export: row, json }
   }
 
   /**

@@ -509,6 +509,11 @@ model ErpJournalExport {
   runId          String    @unique
   runNumber      String
   manifestHash   String
+  // Immutable export artifact: the canonical manifest JSON as exported.
+  // Reads serve this instead of rebuilding from mutable master data, so a
+  // later vendor rename cannot break verification of a settled export.
+  // Null for exports created before this column existed (rebuilt on read).
+  manifestJson   String?
   lineCount      Int
   totalMinor     Int
   currencyCode   String    @default("PHP")
@@ -585,7 +590,11 @@ model PaymentRun {
   @@index([status])
 }
 
-// One invoice per line (planned → paid/dishonored/rejected).
+// One invoice per line (planned → paid/dishonored/rejected). An invoice may
+// appear on several runs over its life (voided/dishonored claims release
+// for replacement runs); at most one claim is live at a time — a planned
+// line on a non-voided run — enforced by payment-run creation under invoice
+// row locks, since a partial unique index cannot express that liveness.
 model PaymentRunLine {
   id      String       @id @default(cuid())
   runId   String
@@ -600,7 +609,7 @@ model PaymentRunLine {
   updatedAt DateTime   @updatedAt
 
   @@map("paymentRunLine")
-  @@unique([invoiceId])
+  @@index([invoiceId])
   @@index([runId])
 }
 
