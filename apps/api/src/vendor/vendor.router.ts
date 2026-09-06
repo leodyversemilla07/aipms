@@ -11,7 +11,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
-import { requireRole } from '../trpc/authorize'
+import { requireHumanRole, requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -73,6 +73,15 @@ export class VendorRouter {
     @Input() input: z.infer<typeof createVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['procurement'], 'vendor.create')
+    if (input.status !== undefined && input.status !== 'prospective') {
+      requireHumanRole(
+        ctx.user,
+        ctx.actorKind,
+        ['procurement'],
+        'vendor qualification',
+      )
+    }
     return this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
@@ -104,6 +113,15 @@ export class VendorRouter {
     @Input() input: z.infer<typeof updateVendorInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
+    requireRole(ctx.user, ctx.actorKind, ['procurement'], 'vendor.update')
+    if (input.status !== undefined || input.blacklistReason !== undefined) {
+      requireHumanRole(
+        ctx.user,
+        ctx.actorKind,
+        ['procurement'],
+        'vendor qualification',
+      )
+    }
     return this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,

@@ -11,7 +11,7 @@ import { env } from "./env"
 const socialProviders: NonNullable<BetterAuthOptions["socialProviders"]> = {}
 
 if (env.google) {
-  socialProviders.google = { ...env.google }
+  socialProviders.google = { ...env.google, disableSignUp: true }
 }
 
 /**
@@ -80,7 +80,10 @@ export const auth = betterAuth({
 
   trustedOrigins: [...env.trustedOrigins],
 
-  disabledPaths: SSO_MANAGEMENT_PATHS,
+  // Enrollment belongs to organization SSO/SCIM or trusted server-side
+  // provisioning. HTTP signup is closed; auth.api.signUpEmail remains
+  // available to the non-production demo seeder and provisioning scripts.
+  disabledPaths: [...SSO_MANAGEMENT_PATHS, "/sign-up/email"],
 
   plugins: [
     sso({

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable } from '@nestjs/common'
 import { TRPCError } from '@trpc/server'
 import type { SessionUser } from '@workspace/auth'
 import { db, type UserKind, type UserRole } from '@workspace/db'
@@ -9,9 +9,14 @@ import type {
 } from 'nestjs-trpc'
 import { assertAgentCapability } from '../agent-capabilities'
 import type { AuthedTrpcContext, BaseTrpcContext } from '../context.types'
+import { AgentQuotaMiddleware } from './agent-quota.middleware'
 
 @Injectable()
 export class AuthMiddleware implements TRPCMiddleware {
+  constructor(
+    @Inject(AgentQuotaMiddleware) private readonly quota: AgentQuotaMiddleware,
+  ) {}
+
   async use(opts: MiddlewareOptions): Promise<MiddlewareResponse> {
     const ctx = opts.ctx as BaseTrpcContext
     const user = ctx.session?.user
@@ -48,6 +53,9 @@ export class AuthMiddleware implements TRPCMiddleware {
       user: { ...user, kind, role },
       actorKind: kind,
     }
-    return opts.next({ ctx: nextCtx })
+    // Global middleware runs before router authentication in nestjs-trpc.
+    // Enforce quotas here, after identity and capability checks, so every
+    // protected procedure sees the authenticated actor exactly once.
+    return this.quota.use({ ...opts, ctx: nextCtx })
   }
 }

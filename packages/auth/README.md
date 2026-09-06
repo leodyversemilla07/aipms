@@ -29,6 +29,19 @@ pnpm run db:migrate      # create/apply the migration
 > never removes the ones a dropped plugin left behind, so removing a plugin
 > means deleting its models from the schema by hand.
 
+## Enrollment
+
+Public email/password signup is disabled at the HTTP boundary, including
+through the web proxy. The sign-in screen only accepts existing accounts.
+Organization-managed SSO/SCIM can provision users; optional Google OAuth
+can sign in existing users but cannot create new ones. Trusted server-side
+provisioning can still call `auth.api.signUpEmail` directly. The local demo
+seeder uses that path and remains disabled in production.
+
+Vendor master-data writes require the procurement or admin role for humans.
+Agents with `vendor.write` may create prospective vendors and update descriptive
+fields, but cannot qualify vendors or change blacklist status/reasons.
+
 ## Environment
 
 See the repo-root `.env.example`. Minimum:

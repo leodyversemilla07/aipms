@@ -15,12 +15,7 @@ import { TrpcErrorHandler } from './trpc-error.handler'
       context: TrpcContext,
       errorFormatter: formatTrpcError,
       onError: TrpcErrorHandler,
-      globalMiddlewares: [
-        LoggingMiddleware,
-        DomainErrorMiddleware,
-        // §7.4 — agent rate & concurrency guardrails (no-op for humans).
-        AgentQuotaMiddleware,
-      ],
+      globalMiddlewares: [LoggingMiddleware, DomainErrorMiddleware],
     }),
   ],
   providers: [

@@ -21,3 +21,19 @@ export function requireRole(
     message: `${action} requires role: ${roles.join(' or ')}`,
   })
 }
+
+/** Human approval authority cannot be granted through a machine scope. */
+export function requireHumanRole(
+  user: { role?: UserRole } | undefined,
+  actorKind: UserKind,
+  roles: UserRole[],
+  action: string,
+) {
+  if (actorKind !== 'human') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `${action} requires a human with role: ${roles.join(' or ')}`,
+    })
+  }
+  requireRole(user, actorKind, roles, action)
+}

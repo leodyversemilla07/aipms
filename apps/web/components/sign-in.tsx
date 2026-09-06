@@ -2,17 +2,14 @@
 
 import { authClient } from "@workspace/auth/client"
 import { Button } from "@workspace/ui/components/button"
-import { cn } from "@workspace/ui/lib/utils"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 /**
- * Email/password sign-in card with a sign-up toggle. Proxies to the API at
+ * Sign-in for provisioned accounts. Proxies to the API at
  * /api/auth/* (better-auth) via Next rewrites; the session cookie is HttpOnly.
  */
 export function SignInCard() {
-  const [mode, setMode] = useState<"signin" | "signup">("signin")
-  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -23,21 +20,15 @@ export function SignInCard() {
     event.preventDefault()
     setBusy(true)
     setError(null)
-    if (mode === "signup") {
-      const res = await authClient.signUp.email({
-        name,
-        email,
-        password,
-        callbackURL: "/",
-      })
-      if (res.error) setError(res.error.message ?? "Sign up failed")
-      else router.refresh()
-    } else {
+    try {
       const res = await authClient.signIn.email({ email, password })
       if (res.error) setError(res.error.message ?? "Sign in failed")
       else router.refresh()
+    } catch {
+      setError("Unable to sign in. Please try again.")
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   /** §16.2 — enterprise SSO: route the email's domain to the org IdP. */
@@ -67,20 +58,6 @@ export function SignInCard() {
         onSubmit={submit}
         className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm"
       >
-        {mode === "signup" ? (
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">Name</span>
-            <input
-              name="name"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              placeholder="Finance Officer"
-              className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-          </label>
-        ) : null}
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Email</span>
           <input
@@ -99,13 +76,10 @@ export function SignInCard() {
           <input
             type="password"
             name="password"
-            autoComplete={
-              mode === "signup" ? "new-password" : "current-password"
-            }
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={mode === "signup" ? 8 : undefined}
             className="h-9 rounded-md border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
           />
         </label>
@@ -117,21 +91,12 @@ export function SignInCard() {
         ) : null}
 
         <Button type="submit" disabled={busy} className="mt-1">
-          {busy ? "…" : mode === "signin" ? "Sign in" : "Create account"}
+          {busy ? "…" : "Sign in"}
         </Button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setMode(mode === "signin" ? "signup" : "signin")
-            setError(null)
-          }}
-          className={cn("text-muted-foreground text-xs underline")}
-        >
-          {mode === "signin"
-            ? "No account? Create one"
-            : "Have an account? Sign in"}
-        </button>
+        <p className="text-muted-foreground text-xs">
+          Need access? Contact your organization’s administrator.
+        </p>
       </form>
 
       <form onSubmit={signInWithSso} className="flex flex-col gap-2">
