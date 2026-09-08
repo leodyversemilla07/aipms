@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@workspace/db'
 import { db } from '@workspace/db'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
 export interface CreateBudget {
@@ -54,7 +55,7 @@ export class BudgetService {
         costCenter: input.costCenter,
         period: input.period,
         currencyCode: input.currencyCode ?? 'PHP',
-        limitMinor: input.limitMinor,
+        limitMinor: assertDatabaseInt(input.limitMinor, 'Budget limit'),
       },
     })
   }

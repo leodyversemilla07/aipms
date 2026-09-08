@@ -87,8 +87,8 @@ export function computeTax(
 
     lineResult.push({
       amountMinor: line.amountMinor,
-      vatMinor,
-      ewtMinor,
+      vatMinor: lineVat,
+      ewtMinor: lineEwt,
     })
   }
 

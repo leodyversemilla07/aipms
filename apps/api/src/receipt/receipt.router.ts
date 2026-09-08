@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { positiveDatabaseInt } from '../shared/money/minor-units'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -23,7 +24,7 @@ export const receiptLineInput = z.object({
   lineNo: z.number().int().min(1).optional(),
   sku: z.string().min(1).max(60).optional(),
   description: z.string().min(1).max(300),
-  quantity: z.number().int().min(1),
+  quantity: positiveDatabaseInt,
   unit: z.string().min(1).max(20).optional(),
 })
 
@@ -87,6 +88,7 @@ export class ReceiptRouter {
         )
         await this.audit.record(
           {
+            runId: input.runId ?? null,
             actorId: ctx.user.id,
             actorKind: ctx.actorKind,
             action: 'receipt.record',

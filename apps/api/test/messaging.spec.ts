@@ -233,6 +233,33 @@ describe('MessagingService (§8.3 relay)', () => {
     expect(transport.sent.length).toBe(before + 1)
   })
 
+  it('allows only one transport send under concurrent approved releases', async () => {
+    const concurrentTransport = new SpyTransport()
+    const svc = makeService(concurrentTransport)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      subject: `Concurrent release ${suffix}`,
+      body: 'Approved content must be delivered once.',
+    })
+    const queued = message as { id: string }
+    messageIds.push(queued.id)
+    await svc.approve({ id: queued.id, approverId: 'human-finance-2' })
+
+    const [first, second] = await Promise.all([
+      svc.releaseApproved(queued.id),
+      svc.releaseApproved(queued.id),
+    ])
+
+    expect(first).toMatchObject({ status: 'sent' })
+    expect(second).toMatchObject({ status: 'sent' })
+    expect(concurrentTransport.sent).toHaveLength(1)
+    const saved = await db.message.findUniqueOrThrow({
+      where: { id: queued.id },
+    })
+    expect(saved.dispatchStartedAt).toBeInstanceOf(Date)
+  })
+
   it('unrecognised template ids are gated too — callers cannot self-escalate', async () => {
     const svc = makeService(transport)
     const { message } = await svc.submit({
@@ -303,6 +330,9 @@ describe('MessagingService (§8.3 relay)', () => {
       status: 'failed',
       failedReason: 'smtp unavailable',
     })
+    expect(
+      (message as { dispatchStartedAt: Date }).dispatchStartedAt,
+    ).toBeInstanceOf(Date)
   })
 
   it('lists messages with filters', async () => {

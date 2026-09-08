@@ -10,6 +10,11 @@ import {
 } from 'nestjs-trpc'
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
+import {
+  nonnegativeMinorUnits,
+  positiveDatabaseInt,
+  positiveMinorUnits,
+} from '../shared/money/minor-units'
 import { requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -24,7 +29,7 @@ const quoteIdInput = z.object({ id: z.string().min(1) })
 
 const receiveInput = z.object({
   id: z.string().min(1),
-  totalMinor: z.number().int().positive(),
+  totalMinor: positiveMinorUnits,
   currencyCode: z.string().min(3).max(3).optional(),
   leadTimeDays: z.number().int().positive().optional(),
   validUntil: z.date().optional(),
@@ -33,9 +38,9 @@ const receiveInput = z.object({
       z.object({
         sku: z.string().optional(),
         description: z.string(),
-        quantity: z.number().int().positive().optional(),
-        unitPriceMinor: z.number().int().nonnegative().optional(),
-        amountMinor: z.number().int().nonnegative(),
+        quantity: positiveDatabaseInt.optional(),
+        unitPriceMinor: nonnegativeMinorUnits.optional(),
+        amountMinor: nonnegativeMinorUnits,
       }),
     )
     .optional(),

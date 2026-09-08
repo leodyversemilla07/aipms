@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { nonnegativeMinorUnits } from '../shared/money/minor-units'
 
 /**
  * The classified payload an extractor (deterministic or LLM) is expected to
@@ -15,7 +16,7 @@ export const invoicePayloadSchema = z.object({
     .array(
       z.object({
         description: z.string().optional(),
-        amountMinor: z.number().int(),
+        amountMinor: nonnegativeMinorUnits,
         class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
         vatExempt: z.boolean().optional(),
       }),

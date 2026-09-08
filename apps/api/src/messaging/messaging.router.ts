@@ -128,6 +128,7 @@ export class MessagingRouter {
         )
         await this.audit.record(
           {
+            runId: input.runId ?? null,
             actorId: ctx.user.id,
             actorKind: ctx.actorKind,
             action: 'messaging.submit',

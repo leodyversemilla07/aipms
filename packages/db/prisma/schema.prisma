@@ -247,6 +247,7 @@ model AuditEntry {
 
   @@index([entity, entityId])
   @@index([actorId])
+  @@index([runId])
   @@index([at])
 }
 
@@ -714,6 +715,7 @@ enum MessageTier {
 enum MessageStatus {
   queued
   approved
+  sending
   rejected
   sent
   failed
@@ -738,6 +740,7 @@ model Message {
   approvedAt     DateTime?
   rejectedReason String?
   failedReason   String?
+  dispatchStartedAt DateTime?
   sentAt         DateTime?
   threadId       String?
   createdAt      DateTime      @default(now())

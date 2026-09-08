@@ -10,6 +10,7 @@ import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { ExceptionQueue } from "./exception-queue"
 import { SignInCard } from "./sign-in"
+import { SignOutButton } from "./sign-out-button"
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
@@ -98,13 +99,7 @@ function Dashboard() {
           >
             Master data
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

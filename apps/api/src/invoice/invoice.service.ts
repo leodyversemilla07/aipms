@@ -7,6 +7,7 @@ import { db, type InvoiceStatus, Prisma } from '@workspace/db'
 import { computeTax } from '@workspace/tax'
 import { PolicyService } from '../policy/policy.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 
 /** §9 3-way match tolerance: ± this much (basis points) is a clean match. */
 export const MATCH_TOLERANCE_BPS = 500 // 5%
@@ -71,6 +72,7 @@ export class InvoiceService {
   async compute(input: { lines: RegisterInvoiceLineInput[] }) {
     const taxConfig = await this.policy.taxConfig()
     const computation = computeTax(input.lines, taxConfig)
+    this.assertPersistableComputation(computation)
     return {
       taxPolicyVersion: computation.policyVersion,
       ...computation,
@@ -101,6 +103,7 @@ export class InvoiceService {
   ): Promise<{ invoice: unknown; match: MatchResult | null }> {
     const taxConfig = await this.policy.taxConfig()
     const computation = computeTax(input.lines, taxConfig)
+    this.assertPersistableComputation(computation)
 
     // Match and create atomically: the PO row lock serializes concurrent
     // registrations against the same PO so two invoices cannot consume the
@@ -174,6 +177,18 @@ export class InvoiceService {
     }
     if (outerTx) return run(outerTx)
     return db.$transaction(run)
+  }
+
+  private assertPersistableComputation(computation: {
+    grossMinor: number
+    vatMinor: number
+    ewtMinor: number
+    netPayableMinor: number
+  }) {
+    assertDatabaseInt(computation.grossMinor, 'Invoice gross')
+    assertDatabaseInt(computation.vatMinor, 'Invoice VAT')
+    assertDatabaseInt(computation.ewtMinor, 'Invoice EWT')
+    assertDatabaseInt(computation.netPayableMinor, 'Invoice net payable')
   }
 
   /** §9 three-way match (§8.1): PO ↔ receipts ↔ invoice, at value level.

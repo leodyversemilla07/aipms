@@ -10,22 +10,21 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { nonnegativeMinorUnits } from '../shared/money/minor-units'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { InvoiceService } from './invoice.service'
 
+const invoiceLineInput = z.object({
+  description: z.string().optional(),
+  amountMinor: nonnegativeMinorUnits,
+  class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+  vatExempt: z.boolean().optional(),
+})
+
 const computeInput = z.object({
-  lines: z
-    .array(
-      z.object({
-        description: z.string().optional(),
-        amountMinor: z.number().int().nonnegative(),
-        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-        vatExempt: z.boolean().optional(),
-      }),
-    )
-    .min(1),
+  lines: z.array(invoiceLineInput).min(1),
 })
 
 const registerInput = z.object({
@@ -34,16 +33,7 @@ const registerInput = z.object({
   number: z.string().min(1).max(80),
   poId: z.string().min(1).optional(),
   currencyCode: z.string().length(3).default('PHP'),
-  lines: z
-    .array(
-      z.object({
-        description: z.string().optional(),
-        amountMinor: z.number().int().nonnegative(),
-        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-        vatExempt: z.boolean().optional(),
-      }),
-    )
-    .min(1),
+  lines: z.array(invoiceLineInput).min(1),
   receivedAt: z.coerce.date().optional(),
 })
 

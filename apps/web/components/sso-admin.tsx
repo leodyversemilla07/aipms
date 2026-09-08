@@ -6,6 +6,7 @@ import { Button } from "@workspace/ui/components/button"
 import Link from "next/link"
 import { useState } from "react"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 import { useTRPC } from "@/lib/trpc/client"
 
 type ProviderRow = {
@@ -49,13 +50,7 @@ export function SsoAdmin() {
           >
             Supervisory desk
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

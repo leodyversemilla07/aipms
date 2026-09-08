@@ -10,6 +10,10 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import {
+  nonnegativeMinorUnits,
+  positiveDatabaseInt,
+} from '../shared/money/minor-units'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -26,9 +30,9 @@ const createRequisitionInput = z.object({
       z.object({
         sku: z.string().min(1).max(100).nullish(),
         description: z.string().min(1).max(500),
-        quantity: z.number().int().positive(),
+        quantity: positiveDatabaseInt,
         unit: z.string().max(20).optional(),
-        unitPriceMinor: z.number().int().nonnegative(),
+        unitPriceMinor: nonnegativeMinorUnits,
         currencyCode: z.string().length(3).optional(),
       }),
     )

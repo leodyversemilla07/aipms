@@ -385,39 +385,9 @@ export class MessagingService {
     return tx.message.findUniqueOrThrow({ where: { id: message.id } })
   }
 
-  /** Post-commit release for an approved draft (idempotent, never double-sends). */
+  /** Post-commit release for an approved draft. */
   async releaseApproved(id: string): Promise<object> {
-    const message = await this.detail(id)
-    if (message.status !== 'approved') return message
-    try {
-      await this.transport.send({
-        to: message.recipient,
-        subject: message.subject,
-        body: message.body,
-      })
-    } catch (error) {
-      await db.message.updateMany({
-        where: { id: message.id, status: 'approved' },
-        data: {
-          status: 'failed',
-          failedReason: error instanceof Error ? error.message : String(error),
-        },
-      })
-      return this.detail(message.id)
-    }
-    const updated = await db.message.updateMany({
-      where: { id: message.id, status: 'approved' },
-      data: { status: 'sent', sentAt: new Date() },
-    })
-    if (updated.count === 1) {
-      await this.events.emit({
-        type: 'message.sent',
-        entityType: 'Message',
-        entityId: message.id,
-        payload: { recipient: message.recipient, tier: message.tier },
-      })
-    }
-    return this.detail(message.id)
+    return this.claimAndDispatch(id, 'approved')
   }
 
   /** Human rejection of a gated draft, with a recorded reason. */
@@ -460,15 +430,35 @@ export class MessagingService {
     return updated
   }
 
-  /**
-   * Conditional send: only a still-queued message transitions to sent, so
-   * concurrent retries or a post-crash replay can never double-send.
-   * Approved messages release through approve(); only queued rows qualify.
-   */
+  /** Release an auto-tier queued message after its staging transaction. */
   async dispatchIfQueued(id: string): Promise<object> {
-    const queued = await this.detail(id)
-    if (queued.status !== 'queued') return queued
-    const message = queued
+    return this.claimAndDispatch(id, 'queued')
+  }
+
+  /**
+   * Atomically claim delivery before contacting the external transport. Only
+   * one concurrent worker can move the expected state to `sending`, so only
+   * that worker sends. A process crash leaves `sending` for operator/provider
+   * reconciliation; automatically retrying that ambiguous outcome could
+   * duplicate a message accepted just before the crash.
+   */
+  private async claimAndDispatch(
+    id: string,
+    expected: 'queued' | 'approved',
+  ): Promise<object> {
+    const message = await this.detail(id)
+    if (message.status !== expected) return message
+
+    const claimed = await db.message.updateMany({
+      where: { id: message.id, status: expected },
+      data: {
+        status: 'sending',
+        dispatchStartedAt: new Date(),
+        failedReason: null,
+      },
+    })
+    if (claimed.count !== 1) return this.detail(message.id)
+
     try {
       await this.transport.send({
         to: message.recipient,
@@ -477,7 +467,7 @@ export class MessagingService {
       })
     } catch (error) {
       await db.message.updateMany({
-        where: { id: message.id, status: 'queued' },
+        where: { id: message.id, status: 'sending' },
         data: {
           status: 'failed',
           failedReason: error instanceof Error ? error.message : String(error),
@@ -486,18 +476,23 @@ export class MessagingService {
       return this.detail(message.id)
     }
 
-    const updated = await db.message.updateMany({
-      where: { id: message.id, status: 'queued' },
-      data: { status: 'sent', sentAt: new Date() },
-    })
-    if (updated.count === 1) {
-      await this.events.emit({
-        type: 'message.sent',
-        entityType: 'Message',
-        entityId: message.id,
-        payload: { recipient: message.recipient, tier: message.tier },
+    await db.$transaction(async (tx) => {
+      const updated = await tx.message.updateMany({
+        where: { id: message.id, status: 'sending' },
+        data: { status: 'sent', sentAt: new Date() },
       })
-    }
+      if (updated.count === 1) {
+        await this.events.emit(
+          {
+            type: 'message.sent',
+            entityType: 'Message',
+            entityId: message.id,
+            payload: { recipient: message.recipient, tier: message.tier },
+          },
+          tx,
+        )
+      }
+    })
 
     return this.detail(message.id)
   }

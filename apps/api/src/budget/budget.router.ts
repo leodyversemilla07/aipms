@@ -10,6 +10,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { nonnegativeMinorUnits } from '../shared/money/minor-units'
 import { requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
@@ -22,7 +23,7 @@ const createBudgetInput = z.object({
   costCenter: z.string().min(1).max(80),
   period: z.string().min(1).max(20),
   currencyCode: z.string().length(3).default('PHP'),
-  limitMinor: z.number().int().nonnegative(),
+  limitMinor: nonnegativeMinorUnits,
 })
 
 const detailInput = z.object({

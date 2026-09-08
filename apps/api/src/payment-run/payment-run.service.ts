@@ -11,6 +11,7 @@ import {
   Prisma,
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type BuiltBatch, buildPaymentBatch } from './batch'
 import {
   freezeBeneficiary,
@@ -149,9 +150,9 @@ export class PaymentRunService {
       const netByInvoice = new Map(
         fresh.map((invoice) => [invoice.id, this.netPayable(invoice)]),
       )
-      const totalMinor = [...netByInvoice.values()].reduce(
-        (sum, amount) => sum + amount,
-        0,
+      const totalMinor = assertDatabaseInt(
+        [...netByInvoice.values()].reduce((sum, amount) => sum + amount, 0),
+        'Payment run total',
       )
       const claimed = await tx.paymentRunLine.findMany({
         where: {

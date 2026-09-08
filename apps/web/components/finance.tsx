@@ -9,6 +9,7 @@ import { InvoiceList } from "@/components/finance/invoice-list"
 import { InvoiceRegister } from "@/components/finance/invoice-register"
 import { PaymentRuns } from "@/components/finance/payment-runs"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 
 function FinanceBody() {
   const { data: session } = authClient.useSession()
@@ -36,13 +37,7 @@ function FinanceBody() {
           >
             Procurement
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
           <DemoSwitcher />
         </nav>
       </header>

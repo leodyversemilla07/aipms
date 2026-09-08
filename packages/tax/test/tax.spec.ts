@@ -24,6 +24,18 @@ describe("computeTax (§8.4 PH engine)", () => {
     assert.equal(result.vatMinor, 1_800_00) // 12% of 15,000.00
     assert.equal(result.ewtMinor, 200_00) // 1% of 10,000 + 2% of 5,000 = 100+100
     assert.equal(result.netPayableMinor, 15_000_00 + 1_800_00 - 200_00)
+    assert.deepEqual(result.lines, [
+      { amountMinor: 10_000_00, vatMinor: 1_200_00, ewtMinor: 100_00 },
+      { amountMinor: 5_000_00, vatMinor: 600_00, ewtMinor: 100_00 },
+    ])
+    assert.equal(
+      result.lines.reduce((sum, line) => sum + line.vatMinor, 0),
+      result.vatMinor
+    )
+    assert.equal(
+      result.lines.reduce((sum, line) => sum + line.ewtMinor, 0),
+      result.ewtMinor
+    )
   })
 
   it("excludes VAT-exempt lines from VAT but not from gross", () => {

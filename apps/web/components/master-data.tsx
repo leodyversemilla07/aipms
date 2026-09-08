@@ -13,6 +13,7 @@ import { CatalogPanel } from "@/components/master-data/catalog"
 import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 
 function MasterDataBody() {
   const { data: session } = authClient.useSession()
@@ -46,13 +47,7 @@ function MasterDataBody() {
           >
             Audit
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

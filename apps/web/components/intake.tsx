@@ -4,6 +4,7 @@ import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
 import { IntakeQueue } from "@/components/intake/queue"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 
 function IntakeBody() {
   const { data: session } = authClient.useSession()
@@ -43,13 +44,7 @@ function IntakeBody() {
           >
             Audit
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

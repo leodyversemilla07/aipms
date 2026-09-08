@@ -10,6 +10,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { nonnegativeMinorUnits } from '../shared/money/minor-units'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -23,7 +24,7 @@ const createCatalogInput = z.object({
   name: z.string().min(1).max(200),
   category: z.string().max(120).default('general'),
   unit: z.string().max(20).default('ea'),
-  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultPriceMinor: nonnegativeMinorUnits.nullable().optional(),
   defaultCurrencyCode: z.string().length(3).default('PHP'),
 })
 
@@ -33,7 +34,7 @@ const updateCatalogInput = z.object({
   name: z.string().min(1).max(200).optional(),
   category: z.string().max(120).optional(),
   unit: z.string().max(20).optional(),
-  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultPriceMinor: nonnegativeMinorUnits.nullable().optional(),
   defaultCurrencyCode: z.string().length(3).optional(),
   active: z.boolean().optional(),
 })

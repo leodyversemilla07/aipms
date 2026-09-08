@@ -16,6 +16,7 @@ import { paginate } from '../../trpc/list-input'
  * ("legacy") and are skipped by verification.
  */
 export interface AuditRecordInput {
+  runId?: string | null
   actorId: string
   actorKind: UserKind
   action: string
@@ -39,6 +40,7 @@ export interface ChainVerification {
 
 /** The row fields an entry's hash commits to. */
 interface ChainContent {
+  runId?: string
   actorId: string
   actorKind: string
   action: string
@@ -81,6 +83,7 @@ export class AuditService {
       const at = new Date()
       const inputHash = this.hash(input.input)
       const content: ChainContent = {
+        ...(input.runId ? { runId: input.runId } : {}),
         actorId: input.actorId,
         actorKind: input.actorKind,
         action: input.action,
@@ -95,6 +98,7 @@ export class AuditService {
       await tx.auditEntry.create({
         data: {
           id,
+          runId: input.runId ?? null,
           actorId: input.actorId,
           actorKind: input.actorKind,
           action: input.action,
@@ -127,6 +131,7 @@ export class AuditService {
       select: {
         seq: true,
         id: true,
+        runId: true,
         actorId: true,
         actorKind: true,
         action: true,
@@ -163,6 +168,7 @@ export class AuditService {
       }
 
       const recomputed = this.entryHash(e.prevHash, e.id, e.at, {
+        ...(e.runId ? { runId: e.runId } : {}),
         actorId: e.actorId,
         actorKind: e.actorKind,
         action: e.action,

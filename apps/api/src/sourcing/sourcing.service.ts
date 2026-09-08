@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { DATABASE_INT_MAX } from '../shared/money/minor-units'
 
 /**
  * §8.1/§7.5 structured quoting — the SOURCING → QUOTED leg of the lifecycle.
@@ -122,8 +123,14 @@ export class SourcingService {
   ) {
     const quote = await tx.quote.findUnique({ where: { id: quoteId } })
     if (!quote) throw new NotFoundException(`Quote ${quoteId} not found`)
-    if (!Number.isSafeInteger(input.totalMinor) || input.totalMinor <= 0) {
-      throw new BadRequestException('totalMinor must be a positive integer')
+    if (
+      !Number.isSafeInteger(input.totalMinor) ||
+      input.totalMinor <= 0 ||
+      input.totalMinor > DATABASE_INT_MAX
+    ) {
+      throw new BadRequestException(
+        `totalMinor must be a positive integer no greater than ${DATABASE_INT_MAX}`,
+      )
     }
     // Conditional write: an awarded/rejected quote must never be overwritten
     // by a late offer, even under concurrent receive + award.

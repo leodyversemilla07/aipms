@@ -7,6 +7,7 @@ import { db, Prisma } from '@workspace/db'
 import { evaluateVendorGate } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 import { paginate } from '../trpc/list-input'
 
 export type PurchaseOrderWith = Prisma.PurchaseOrderGetPayload<{
@@ -174,9 +175,9 @@ export class PurchaseOrderService {
       })
       if (!budget) throw new NotFoundException('Budget not found')
 
-      const totalMinor = requisition.lines.reduce(
-        (sum, line) => sum + line.lineTotalMinor,
-        0,
+      const totalMinor = assertDatabaseInt(
+        requisition.lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
+        'Purchase order total',
       )
       if (
         budget.committedMinor + budget.spentMinor + totalMinor >
@@ -187,6 +188,7 @@ export class PurchaseOrderService {
         )
       }
 
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('purchase_order_number'))`
       const poNumber = await this.numbers.next('PO-', () =>
         tx.purchaseOrder
           .findFirst({

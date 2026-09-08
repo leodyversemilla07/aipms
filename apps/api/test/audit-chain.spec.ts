@@ -64,6 +64,20 @@ describe('Audit chain', () => {
     expect(result.ok).toBe(true)
   })
 
+  it('persists run identity in the hash and detects trace tampering', async () => {
+    await record('run.linked', { runId: 'run-original' })
+    const row = await db.auditEntry.findFirstOrThrow({
+      where: { action: 'run.linked' },
+    })
+    expect(row.runId).toBe('run-original')
+    expect((await service.verifyChain()).ok).toBe(true)
+
+    await db.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`
+    const result = await service.verifyChain()
+    expect(result.ok).toBe(false)
+    expect(result.brokenAtSeq).toBe(row.seq)
+  })
+
   it('detects a tampered entry', async () => {
     await record('t.one')
     await record('t.two')

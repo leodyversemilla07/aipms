@@ -12,6 +12,7 @@ import {
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 import { paginate } from '../trpc/list-input'
 
 export interface CreateRequisitionLineInput {
@@ -111,12 +112,22 @@ export class RequisitionService {
       lineNo: i + 1,
       sku: line.sku ?? null,
       description: line.description,
-      quantity: line.quantity,
+      quantity: assertDatabaseInt(line.quantity, `Line ${i + 1} quantity`),
       unit: line.unit ?? 'ea',
-      unitPriceMinor: line.unitPriceMinor,
+      unitPriceMinor: assertDatabaseInt(
+        line.unitPriceMinor,
+        `Line ${i + 1} unit price`,
+      ),
       currencyCode: line.currencyCode ?? 'PHP',
-      lineTotalMinor: line.quantity * line.unitPriceMinor,
+      lineTotalMinor: assertDatabaseInt(
+        line.quantity * line.unitPriceMinor,
+        `Line ${i + 1} total`,
+      ),
     }))
+    assertDatabaseInt(
+      lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
+      'Requisition total',
+    )
 
     // Number mint serializes on an advisory lock inside a transaction, so
     // concurrent creators cannot collide. Standalone calls keep a retry net.

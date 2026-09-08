@@ -4,6 +4,7 @@ import { authClient } from "@workspace/auth/client"
 import Link from "next/link"
 import { AuditViewer } from "@/components/audit/viewer"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 
 function AuditBody() {
   const { data: session } = authClient.useSession()
@@ -37,13 +38,7 @@ function AuditBody() {
           >
             Finance
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

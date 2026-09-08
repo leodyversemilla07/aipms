@@ -9,6 +9,7 @@ import type { RematchSummary } from '../invoice/invoice.service'
 import { InvoiceService } from '../invoice/invoice.service'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { DATABASE_INT_MAX } from '../shared/money/minor-units'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 
@@ -129,9 +130,13 @@ export class ReceiptService {
       const poLineById = new Map(po.lines.map((l) => [l.id, l] as const))
       const poLineByNo = new Map(po.lines.map((l) => [l.lineNo, l] as const))
       const prepared = input.lines.map((line) => {
-        if (line.quantity <= 0 || !Number.isInteger(line.quantity)) {
+        if (
+          line.quantity <= 0 ||
+          !Number.isSafeInteger(line.quantity) ||
+          line.quantity > DATABASE_INT_MAX
+        ) {
           throw new ConflictException(
-            'Receipt quantities must be positive integers',
+            `Receipt quantities must be positive integers no greater than ${DATABASE_INT_MAX}`,
           )
         }
         // poLineId and lineNo must identify the same PO line: otherwise the

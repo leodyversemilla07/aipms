@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@workspace/db'
 import { db } from '@workspace/db'
+import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
 export interface CreateCatalogItem {
@@ -65,7 +66,10 @@ export class CatalogService {
         name: input.name,
         category: input.category ?? 'general',
         unit: input.unit ?? 'ea',
-        defaultPriceMinor: input.defaultPriceMinor ?? null,
+        defaultPriceMinor:
+          input.defaultPriceMinor == null
+            ? null
+            : assertDatabaseInt(input.defaultPriceMinor, 'Catalog price'),
         defaultCurrencyCode: input.defaultCurrencyCode ?? 'PHP',
       },
     })
@@ -85,7 +89,10 @@ export class CatalogService {
         ...(input.category !== undefined && { category: input.category }),
         ...(input.unit !== undefined && { unit: input.unit }),
         ...(input.defaultPriceMinor !== undefined && {
-          defaultPriceMinor: input.defaultPriceMinor,
+          defaultPriceMinor:
+            input.defaultPriceMinor == null
+              ? null
+              : assertDatabaseInt(input.defaultPriceMinor, 'Catalog price'),
         }),
         ...(input.defaultCurrencyCode !== undefined && {
           defaultCurrencyCode: input.defaultCurrencyCode,

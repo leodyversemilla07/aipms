@@ -7,6 +7,7 @@ import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
 import { SignInCard } from "@/components/sign-in"
+import { SignOutButton } from "@/components/sign-out-button"
 
 function ProcurementBody() {
   const { data: session } = authClient.useSession()
@@ -36,13 +37,7 @@ function ProcurementBody() {
           >
             Finance desk
           </Link>
-          <button
-            type="button"
-            onClick={() => authClient.signOut()}
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Sign out
-          </button>
+          <SignOutButton />
         </nav>
       </header>
 

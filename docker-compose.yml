@@ -17,10 +17,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-aipms}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - aipms-postgres:/var/lib/postgresql/data
     healthcheck:
@@ -39,7 +39,7 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-aipms}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-aipms}
       PORT: 3001
       NODE_ENV: production
       # Browser-facing origin of the web app (auth cookies) — override in .env
@@ -48,7 +48,7 @@ services:
       API_URL: http://api:3001
       AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-http://localhost:3000}
       # Generate with: openssl rand -base64 32 — required in production
-      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
