@@ -18,6 +18,7 @@ type ReqRow = {
     lineTotalMinor: number
   }>
 }
+type VendorRow = { id: string; name: string }
 
 function rowTotal(req: ReqRow): number {
   return req.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0)
@@ -28,7 +29,7 @@ function RequisitionCard({
   vendorRows,
 }: {
   req: ReqRow
-  vendorRows: Array<{ id: string; name: string }>
+  vendorRows: VendorRow[]
 }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
@@ -125,11 +126,8 @@ export function IssuePo() {
   const vendors = useQuery(
     trpc.vendor.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (requisitions.data?.rows ?? []) as unknown as ReqRow[]
-  const vendorRows = (vendors.data?.rows ?? []) as unknown as Array<{
-    id: string
-    name: string
-  }>
+  const rows = (requisitions.data?.rows ?? []) as ReqRow[]
+  const vendorRows = (vendors.data?.rows ?? []) as VendorRow[]
   const approved = rows.filter((r) => r.status === "approved")
 
   return (

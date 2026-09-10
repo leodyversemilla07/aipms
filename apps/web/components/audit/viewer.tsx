@@ -13,9 +13,7 @@ type AudRow = {
   entity: string
   entityId: string | null
   inputHash: string | null
-  before: unknown
-  after: unknown
-  at: string
+  at: string | Date
 }
 
 /**
@@ -40,7 +38,7 @@ export function AuditViewer() {
       action: action || undefined,
     })
   )
-  const rows = (feed.data?.rows ?? []) as unknown as AudRow[]
+  const rows = (feed.data?.rows ?? []) as AudRow[]
   const entities = meta.data?.entities ?? []
   const actions = meta.data?.actions ?? []
 

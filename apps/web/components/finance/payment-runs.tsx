@@ -50,8 +50,7 @@ export function PaymentRuns() {
   const matched = useQuery(
     trpc.invoice.list.queryOptions({ status: "matched" })
   )
-  // Prisma payload rows recurse deeply; narrow to the fields rendered here.
-  const runRows = (runs.data ?? []) as unknown as Array<{
+  type PaymentRunRow = {
     id: string
     runNumber: string
     status: string
@@ -62,15 +61,17 @@ export function PaymentRuns() {
       netMinor: number
       status: string
     }>
-  }>
-  const matchedRows = (matched.data ?? []) as unknown as Array<{
+  }
+  type InvoiceRow = {
     id: string
     number: string
     status: string
     amountMinor: number
     vatMinor: number
     ewtMinor: number
-  }>
+  }
+  const runRows = (runs.data ?? []) as PaymentRunRow[]
+  const matchedRows = (matched.data ?? []) as InvoiceRow[]
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)

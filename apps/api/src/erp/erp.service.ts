@@ -27,6 +27,8 @@ import {
  * Ingest: vendor master registrations arrive from the ERP (the author of
  * record for master data) and are upserted into the local cache by taxId.
  */
+type ErpExportListRow = Prisma.ErpJournalExportGetPayload<object>
+
 @Injectable()
 export class ErpService {
   constructor(private readonly events: EventEmitterService) {}
@@ -171,7 +173,7 @@ export class ErpService {
 
   list(
     input: Partial<ListInput> & { status?: string } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<ErpExportListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,

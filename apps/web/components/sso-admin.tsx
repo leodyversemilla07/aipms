@@ -16,11 +16,7 @@ type ProviderRow = {
   type: string
   createdBy: string
 }
-
-type ScimRow = {
-  providerId: string
-  maskedToken: string
-}
+type ScimRow = { providerId: string; maskedToken: string }
 
 /**
  * §16.2 — the instance's identity configuration. Admins register the org's
@@ -136,8 +132,8 @@ function SsoAdminBody() {
     })
   )
 
-  const rows = (providers.data ?? []) as unknown as ProviderRow[]
-  const scimRows = (scim.data ?? []) as unknown as ScimRow[]
+  const rows = (providers.data ?? []) as ProviderRow[]
+  const scimRows = (scim.data ?? []) as ScimRow[]
 
   return (
     <div className="flex flex-col gap-6">

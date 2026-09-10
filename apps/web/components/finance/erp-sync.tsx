@@ -30,8 +30,8 @@ type ExportRow = {
   status: string
   externalRef: string | null
   rejectedReason: string | null
-  acknowledgedAt: string | null
-  exportedAt: string
+  acknowledgedAt: string | Date | null
+  exportedAt: string | Date
 }
 
 /** aipms chart codes (§8.5 v1 defaults) → ERP account ids. */
@@ -59,7 +59,7 @@ export function ErpSync() {
   const exportsQuery = useQuery(
     trpc.erp.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (exportsQuery.data?.rows ?? []) as unknown as ExportRow[]
+  const rows = (exportsQuery.data?.rows ?? []) as ExportRow[]
 
   const report = useQuery(trpc.erp.reconcileReport.queryOptions({}))
   const qbo = useQuery(trpc.erp.qboStatus.queryOptions({}))

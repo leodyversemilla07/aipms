@@ -248,7 +248,8 @@ Key environment variables:
 | `BETTER_AUTH_SECRET` | Auth signing key |
 | `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
-| `AGENT_AUTORUN` | Enable agent drain loop |
+| `AGENT_AUTORUN` | Enable unattended agent drain loop and event wakes |
+| `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes without interval drain |
 
 ---
 

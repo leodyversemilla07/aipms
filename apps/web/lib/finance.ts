@@ -2,14 +2,21 @@
  * Finance desk helpers. Money stays in minor units (§8.4); net = gross +
  * VAT − EWT per the PH tax engine.
  */
-import type { inferRouterOutputs } from "@trpc/server"
-import type { AppRouter } from "api/app-router"
-
-type Router = inferRouterOutputs<AppRouter>
-
-export type InvoiceRow = Router["invoice"]["list"][number]
-export type PaymentRunRow = Router["paymentRun"]["list"][number]
-export type VendorRow = Router["vendor"]["list"]["rows"][number]
+export type InvoiceRow = {
+  id: string
+  number: string
+  status: string
+  amountMinor: number
+  vatMinor: number
+  ewtMinor: number
+}
+export type PaymentRunRow = {
+  id: string
+  runNumber: string
+  status: string
+  totalMinor: number
+}
+export type VendorRow = { id: string; name: string }
 
 export const INVOICE_STATUS: Record<string, string> = {
   received: "Received",

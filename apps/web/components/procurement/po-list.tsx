@@ -7,24 +7,21 @@ import { ConfirmButton } from "@/components/confirm-button"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
-type PoLine = {
-  lineNo: number
-  sku: string | null
-  description: string
-  quantity: number
-  unit: string | null
-  lineTotalMinor: number
-}
-
 type PoRow = {
   id: string
   poNumber: string
   status: string
   vendorId: string
   totalMinor: number
-  lines: PoLine[]
+  lines: Array<{
+    lineNo: number
+    sku: string | null
+    description: string
+    quantity: number
+    unit: string | null
+    lineTotalMinor: number
+  }>
 }
-
 type SignatureView = {
   signed: boolean
   configured: boolean
@@ -54,7 +51,7 @@ export function PoList() {
   const pos = useQuery(
     trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (pos.data?.rows ?? []) as unknown as PoRow[]
+  const rows = (pos.data?.rows ?? []) as PoRow[]
 
   const confirm = useMutation(trpc.purchaseOrder.confirm.mutationOptions())
   const cancel = useMutation(
@@ -141,7 +138,7 @@ function PoRowItem({
     ...trpc.purchaseOrder.signature.queryOptions({ id: po.id }),
     enabled: expanded,
   })
-  const sig = signature.data as unknown as SignatureView | undefined
+  const sig = signature.data as SignatureView | undefined
 
   const sign = useMutation(
     trpc.purchaseOrder.sign.mutationOptions({

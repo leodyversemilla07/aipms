@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { db, type IntakeStatus, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { type ListInput, paginate } from '../trpc/list-input'
 
 export interface IngestInput {
   channel: string // EMAIL_IMAP | EINVOICE_EIS | PEPPOL | EDI | API | PORTAL
@@ -141,9 +142,16 @@ export class IntakeService {
     })
   }
 
-  list(where: { status?: IntakeStatus } = {}) {
+  list(input: Partial<ListInput> & { status?: IntakeStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where = input.status ? { status: input.status } : {}
     return db.intakeDocument.findMany({
       where,
+      skip,
+      take,
       orderBy: { receivedAt: 'desc' },
     })
   }

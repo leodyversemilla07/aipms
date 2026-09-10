@@ -52,8 +52,11 @@ services:
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
-      # Agent drain loop (intake → classify → match) — off by default
+      # Unattended agent automation — off by default. AGENT_AUTORUN enables
+      # both the intake drain scheduler and event wakes; AIPMS_AGENT_WAKE can
+      # enable event wakes without the interval drain.
       AGENT_AUTORUN: ${AGENT_AUTORUN:-0}
+      AIPMS_AGENT_WAKE: ${AIPMS_AGENT_WAKE:-0}
       AGENT_INTERVAL_MS: ${AGENT_INTERVAL_MS:-60000}
       AGENT_BATCH_SIZE: ${AGENT_BATCH_SIZE:-25}
       EVENT_RELAY_INTERVAL_MS: ${EVENT_RELAY_INTERVAL_MS:-1000}

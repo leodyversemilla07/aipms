@@ -72,7 +72,7 @@ export class IntakeRouter {
 
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.intake.list(input.status ? { status: input.status } : {})
+    return this.intake.list(input)
   }
 
   @Mutation({ input: ingestInput })

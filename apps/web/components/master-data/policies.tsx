@@ -44,7 +44,7 @@ export function PoliciesPanel() {
   const [error, setError] = useState<string | null>(null)
 
   const list = useQuery(trpc.policy.list.queryOptions({}))
-  const rows = (list.data ?? []) as unknown as PolicyRow[]
+  const rows = (list.data ?? []) as PolicyRow[]
 
   const create = useMutation(trpc.policy.create.mutationOptions())
 

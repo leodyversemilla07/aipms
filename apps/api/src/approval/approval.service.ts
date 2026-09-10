@@ -33,6 +33,7 @@ export class ApprovalService {
         requisition: { include: { lines: true } },
       },
       orderBy: { createdAt: 'asc' },
+      take: 100,
     })
   }
 
@@ -85,8 +86,8 @@ export class ApprovalService {
           : verdict === 'override'
             ? 'overridden'
             : 'approved'
-      const updated = await tx.approval.update({
-        where: { id },
+      const changed = await tx.approval.updateMany({
+        where: { id, status: 'pending' },
         data: {
           status: decidedStatus,
           decidedBy: actorId,
@@ -94,6 +95,10 @@ export class ApprovalService {
           evidence: evidence ?? null,
         },
       })
+      if (changed.count !== 1) {
+        throw new ConflictException('Approval changed; reload before deciding')
+      }
+      const updated = await tx.approval.findUniqueOrThrow({ where: { id } })
       await this.events.emit(
         {
           type: 'approval.decided',
@@ -108,6 +113,31 @@ export class ApprovalService {
       if (approval.kind === 'poCancellation' && approval.poId) {
         if (verdict === 'reject') {
           return { approval: updated, outcome: 'KEPT' }
+        }
+        await tx.$queryRaw`
+          SELECT id FROM "purchaseOrder"
+          WHERE id = ${approval.poId}
+          FOR UPDATE
+        `
+        const poBefore = await tx.purchaseOrder.findUnique({
+          where: { id: approval.poId },
+        })
+        if (!poBefore) {
+          throw new NotFoundException(
+            `PurchaseOrder ${approval.poId} not found`,
+          )
+        }
+        if (poBefore.status === 'cancelled') {
+          return {
+            approval: updated,
+            outcome: 'KEPT',
+            poStatus: poBefore.status,
+          }
+        }
+        if (poBefore.status !== 'issued' && poBefore.status !== 'confirmed') {
+          throw new ConflictException(
+            `PO is ${poBefore.status} — only issued/confirmed POs can be cancelled`,
+          )
         }
         const po = await tx.purchaseOrder.update({
           where: { id: approval.poId },
@@ -173,10 +203,26 @@ export class ApprovalService {
           }
         }
 
-        const remainingPending = await tx.approval.count({
-          where: { requisitionId: approval.requisitionId, status: 'pending' },
-        })
-        const nextStatus = remainingPending === 0 ? 'approved' : 'submitted'
+        const [remainingPending, rejected] = await Promise.all([
+          tx.approval.count({
+            where: {
+              requisitionId: approval.requisitionId,
+              status: 'pending',
+            },
+          }),
+          tx.approval.count({
+            where: {
+              requisitionId: approval.requisitionId,
+              status: 'rejected',
+            },
+          }),
+        ])
+        const nextStatus =
+          rejected > 0
+            ? 'rejected'
+            : remainingPending === 0
+              ? 'approved'
+              : 'submitted'
         const req = await tx.requisition.update({
           where: { id: approval.requisitionId },
           data: { status: nextStatus, decidedAt: now },
@@ -217,6 +263,9 @@ export class ApprovalService {
       select: { budgetId: true },
     })
     if (!req?.budgetId) return
+    await tx.$queryRaw`
+      SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
+    `
     const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
     if (!budget) return
     await tx.budget.update({

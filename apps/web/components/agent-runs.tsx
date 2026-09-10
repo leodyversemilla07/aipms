@@ -26,8 +26,45 @@ type RunRow = {
     entityType?: string
     entityId?: string
   } | null
-  startedAt: string
-  finishedAt: string | null
+  startedAt: string | Date
+  finishedAt: string | Date | null
+}
+
+type TraceEntry = {
+  seq: number
+  actorId: string
+  actorKind: string
+  action: string
+  entity: string
+  entityId: string | null
+  at: string | Date
+}
+
+function normalizeRun(row: {
+  id: string
+  agentId: string
+  status: string
+  skills: string[]
+  meta: unknown
+  startedAt: string | Date
+  finishedAt: string | Date | null
+}): RunRow {
+  const meta =
+    row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+      ? (row.meta as Record<string, unknown>)
+      : null
+  return {
+    ...row,
+    meta: meta
+      ? {
+          triggeredBy:
+            typeof meta.triggeredBy === "string" ? meta.triggeredBy : undefined,
+          entityType:
+            typeof meta.entityType === "string" ? meta.entityType : undefined,
+          entityId: typeof meta.entityId === "string" ? meta.entityId : undefined,
+        }
+      : null,
+  }
 }
 
 const RUN_STATUS: Record<
@@ -50,7 +87,10 @@ export function AgentRuns() {
   const runsQuery = useQuery(
     trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 })
   )
-  const rows = (runsQuery.data?.rows ?? []) as unknown as RunRow[]
+  const runRows = runsQuery.data?.rows as
+    | Parameters<typeof normalizeRun>[0][]
+    | undefined
+  const rows: RunRow[] = (runRows ?? []).map(normalizeRun)
 
   return (
     <section className="flex flex-col gap-3">
@@ -160,15 +200,7 @@ function RunTraceDialog({
     ...trpc.analytics.runTrace.queryOptions({ runId: run?.id ?? "" }),
     enabled: !!run,
   })
-  const entries = (trace.data?.entries ?? []) as unknown as {
-    seq: number
-    actorId: string
-    actorKind: string
-    action: string
-    entity: string
-    entityId: string | null
-    at: string
-  }[]
+  const entries: TraceEntry[] = trace.data?.entries ?? []
 
   return (
     <Dialog open={!!run} onOpenChange={(open) => !open && onClose()}>

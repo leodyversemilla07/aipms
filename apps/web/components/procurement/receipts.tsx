@@ -21,39 +21,34 @@ import { ConfirmButton } from "@/components/confirm-button"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
-type PoLine = {
+type PoLineRow = {
   lineNo: number
   sku: string | null
   description: string
   quantity: number
   unit: string | null
 }
-
 type PoRow = {
   id: string
   poNumber: string
   status: string
   vendorId: string
-  lines: PoLine[]
+  lines: PoLineRow[]
 }
-
-type ReceiptLine = {
-  lineNo: number | null
-  sku: string | null
-  description: string
-  quantity: number
-  unit: string | null
-}
-
 type ReceiptRow = {
   id: string
   receiptNumber: string
   poId: string
   vendorId: string
   status: string
-  note: string | null
-  recordedAt: string
-  lines: ReceiptLine[]
+  recordedAt: string | Date
+  lines: Array<{
+    lineNo: number | null
+    sku: string | null
+    description: string
+    quantity: number
+    unit: string | null
+  }>
 }
 
 /**
@@ -75,8 +70,8 @@ export function Receipts() {
   const receipts = useQuery(
     trpc.receipt.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (receipts.data?.rows ?? []) as unknown as ReceiptRow[]
-  const openPos = ((pos.data?.rows ?? []) as unknown as PoRow[]).filter(
+  const rows = (receipts.data?.rows ?? []) as ReceiptRow[]
+  const openPos = ((pos.data?.rows ?? []) as PoRow[]).filter(
     (po) => po.status === "issued" || po.status === "confirmed"
   )
 

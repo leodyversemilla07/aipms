@@ -18,7 +18,8 @@ type VendorRow = {
   email: string | null
   taxId: string | null
   status: string
-  bankAccountVerifiedAt: string | null
+  bankAccountVerifiedAt: string | Date | null
+  bankAccountChangedAt: string | Date | null
 }
 
 /**
@@ -34,11 +35,15 @@ export function VendorsPanel() {
   const [taxId, setTaxId] = useState("")
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [bankVendorId, setBankVendorId] = useState<string | null>(null)
+  const [bank, setBank] = useState("")
+  const [accountNumber, setAccountNumber] = useState("")
+  const [holder, setHolder] = useState("")
 
   const list = useQuery(
     trpc.vendor.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (list.data?.rows ?? []) as unknown as VendorRow[]
+  const rows = (list.data?.rows ?? []) as VendorRow[]
 
   const create = useMutation(trpc.vendor.create.mutationOptions())
   const verify = useMutation(trpc.vendor.verifyBankAccount.mutationOptions())
@@ -61,6 +66,25 @@ export function VendorsPanel() {
       setName("")
       setEmail("")
       setTaxId("")
+      refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function verifyBank(vendorId: string) {
+    setNotice(null)
+    setError(null)
+    try {
+      await verify.mutateAsync({
+        id: vendorId,
+        bankAccount: { bank, accountNumber, holder },
+      })
+      setNotice("Beneficiary bank account verified")
+      setBankVendorId(null)
+      setBank("")
+      setAccountNumber("")
+      setHolder("")
       refresh()
     } catch (e) {
       setError((e as Error).message)
@@ -130,45 +154,93 @@ export function VendorsPanel() {
       ) : null}
 
       <ul className="flex flex-col gap-2">
-        {rows.map((v) => (
-          <li
-            key={v.id}
-            className="flex items-center justify-between gap-2 rounded-lg border bg-card px-4 py-2 text-sm"
-          >
-            <div className="flex flex-col">
-              <span className="font-medium">{v.name}</span>
-              <span className="text-muted-foreground text-xs">
-                {v.status} · {v.taxId ?? "no tax id"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-xs">
-                {v.bankAccountVerifiedAt ? "bank ✓" : "bank —"}
-              </span>
-              {!v.bankAccountVerifiedAt ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={verify.isPending}
-                  onClick={() =>
-                    verify
-                      .mutateAsync({
-                        id: v.id,
-                        bankAccount: {
-                          accountName: v.name,
-                          accountNumber: `0000-${v.id.slice(0, 4)}`,
-                          bank: "DEMO BANK",
-                        },
-                      })
-                      .then(refresh)
-                  }
-                >
-                  Verify bank
-                </Button>
+        {rows.map((v) => {
+          const needsBankVerification =
+            !v.bankAccountVerifiedAt || Boolean(v.bankAccountChangedAt)
+          const editingBank = bankVendorId === v.id
+          return (
+            <li
+              key={v.id}
+              className="flex flex-col gap-3 rounded-lg border bg-card px-4 py-2 text-sm"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col">
+                  <span className="font-medium">{v.name}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {v.status} · {v.taxId ?? "no tax id"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-xs">
+                    {needsBankVerification ? "bank —" : "bank ✓"}
+                  </span>
+                  {needsBankVerification ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={verify.isPending}
+                      onClick={() => {
+                        setBankVendorId(editingBank ? null : v.id)
+                        setHolder(v.name)
+                      }}
+                    >
+                      {editingBank ? "Cancel" : "Verify bank"}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+
+              {editingBank ? (
+                <FieldGroup className="flex-row flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+                  <Field>
+                    <FieldLabel htmlFor={`bank-${v.id}`}>Bank</FieldLabel>
+                    <Input
+                      id={`bank-${v.id}`}
+                      value={bank}
+                      onChange={(e) => setBank(e.target.value)}
+                      placeholder="BDO"
+                      className="h-9 w-36"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`account-${v.id}`}>
+                      Account number
+                    </FieldLabel>
+                    <Input
+                      id={`account-${v.id}`}
+                      value={accountNumber}
+                      onChange={(e) => setAccountNumber(e.target.value)}
+                      placeholder="001234567890"
+                      className="h-9 w-44"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`holder-${v.id}`}>Holder</FieldLabel>
+                    <Input
+                      id={`holder-${v.id}`}
+                      value={holder}
+                      onChange={(e) => setHolder(e.target.value)}
+                      placeholder={v.name}
+                      className="h-9 w-56"
+                    />
+                  </Field>
+                  <Button
+                    size="sm"
+                    disabled={
+                      verify.isPending ||
+                      !bank.trim() ||
+                      !accountNumber.trim() ||
+                      !holder.trim()
+                    }
+                    onClick={() => verifyBank(v.id)}
+                  >
+                    Save verified account
+                  </Button>
+                </FieldGroup>
               ) : null}
-            </div>
-          </li>
-        ))}
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

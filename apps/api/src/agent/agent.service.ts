@@ -12,6 +12,8 @@ export const AGENT_EXTRACTOR = 'AGENT_EXTRACTOR'
 /** Extraction seam: shape a raw document into a classified invoice payload. */
 export type Extractor = (raw: unknown) => InvoicePayload
 
+type AgentRunListRow = Prisma.AgentRunGetPayload<object>
+
 /**
  * §3 Phase-3 domain agent. Owns the classify→register pipeline an LLM agent
  * would otherwise drive: take a raw intake document, extract & validate an
@@ -116,7 +118,7 @@ export class AgentService {
     input: Partial<ListInput> & {
       status?: 'running' | 'succeeded' | 'failed' | 'cancelled'
     } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<AgentRunListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,

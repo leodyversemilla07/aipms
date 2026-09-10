@@ -681,7 +681,14 @@ const appRouter = t.router({
     verifyBankAccount: publicProcedure
       .input(z.object({
   id: z.string().min(1),
-  bankAccount: z.any(),
+  bankAccount: z.object({
+    bank: z.string().min(1).max(120),
+    accountNumber: z.string().min(1).max(80).optional(),
+    accountNo: z.string().min(1).max(80).optional(),
+    holder: z.string().min(1).max(200),
+  }).refine((value) => value.accountNumber || value.accountNo, {
+    message: 'accountNumber is required',
+  }),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>)
     })

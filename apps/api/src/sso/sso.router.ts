@@ -66,12 +66,14 @@ export class SsoRouter {
   ) {}
 
   @Query()
-  listProviders() {
+  listProviders(@Ctx() ctx: AuthedTrpcContext) {
+    SsoService.assertAdmin(ctx, 'sso.listProviders')
     return this.sso.listProviders()
   }
 
   @Query()
-  listScimConnections() {
+  listScimConnections(@Ctx() ctx: AuthedTrpcContext) {
+    SsoService.assertAdmin(ctx, 'sso.listScimConnections')
     return this.sso.listScimConnections()
   }
 

@@ -140,6 +140,8 @@ export interface MessageTransport {
   send(message: { to: string; subject: string; body: string }): Promise<void>
 }
 
+type MessageListRow = Prisma.MessageGetPayload<object>
+
 /** Default transport: structured stdout log (no external egress). */
 @Injectable()
 export class LoggingTransport implements MessageTransport {
@@ -185,7 +187,7 @@ export class MessagingService {
       status?: MessageStatus
       tier?: MessageTier
     } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<MessageListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,

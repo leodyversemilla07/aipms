@@ -55,7 +55,7 @@ export class InvoiceRouter {
 
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.invoice.list(input.status ? { status: input.status } : {})
+    return this.invoice.list(input)
   }
 
   @Query({ input: idInput })

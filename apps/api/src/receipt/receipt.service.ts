@@ -43,6 +43,8 @@ export interface RecordReceiptInput {
   recordedBy: string
 }
 
+type ReceiptListRow = Prisma.ReceiptGetPayload<{ include: { lines: true } }>
+
 @Injectable()
 export class ReceiptService {
   constructor(
@@ -53,7 +55,7 @@ export class ReceiptService {
 
   list(
     input: Partial<ListInput> & { status?: ReceiptStatus; poId?: string } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<ReceiptListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,

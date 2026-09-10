@@ -26,7 +26,8 @@ const asJson = (value: unknown): Prisma.InputJsonObject =>
   value as Prisma.InputJsonObject
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
- * for events that require automated handling. This is a thin orchestrator
+ * for events that require automated handling. Disabled by default; enable
+ * with AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1. This is a thin orchestrator
  * stub; real skill routing will be expanded in Phase 3+.
  */
 @Injectable()
@@ -38,6 +39,15 @@ export class AgentWakeService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    const enabled =
+      process.env.AGENT_AUTORUN === '1' || process.env.AIPMS_AGENT_WAKE === '1'
+    if (!enabled) {
+      console.log(
+        '[agent-wake] disabled (set AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1 to enable unattended event handling)',
+      )
+      return
+    }
+
     // Wake on requisition approval → operator agent should issue PO
     this.relay.subscribe('requisition.approved', async (event) => {
       await this.handleRequisitionApproved(event)
@@ -169,6 +179,9 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      // Propagate failures to the outbox relay so retry/dead-letter semantics
+      // remain intact. Business skips above return success explicitly.
+      throw err
     }
   }
 
@@ -226,6 +239,9 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      // Propagate failures to the outbox relay so retry/dead-letter semantics
+      // remain intact. Business skips above return success explicitly.
+      throw err
     }
   }
 }

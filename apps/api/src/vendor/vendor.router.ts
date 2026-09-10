@@ -21,9 +21,20 @@ const idInput = z.object({ id: z.string().min(1) })
 
 const vendorStatus = z.enum(['prospective', 'active', 'watch', 'blacklisted'])
 
+const bankAccountInput = z
+  .object({
+    bank: z.string().min(1).max(120),
+    accountNumber: z.string().min(1).max(80).optional(),
+    accountNo: z.string().min(1).max(80).optional(),
+    holder: z.string().min(1).max(200),
+  })
+  .refine((value) => value.accountNumber || value.accountNo, {
+    message: 'accountNumber is required',
+  })
+
 const verifyBankAccountInput = z.object({
   id: z.string().min(1),
-  bankAccount: z.any(),
+  bankAccount: bankAccountInput,
 })
 
 const createVendorInput = z.object({

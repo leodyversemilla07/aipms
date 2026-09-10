@@ -39,21 +39,19 @@ export function InvoiceRegister() {
   const vendors = useQuery(
     trpc.vendor.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  // Prisma payload rows are deeply recursive; we only need the id + name.
-  const vendorRows = (vendors.data?.rows ?? []) as unknown as Array<{
-    id: string
-    name: string
-  }>
+  type VendorRow = { id: string; name: string }
+  const vendorRows = (vendors.data?.rows ?? []) as VendorRow[]
 
   const pos = useQuery(
     trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const poRows = (pos.data?.rows ?? []) as unknown as Array<{
+  type PoRow = {
     id: string
     poNumber: string
     vendorId: string
     status: string
-  }>
+  }
+  const poRows = (pos.data?.rows ?? []) as PoRow[]
 
   const [vendorId, setVendorId] = useState("")
   const [number, setNumber] = useState("")

@@ -1,5 +1,5 @@
 import { db } from '@workspace/db'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { AgentWakeService } from '../src/agent/agent-wake.service'
 import { PolicyService } from '../src/policy/policy.service'
 import { PurchaseOrderService } from '../src/purchase-order/purchase-order.service'
@@ -13,8 +13,14 @@ describe('AgentWakeService policy-driven vendor selection', () => {
   let wake: AgentWakeService
   let requisitionService: RequisitionService
   let poService: PurchaseOrderService
+  let originalWake: string | undefined
+
+  beforeAll(() => {
+    originalWake = process.env.AIPMS_AGENT_WAKE
+  })
 
   beforeEach(async () => {
+    process.env.AIPMS_AGENT_WAKE = '1'
     await db.agentRun.deleteMany({})
     await db.domainEvent.deleteMany({})
     await db.purchaseOrder.deleteMany({})
@@ -24,6 +30,8 @@ describe('AgentWakeService policy-driven vendor selection', () => {
   })
 
   afterAll(async () => {
+    if (originalWake === undefined) delete process.env.AIPMS_AGENT_WAKE
+    else process.env.AIPMS_AGENT_WAKE = originalWake
     await db.$disconnect()
   })
 

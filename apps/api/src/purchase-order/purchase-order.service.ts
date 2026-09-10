@@ -302,11 +302,19 @@ export class PurchaseOrderService {
     reason: string,
     tx: Prisma.TransactionClient = db,
   ) {
+    await tx.$queryRaw`
+      SELECT id FROM "purchaseOrder" WHERE id = ${id} FOR UPDATE
+    `
     const po = await tx.purchaseOrder.findUnique({ where: { id } })
     if (!po) throw new NotFoundException(`PurchaseOrder ${id} not found`)
     if (po.status !== 'confirmed' && po.status !== 'issued') {
       throw new ConflictException('Only issued/confirmed POs can be cancelled')
     }
+    const existing = await tx.approval.findFirst({
+      where: { poId: po.id, kind: 'poCancellation', status: 'pending' },
+      orderBy: { createdAt: 'asc' },
+    })
+    if (existing) return existing
     return tx.approval.create({
       data: {
         poId: po.id,

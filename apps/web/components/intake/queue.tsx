@@ -28,7 +28,7 @@ type DocRow = {
   contentHash: string
   senderId: string | null
   status: string
-  receivedAt: string
+  receivedAt: string | Date
 }
 
 const CHANNELS = [
@@ -74,7 +74,7 @@ export function IntakeQueue() {
       status: (status || undefined) as never,
     })
   )
-  const rows = (feed.data ?? []) as unknown as DocRow[]
+  const rows = (feed.data ?? []) as DocRow[]
 
   const ingest = useMutation(trpc.intake.ingest.mutationOptions())
   const classify = useMutation(trpc.intake.classify.mutationOptions())

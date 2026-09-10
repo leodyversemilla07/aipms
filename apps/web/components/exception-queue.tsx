@@ -15,18 +15,16 @@ const KIND_LABEL: Record<string, string> = {
 }
 
 /**
- * Shape of a pending-approval row as consumed by this view. The router returns
- * richer Prisma rows; we only need the fields rendered here, so we cast to
- * avoid dragging the whole JSON-typed model (incl. recursive citations) into
- * the component type.
+ * Shape of a pending-approval row as consumed by this view. Keep the router
+ * output type, but normalize JSON citations before rendering them.
  */
-type QueueApprovalRow = {
+type ApprovalOutput = {
   id: string
   kind: string
   gateOutcome: string
   evidence: string | null
-  citations?: Array<string> | null
-  createdAt: string
+  citations: unknown
+  createdAt: string | Date
   requisition: {
     lines: Array<{
       description: string
@@ -34,6 +32,18 @@ type QueueApprovalRow = {
       unitPriceMinor: number
     }>
   } | null
+}
+type QueueApprovalRow = Omit<ApprovalOutput, "citations"> & {
+  citations: string[]
+}
+
+function normalizeApproval(row: ApprovalOutput): QueueApprovalRow {
+  return {
+    ...row,
+    citations: Array.isArray(row.citations)
+      ? row.citations.filter((c): c is string => typeof c === "string")
+      : [],
+  }
 }
 
 function lineSummary(
@@ -78,7 +88,8 @@ export function ExceptionQueue() {
       </p>
     )
   }
-  const rows = (pending.data ?? []) as unknown as QueueApprovalRow[]
+  const pendingRows = pending.data as ApprovalOutput[] | undefined
+  const rows: QueueApprovalRow[] = (pendingRows ?? []).map(normalizeApproval)
 
   return (
     <section className="flex flex-col gap-3">
