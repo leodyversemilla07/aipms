@@ -1,10 +1,10 @@
-import { scimClient } from "@better-auth/scim/client"
 import { ssoClient } from "@better-auth/sso/client"
 import { createAuthClient } from "better-auth/react"
 
 export const authClient = createAuthClient({
   baseURL: typeof window === "undefined" ? undefined : window.location.origin,
-  plugins: [ssoClient(), scimClient()],
+  // SCIM is an inbound server protocol; browser clients only need SSO.
+  plugins: [ssoClient()],
 })
 
 export const { getSession, signIn, signOut, signUp, useSession } = authClient

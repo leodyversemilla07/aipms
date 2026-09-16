@@ -24,8 +24,13 @@ type ScimRow = { providerId: string; maskedToken: string }
  * users. Server-side this is human-admin-only; every change is audited.
  */
 export function SsoAdmin() {
+  const trpc = useTRPC()
   const { data: session } = authClient.useSession()
-  const user = session?.user as { role?: string } | undefined
+  const me = useQuery({
+    ...trpc.users.me.queryOptions(),
+    enabled: Boolean(session),
+  })
+  const user = session?.user
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
@@ -51,7 +56,7 @@ export function SsoAdmin() {
       </header>
 
       {user ? (
-        user.role === "admin" ? (
+        me.data?.role === "admin" ? (
           <SsoAdminBody />
         ) : (
           <p className="rounded-md border bg-card px-4 py-3 text-muted-foreground text-sm">

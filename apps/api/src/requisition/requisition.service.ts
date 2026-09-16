@@ -48,6 +48,8 @@ export interface RequisitionListInput {
   dir?: 'asc' | 'desc'
   page: number
   pageSize: number
+  /** Row-level boundary for ordinary requesters; supervisors omit it. */
+  requestedBy?: string
 }
 
 @Injectable()
@@ -60,7 +62,9 @@ export class RequisitionService {
 
   async list(input: RequisitionListInput) {
     const { skip, take } = paginate(input)
-    const where: Prisma.RequisitionWhereInput = {}
+    const where: Prisma.RequisitionWhereInput = input.requestedBy
+      ? { requestedBy: input.requestedBy }
+      : {}
     if (input.q) {
       where.OR = [
         { requestNumber: { contains: input.q, mode: 'insensitive' } },
@@ -91,9 +95,9 @@ export class RequisitionService {
     return { rows, total, facetCounts: {} }
   }
 
-  async detail(id: string): Promise<RequisitionWith> {
-    const req = await db.requisition.findUnique({
-      where: { id },
+  async detail(id: string, requestedBy?: string): Promise<RequisitionWith> {
+    const req = await db.requisition.findFirst({
+      where: { id, ...(requestedBy ? { requestedBy } : {}) },
       include: { lines: true, approvals: true },
     })
     if (!req) throw new NotFoundException(`Requisition ${id} not found`)
@@ -195,13 +199,14 @@ export class RequisitionService {
   async submit(
     id: string,
     outerTx?: Prisma.TransactionClient,
+    requestedBy?: string,
   ): Promise<SubmitResult> {
     const run = async (tx: Prisma.TransactionClient) => {
       // Lock the requisition first: concurrent submits serialize here and
       // the conditional updates below make double-submit impossible.
       await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${id} FOR UPDATE`
-      const requisition = await tx.requisition.findUnique({
-        where: { id },
+      const requisition = await tx.requisition.findFirst({
+        where: { id, ...(requestedBy ? { requestedBy } : {}) },
         include: { lines: true },
       })
       if (!requisition)

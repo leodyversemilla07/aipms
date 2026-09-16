@@ -1,5 +1,6 @@
 import "@workspace/env/load"
 
+import { createHash } from "node:crypto"
 import { scim } from "@better-auth/scim"
 import { sso } from "@better-auth/sso"
 import { db } from "@workspace/db"
@@ -37,6 +38,8 @@ export const auth = betterAuth({
 
   database: prismaAdapter(db, {
     provider: "postgresql",
+    // SCIM resource reconciliation must be atomic across identity records.
+    transaction: true,
   }),
 
   emailAndPassword: {
@@ -91,7 +94,50 @@ export const auth = betterAuth({
       // (kind=human, role=user); admins promote roles in-app.
       disableImplicitSignUp: false,
     }),
-    scim(),
+    scim({
+      connections: [],
+      // Keep connection administration in AIPMS while letting the hardened
+      // SCIM 1.7 engine own resource isolation and provisioning semantics.
+      authentication: {
+        async verifyBearerToken({ token }) {
+          const digest = createHash("sha256").update(token).digest("base64url")
+          const storedToken = `sha256:${digest}:${token.slice(-4)}`
+          const connection = await db.scimProvider.findFirst({
+            // Accept a legacy clear-text credential once, then replace it with
+            // its digest so database disclosure cannot reveal bearer tokens.
+            // A stored digest can never itself be replayed as a bearer token.
+            where: {
+              scimToken: {
+                in: token.startsWith("sha256:")
+                  ? [storedToken]
+                  : [storedToken, token],
+              },
+            },
+          })
+          if (!connection) return null
+          if (connection.scimToken !== storedToken) {
+            await db.scimProvider.update({
+              where: { id: connection.id },
+              data: { scimToken: storedToken },
+            })
+          }
+          return {
+            connection: {
+              id: connection.providerId,
+              provisioningDomainId:
+                connection.organizationId ?? connection.providerId,
+            },
+            credentialId: connection.id,
+            scopes: [
+              "scim.users.read",
+              "scim.users.write",
+              "scim.groups.read",
+              "scim.groups.write",
+            ],
+          }
+        },
+      },
+    }),
   ],
 })
 

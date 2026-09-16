@@ -15,7 +15,7 @@ import { requireHumanRole, requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
-import { VendorService } from './vendor.service'
+import { vendorViewSelect, VendorService } from './vendor.service'
 
 const idInput = z.object({ id: z.string().min(1) })
 
@@ -142,7 +142,10 @@ export class VendorRouter {
       },
       async (tx) => {
         const { id, idempotencyKey: _key, ...rest } = input
-        const before = await tx.vendor.findUnique({ where: { id } })
+        const before = await tx.vendor.findUnique({
+          where: { id },
+          select: vendorViewSelect,
+        })
         if (!before) throw new NotFoundException(`Vendor ${id} not found`)
         const vendor = await this.vendor.update(id, rest, tx)
         await this.audit.record(

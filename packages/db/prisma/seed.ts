@@ -44,7 +44,7 @@ async function main() {
           holder: "Acme Office Supplies, Inc.",
         },
         bankAccountVerifiedAt: new Date(),
-        bankAccountChangedAt: new Date(),
+        bankAccountChangedAt: null,
       },
     })
   }

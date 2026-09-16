@@ -1,3 +1,4 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
 import { TRPCError } from '@trpc/server'
 import { auth } from '@workspace/auth'
@@ -114,6 +115,7 @@ export class SsoService {
     }
     await db.$transaction([
       db.account.deleteMany({ where: { providerId } }),
+      db.scimProvider.deleteMany({ where: { providerId } }),
       db.ssoProvider.delete({ where: { providerId } }),
     ])
   }
@@ -124,7 +126,7 @@ export class SsoService {
     })
     return rows.map((row) => ({
       providerId: row.providerId,
-      maskedToken: `${row.scimToken.slice(0, 6)}…${row.scimToken.slice(-4)}`,
+      maskedToken: `••••${row.scimToken.slice(-4)}`,
     }))
   }
 
@@ -133,11 +135,29 @@ export class SsoService {
     ctx: AuthedTrpcContext,
     providerId: string,
   ): Promise<{ providerId: string; scimToken: string }> {
-    const result = await auth.api.generateSCIMToken({
-      body: { providerId },
-      headers: this.requestHeaders(ctx),
+    // Preserve the browser-session boundary even though SCIM 1.7 delegates
+    // bearer verification and credential rotation to the application.
+    this.requestHeaders(ctx)
+    const provider = await db.ssoProvider.findUnique({ where: { providerId } })
+    if (!provider) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Unknown SSO provider: ${providerId}`,
+      })
+    }
+    const scimToken = `aipms_scim_${randomBytes(32).toString('base64url')}`
+    const digest = createHash('sha256').update(scimToken).digest('base64url')
+    const storedToken = `sha256:${digest}:${scimToken.slice(-4)}`
+    await db.scimProvider.upsert({
+      where: { providerId },
+      create: {
+        id: randomUUID(),
+        providerId,
+        scimToken: storedToken,
+      },
+      update: { scimToken: storedToken },
     })
-    return { providerId, scimToken: result.scimToken }
+    return { providerId, scimToken }
   }
 
   /**

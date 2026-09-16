@@ -9,7 +9,11 @@ import { PurchaseOrderService } from '../src/purchase-order/purchase-order.servi
 import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
-import { requireRole } from '../src/trpc/authorize'
+import {
+  assertHumanProcedureRole,
+  HUMAN_PROCEDURE_ROLES,
+  requireRole,
+} from '../src/trpc/authorize'
 
 /**
  * @workspace authorization — §10 roles and approval-route enforcement.
@@ -254,6 +258,73 @@ describe('Approval route enforcement (§10)', () => {
     await expect(
       approvalService.decide(gate.id, 'approve', 'agent-operator', 'nope'),
     ).rejects.toThrow(ForbiddenException)
+  })
+})
+
+describe('requester row-level boundary (§10)', () => {
+  it('limits ordinary requesters to their own requisitions', async () => {
+    const budget = await makeBudget(100_000_000)
+    const own = await makeRequisition(budget.id, 10_000)
+    const other = await requisitionService.create({
+      requestedBy: users.finance,
+      costCenter: `CC-AUTHZ-${suffix}`,
+      budgetId: budget.id,
+      lines: [{ description: 'Other requester', quantity: 1, unitPriceMinor: 1 }],
+    })
+    created.requisition.push(other.id)
+
+    const page = await requisitionService.list({
+      page: 1,
+      pageSize: 100,
+      requestedBy: users.plain,
+    })
+    expect(page.rows.map((row) => row.id)).toContain(own.id)
+    expect(page.rows.map((row) => row.id)).not.toContain(other.id)
+    await expect(
+      requisitionService.detail(other.id, users.plain),
+    ).rejects.toThrow()
+    await expect(
+      requisitionService.submit(other.id, undefined, users.plain),
+    ).rejects.toThrow()
+  })
+})
+
+describe('central human procedure policy (§10)', () => {
+  it('covers the complete current tRPC surface', () => {
+    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(97)
+  })
+
+  it('grants procurement and finance capabilities without conflating them', () => {
+    expect(() =>
+      assertHumanProcedureRole('vendor.create', 'procurement'),
+    ).not.toThrow()
+    expect(() =>
+      assertHumanProcedureRole('paymentRun.approve', 'finance'),
+    ).not.toThrow()
+    expect(() =>
+      assertHumanProcedureRole('vendor.create', 'finance'),
+    ).toThrow(TRPCError)
+    expect(() =>
+      assertHumanProcedureRole('paymentRun.approve', 'procurement'),
+    ).toThrow(TRPCError)
+  })
+
+  it('limits ordinary users and denies unclassified procedures by default', () => {
+    expect(() =>
+      assertHumanProcedureRole('requisition.create', 'user'),
+    ).not.toThrow()
+    expect(() => assertHumanProcedureRole('invoice.list', 'user')).toThrow(
+      TRPCError,
+    )
+    expect(() =>
+      assertHumanProcedureRole('newRouter.unreviewed', 'admin'),
+    ).toThrow(TRPCError)
+  })
+
+  it('lets admins use every classified procedure', () => {
+    for (const path of Object.keys(HUMAN_PROCEDURE_ROLES)) {
+      expect(() => assertHumanProcedureRole(path, 'admin')).not.toThrow()
+    }
   })
 })
 

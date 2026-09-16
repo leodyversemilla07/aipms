@@ -27,23 +27,38 @@ function Dashboard() {
   const trpc = useTRPC()
   const { data: session } = authClient.useSession()
   const user = session?.user
+  const me = useQuery(trpc.users.me.queryOptions())
+  const role = me.data?.role
+  const isSupervisor =
+    role === "procurement" || role === "finance" || role === "admin"
+  const isFinance = role === "finance" || role === "admin"
 
-  const pending = useQuery(trpc.approval.pendingList.queryOptions())
+  const pending = useQuery({
+    ...trpc.approval.pendingList.queryOptions(),
+    enabled: isSupervisor,
+  })
   const requisitions = useQuery(
     trpc.requisition.list.queryOptions({ q: "", page: 1, pageSize: 1 })
   )
-  const orders = useQuery(
-    trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 1 })
-  )
-  const invoices = useQuery(
-    trpc.invoice.list.queryOptions({ q: "", page: 1, pageSize: 1 })
-  )
-  const runs = useQuery(
-    trpc.paymentRun.list.queryOptions({ q: "", page: 1, pageSize: 1 })
-  )
+  const orders = useQuery({
+    ...trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 1 }),
+    enabled: isSupervisor,
+  })
+  const invoices = useQuery({
+    ...trpc.invoice.list.queryOptions({ q: "", page: 1, pageSize: 1 }),
+    enabled: isFinance,
+  })
+  const runs = useQuery({
+    ...trpc.paymentRun.list.queryOptions({ q: "", page: 1, pageSize: 1 }),
+    enabled: isFinance,
+  })
 
   const size = (d: unknown): number => {
     if (Array.isArray(d)) return d.length
+    if (d && typeof d === "object" && "total" in d) {
+      const total = (d as { total?: unknown }).total
+      if (typeof total === "number") return total
+    }
     if (
       d &&
       typeof d === "object" &&
@@ -69,51 +84,63 @@ function Dashboard() {
           </p>
         </div>
         <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/procurement"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Procurement
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance
-          </Link>
-          <Link
-            href="/audit"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Audit
-          </Link>
-          <Link
-            href="/intake"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Intake
-          </Link>
-          <Link
-            href="/master-data"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Master data
-          </Link>
+          {isSupervisor && (
+            <Link
+              href="/procurement"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Procurement
+            </Link>
+          )}
+          {isFinance && (
+            <Link
+              href="/finance"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Finance
+            </Link>
+          )}
+          {isFinance && (
+            <Link
+              href="/audit"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Audit
+            </Link>
+          )}
+          {isFinance && (
+            <Link
+              href="/intake"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Intake
+            </Link>
+          )}
+          {isSupervisor && (
+            <Link
+              href="/master-data"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Master data
+            </Link>
+          )}
           <SignOutButton />
         </nav>
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatCard label="Approvals" value={count(pending)} />
+        {isSupervisor && (
+          <StatCard label="Approvals" value={count(pending)} />
+        )}
         <StatCard label="Requisitions" value={count(requisitions)} />
-        <StatCard label="POs" value={count(orders)} />
-        <StatCard label="Invoices" value={count(invoices)} />
-        <StatCard label="Pay runs" value={count(runs)} />
+        {isSupervisor && <StatCard label="POs" value={count(orders)} />}
+        {isFinance && <StatCard label="Invoices" value={count(invoices)} />}
+        {isFinance && <StatCard label="Pay runs" value={count(runs)} />}
       </div>
 
-      <AgentRuns />
-      <AnalyticsPanel />
-      <ExceptionQueue />
+      {isSupervisor && <AgentRuns />}
+      {isSupervisor && <AnalyticsPanel />}
+      {isSupervisor && <ExceptionQueue />}
       <CreateRequisition />
     </div>
   )

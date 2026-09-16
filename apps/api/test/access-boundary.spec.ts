@@ -68,7 +68,16 @@ describe('Enrollment, vendor authority, and agent quotas over HTTP', () => {
       cookies.set(role, headers.map((value) => value.split(';')[0]).join('; '))
     }
     const vendor = await db.vendor.create({
-      data: { name: `${prefix}-vendor`, status: 'blacklisted' },
+      data: {
+        name: `${prefix}-vendor`,
+        status: 'blacklisted',
+        bankAccount: {
+          bank: 'Boundary Bank',
+          holder: `${prefix}-vendor`,
+          accountNumber: '9988776655',
+        },
+        bankAccountVerifiedAt: new Date(),
+      },
     })
     vendorId = vendor.id
   }, 30_000)
@@ -185,9 +194,24 @@ describe('Enrollment, vendor authority, and agent quotas over HTTP', () => {
         })
         expect(audit?.actorKind).toBe('human')
         expect(audit?.after).toMatchObject({ status })
+        expect(audit?.before).not.toHaveProperty('bankAccount')
+        expect(audit?.after).not.toHaveProperty('bankAccount')
       }
     },
   )
+
+  it('redacts beneficiary account data from every authorized vendor reader', async () => {
+    for (const role of ['procurement', 'finance'] as const) {
+      const response = await request(app.getHttpServer())
+        .get(
+          `/api/trpc/vendor.detail?input=${encodeURIComponent(JSON.stringify({ id: vendorId }))}`,
+        )
+        .set('Cookie', cookies.get(role) ?? '')
+      expect(response.status).toBe(200)
+      expect(JSON.stringify(response.body)).not.toContain('9988776655')
+      expect(response.body.result.data).not.toHaveProperty('bankAccount')
+    }
+  })
 
   it('uses the current database role after a role is revoked', async () => {
     const email = `${prefix}-procurement@test.aipms`

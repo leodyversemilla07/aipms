@@ -107,7 +107,35 @@ describe('SSO management surface', () => {
     expect(JSON.stringify(rows)).not.toContain('super-secret')
   })
 
-  it('deletes a provider together with its linked accounts', async () => {
+  it('stores newly minted SCIM credentials as one-way digests', async () => {
+    await db.ssoProvider.create({
+      data: {
+        id: 'sp-token',
+        issuer: 'https://idp.company.ph',
+        domain: 'company.ph',
+        userId: 'user-1',
+        providerId: 'company-okta',
+      },
+    })
+
+    const service = new SsoService()
+    const minted = await service.generateScimToken(
+      ctx({ role: 'admin', req: { headers: {} } as never }),
+      'company-okta',
+    )
+    const stored = await db.scimProvider.findUniqueOrThrow({
+      where: { providerId: 'company-okta' },
+    })
+
+    expect(minted.scimToken).toMatch(/^aipms_scim_/)
+    expect(stored.scimToken).toMatch(/^sha256:/)
+    expect(stored.scimToken).not.toContain(minted.scimToken)
+    expect((await service.listScimConnections())[0]?.maskedToken).toBe(
+      `••••${minted.scimToken.slice(-4)}`,
+    )
+  })
+
+  it('deletes a provider together with its linked accounts and SCIM credential', async () => {
     await db.user.create({
       data: { id: 'sso-user', name: 'IdP User', email: 'sso-user@company.ph' },
     })
@@ -128,6 +156,13 @@ describe('SSO management surface', () => {
         providerId: 'company-okta',
       },
     })
+    await db.scimProvider.create({
+      data: {
+        id: 'scim-2',
+        providerId: 'company-okta',
+        scimToken: 'sha256:test:last',
+      },
+    })
 
     const service = new SsoService()
     await service.deleteProvider('company-okta')
@@ -138,6 +173,11 @@ describe('SSO management surface', () => {
       }),
     ).toBeNull()
     expect(await db.account.findUnique({ where: { id: 'acc-1' } })).toBeNull()
+    expect(
+      await db.scimProvider.findUnique({
+        where: { providerId: 'company-okta' },
+      }),
+    ).toBeNull()
 
     await db.user.delete({ where: { id: 'sso-user' } })
   })

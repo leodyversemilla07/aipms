@@ -29,6 +29,10 @@ model User {
 
   sessions Session[]
   accounts Account[]
+  scimIdentityTombstones ScimIdentityTombstone[]
+  scimSubject            ScimSubject?
+  scimUsers              ScimUser[]
+  scimProjectionGrants   ScimProjectionGrant[]
 
   @@unique([email])
   @@map("user")
@@ -810,8 +814,9 @@ model SsoProvider {
   @@map("ssoProvider")
 }
 
-// SCIM provisioning connection (IdP → aipms user sync). The scimToken is the
-// bearer credential the IdP presents to /api/auth/scim/v2/*.
+// SCIM provisioning connection (IdP → aipms user sync). scimToken stores a
+// one-way digest plus display suffix of the bearer credential presented to
+// /api/auth/scim/v2/*; legacy clear-text values upgrade on first use.
 model ScimProvider {
   id             String  @id
   providerId     String  @unique
@@ -819,4 +824,147 @@ model ScimProvider {
   organizationId String?
 
   @@map("scimProvider")
+}
+
+// Better Auth SCIM 1.7 keeps provisioned identities isolated by connection
+// rather than treating them as unscoped authentication accounts.
+model ScimConnectionBinding {
+  id                              String    @id
+  connectionId                    String
+  connectionKey                   String    @unique
+  provisioningDomainId            String
+  createdAt                       DateTime
+  decommissionedAt                DateTime?
+  decommissionStatus              String    @default("active")
+  decommissionCursorUserId        String?
+  decommissionReconciledUserCount Int       @default(0)
+  decommissionBatchCount          Int       @default(0)
+  decommissionRevision            Int       @default(0)
+  decommissionCompletedAt         DateTime?
+  decommissionLeaseId             String?
+  decommissionLeaseExpiresAt      DateTime?
+
+  @@index([connectionId])
+  @@map("scimConnectionBinding")
+}
+
+model ScimIdentityTombstone {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  externalId           String
+  externalIdKey        String   @unique
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile              String
+  deletedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scimIdentityTombstone")
+}
+
+model ScimSubject {
+  id              String   @id
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileSourceId String?
+  revision        Int
+  createdAt       DateTime
+  updatedAt       DateTime
+
+  @@index([profileSourceId])
+  @@map("scimSubject")
+}
+
+model ScimUser {
+  id                   String                @id
+  connectionId         String
+  provisioningDomainId String
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionUserKey    String                @unique
+  userName             String
+  userNameKey          String                @unique
+  primaryEmail         String
+  workEmailValueIndex  String
+  emailValueIndex      String
+  displayName          String
+  formattedName        String
+  givenName            String?
+  familyName           String?
+  serializedEmails     String
+  serializedAttributes String?
+  externalId           String?
+  externalIdKey        String?               @unique
+  active               Boolean
+  orderKey             String                @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  projectionGrants     ScimProjectionGrant[]
+  groupMembers         ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scimUser")
+}
+
+model ScimProjectionGrant {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  scimUserId           String
+  scimUser             ScimUser @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKind           String
+  sourceId             String
+  sourceValue          String?
+  role                 String
+  grantKey             String   @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([scimUserId])
+  @@index([userId])
+  @@map("scimProjectionGrant")
+}
+
+model ScimGroup {
+  id                   String            @id
+  connectionId         String
+  provisioningDomainId String
+  revision             Int               @default(0)
+  displayName          String
+  displayNameKey       String            @unique
+  externalId           String?
+  externalIdKey        String?           @unique
+  orderKey             String            @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  members              ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@map("scimGroup")
+}
+
+model ScimGroupMember {
+  id            String    @id
+  connectionId  String
+  groupId       String
+  group         ScimGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  scimUserId    String
+  scimUser      ScimUser  @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  membershipKey String    @unique
+  createdAt     DateTime
+
+  @@index([connectionId])
+  @@index([groupId])
+  @@index([scimUserId])
+  @@map("scimGroupMember")
 }

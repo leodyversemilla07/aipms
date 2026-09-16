@@ -35,4 +35,29 @@ describe('VendorService', () => {
     expect(updated.status).toBe('blacklisted')
     expect(updated.blacklistReason).toBe('Failed delivery twice')
   })
+
+  it('never exposes beneficiary account details through vendor reads', async () => {
+    const stored = await db.vendor.create({
+      data: {
+        name: `Banked Vendor ${suffix}`,
+        status: 'active',
+        bankAccount: {
+          bank: 'Example Bank',
+          accountName: 'Banked Vendor',
+          accountNumber: '000011112222',
+        },
+        bankAccountVerifiedAt: new Date(),
+      },
+    })
+    vendorIds.push(stored.id)
+
+    const detail = await vendor.detail(stored.id)
+    const listed = await vendor.list({ page: 1, pageSize: 100 })
+    const row = listed.rows.find((candidate) => candidate.id === stored.id)
+
+    expect(detail).not.toHaveProperty('bankAccount')
+    expect(row).toBeDefined()
+    expect(row).not.toHaveProperty('bankAccount')
+    expect(detail.bankAccountVerifiedAt).toBeInstanceOf(Date)
+  })
 })

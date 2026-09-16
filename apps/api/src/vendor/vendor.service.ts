@@ -21,9 +21,35 @@ export interface UpdateVendor {
   blacklistReason?: string | null
 }
 
+/**
+ * Safe vendor DTO shared by every browser-facing vendor operation. Beneficiary
+ * account numbers are intentionally absent; payment services read them through
+ * their internal database boundary and the UI only receives verification state.
+ */
+export const vendorViewSelect = {
+  id: true,
+  name: true,
+  status: true,
+  email: true,
+  taxId: true,
+  paymentTermsDays: true,
+  ratingScore: true,
+  qualifiedEntityClass: true,
+  blacklistReason: true,
+  contactChannels: true,
+  bankAccountVerifiedAt: true,
+  bankAccountChangedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.VendorSelect
+
+export type VendorView = Prisma.VendorGetPayload<{
+  select: typeof vendorViewSelect
+}>
+
 @Injectable()
 export class VendorService {
-  list(input: ListInput): Promise<ListResult<Prisma.VendorGetPayload<object>>> {
+  list(input: ListInput): Promise<ListResult<VendorView>> {
     const { skip, take } = paginate(input)
     const where: Prisma.VendorWhereInput = input.q
       ? {
@@ -45,13 +71,22 @@ export class VendorService {
     )[input.sort] ?? { createdAt: input.dir }
 
     return Promise.all([
-      db.vendor.findMany({ where: where, skip, take, orderBy }),
+      db.vendor.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        select: vendorViewSelect,
+      }),
       db.vendor.count({ where }),
     ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
   async detail(id: string) {
-    const vendor = await db.vendor.findUnique({ where: { id } })
+    const vendor = await db.vendor.findUnique({
+      where: { id },
+      select: vendorViewSelect,
+    })
     if (!vendor) throw new NotFoundException(`Vendor ${id} not found`)
     return vendor
   }
@@ -82,6 +117,7 @@ export class VendorService {
         bankAccountVerifiedAt: new Date(),
         bankAccountChangedAt: changed ? new Date() : null,
       },
+      select: vendorViewSelect,
     })
   }
 
@@ -95,6 +131,7 @@ export class VendorService {
         ratingScore: input.ratingScore ?? null,
         status: input.status ?? 'prospective',
       },
+      select: vendorViewSelect,
     })
   }
 
@@ -122,6 +159,7 @@ export class VendorService {
           blacklistReason: input.blacklistReason,
         }),
       },
+      select: vendorViewSelect,
     })
   }
 }
