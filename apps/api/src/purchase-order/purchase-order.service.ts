@@ -39,6 +39,78 @@ function isSequentialNumberRace(error: unknown): boolean {
   )
 }
 
+function linesFromAwardedQuote(
+  quote: { id: string; totalMinor: number | null; lines: Prisma.JsonValue },
+  currencyCode: string,
+) {
+  if (quote.totalMinor == null) {
+    throw new ConflictException('Accepted quote has no commercial total')
+  }
+  const totalMinor = assertDatabaseInt(
+    quote.totalMinor,
+    'Accepted quote total',
+  )
+  if (totalMinor <= 0) {
+    throw new BadRequestException('Accepted quote total must be positive')
+  }
+  if (!Array.isArray(quote.lines) || quote.lines.length === 0) {
+    return [
+      {
+        lineNo: 1,
+        sku: null,
+        description: `Awarded quote ${quote.id}`,
+        quantity: 1,
+        unit: 'ea',
+        unitPriceMinor: totalMinor,
+        currencyCode,
+        lineTotalMinor: totalMinor,
+      },
+    ]
+  }
+
+  const lines = quote.lines.map((value, index) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new BadRequestException('Accepted quote contains invalid lines')
+    }
+    const line = value as Record<string, unknown>
+    const amountMinor = assertDatabaseInt(
+      Number(line.amountMinor),
+      `Accepted quote line ${index + 1} amount`,
+    )
+    const suppliedQuantity = Number(line.quantity)
+    const suppliedUnitPrice = Number(line.unitPriceMinor)
+    const useSuppliedBreakdown =
+      Number.isSafeInteger(suppliedQuantity) &&
+      suppliedQuantity > 0 &&
+      Number.isSafeInteger(suppliedUnitPrice) &&
+      suppliedUnitPrice >= 0 &&
+      suppliedQuantity * suppliedUnitPrice === amountMinor
+    return {
+      lineNo: index + 1,
+      sku: typeof line.sku === 'string' ? line.sku : null,
+      description:
+        typeof line.description === 'string' && line.description.trim()
+          ? line.description.trim()
+          : `Awarded quote line ${index + 1}`,
+      quantity: useSuppliedBreakdown ? suppliedQuantity : 1,
+      unit: 'ea',
+      unitPriceMinor: useSuppliedBreakdown ? suppliedUnitPrice : amountMinor,
+      currencyCode,
+      lineTotalMinor: amountMinor,
+    }
+  })
+  const lineTotal = assertDatabaseInt(
+    lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
+    'Accepted quote line total',
+  )
+  if (lineTotal !== totalMinor) {
+    throw new BadRequestException(
+      'Accepted quote lines do not equal its commercial total',
+    )
+  }
+  return lines
+}
+
 @Injectable()
 export class PurchaseOrderService {
   constructor(
@@ -142,6 +214,25 @@ export class PurchaseOrderService {
       })
       if (existing)
         throw new ConflictException('Requisition already has a purchase order')
+
+      const sourcingQuotes = await tx.quote.findMany({
+        where: { requisitionId: requisition.id },
+      })
+      const acceptedQuotes = sourcingQuotes.filter(
+        (quote) => quote.status === 'accepted',
+      )
+      if (sourcingQuotes.length > 0 && acceptedQuotes.length !== 1) {
+        throw new ConflictException(
+          'Sourced requisition requires exactly one accepted quote before PO issue',
+        )
+      }
+      const awardedQuote = acceptedQuotes[0] ?? null
+      if (awardedQuote && awardedQuote.vendorId !== input.vendorId) {
+        throw new ConflictException(
+          'PO vendor must match the vendor on the accepted quote',
+        )
+      }
+
       await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${input.vendorId} FOR UPDATE`
       const vendor = await tx.vendor.findUnique({
         where: { id: input.vendorId },
@@ -154,19 +245,29 @@ export class PurchaseOrderService {
         throw new ConflictException(vendorDecision.reason)
       }
       if (vendorDecision.outcome === 'NEED_APPROVAL') {
-        await tx.approval.create({
-          data: {
+        const existingGate = await tx.approval.findFirst({
+          where: {
             requisitionId: requisition.id,
-            poId: null,
             vendorId: vendor.id,
             kind: 'vendorGate',
-            gateOutcome: 'NEED_APPROVAL',
-            route: (vendorDecision.approvers ?? []) as string[],
-            citations: vendorDecision.citations as string[],
             status: 'pending',
-            evidence: vendorDecision.reason,
           },
         })
+        if (!existingGate) {
+          await tx.approval.create({
+            data: {
+              requisitionId: requisition.id,
+              poId: null,
+              vendorId: vendor.id,
+              kind: 'vendorGate',
+              gateOutcome: 'NEED_APPROVAL',
+              route: (vendorDecision.approvers ?? []) as string[],
+              citations: vendorDecision.citations as string[],
+              status: 'pending',
+              evidence: vendorDecision.reason,
+            },
+          })
+        }
         return {
           outcome: 'NEED_APPROVAL',
           vendorId: vendor.id,
@@ -192,9 +293,33 @@ export class PurchaseOrderService {
           'Requisition currency must match its budget currency',
         )
       }
+      if (
+        awardedQuote &&
+        normalizeCurrencyCode(awardedQuote.currencyCode, 'Accepted quote currency') !==
+          currencyCode
+      ) {
+        throw new BadRequestException(
+          'Accepted quote currency must match the requisition and budget',
+        )
+      }
 
+      const poLines = awardedQuote
+        ? linesFromAwardedQuote(awardedQuote, currencyCode)
+        : requisition.lines.map((line, i) => ({
+            lineNo: i + 1,
+            sku: line.sku,
+            description: line.description,
+            quantity: line.quantity,
+            unit: line.unit,
+            unitPriceMinor: line.unitPriceMinor,
+            currencyCode: normalizeCurrencyCode(
+              line.currencyCode,
+              `Requisition line ${i + 1} currency`,
+            ),
+            lineTotalMinor: line.lineTotalMinor,
+          }))
       const totalMinor = assertDatabaseInt(
-        requisition.lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
+        poLines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
         'Purchase order total',
       )
       if (
@@ -220,6 +345,7 @@ export class PurchaseOrderService {
         data: {
           poNumber,
           requisitionId: requisition.id,
+          awardedQuoteId: awardedQuote?.id ?? null,
           vendorId: vendor.id,
           status: 'issued',
           currencyCode,
@@ -227,21 +353,7 @@ export class PurchaseOrderService {
           terms: input.terms as Prisma.InputJsonValue | undefined,
           issuedBy: actorId,
           issuedAt: new Date(),
-          lines: {
-            create: requisition.lines.map((line, i) => ({
-              lineNo: i + 1,
-              sku: line.sku,
-              description: line.description,
-              quantity: line.quantity,
-              unit: line.unit,
-              unitPriceMinor: line.unitPriceMinor,
-              currencyCode: normalizeCurrencyCode(
-                line.currencyCode,
-                `Requisition line ${i + 1} currency`,
-              ),
-              lineTotalMinor: line.lineTotalMinor,
-            })),
-          },
+          lines: { create: poLines },
         },
         include: { lines: true },
       })
@@ -256,7 +368,12 @@ export class PurchaseOrderService {
           type: 'po.issued',
           entityType: 'PurchaseOrder',
           entityId: purchaseOrder.id,
-          payload: { poNumber, vendorId: vendor.id, totalMinor },
+          payload: {
+            poNumber,
+            vendorId: vendor.id,
+            awardedQuoteId: awardedQuote?.id ?? null,
+            totalMinor,
+          },
         },
         tx,
       )

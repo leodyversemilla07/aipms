@@ -179,6 +179,7 @@ const appRouter = t.router({
   status: z.enum(['posted', 'rejected']),
   externalRef: z.string().min(1).max(100).optional(),
   rejectedReason: z.string().min(1).max(500).optional(),
+  resolveDispatchClaim: z.boolean().optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["acknowledge"]>>),
     ingestVendors: publicProcedure

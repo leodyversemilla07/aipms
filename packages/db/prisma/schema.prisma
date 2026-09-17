@@ -407,6 +407,8 @@ model PurchaseOrder {
   id            String   @id @default(cuid())
   poNumber      String   @unique
   requisitionId String?
+  awardedQuoteId String?  @unique
+  awardedQuote   Quote?   @relation(fields: [awardedQuoteId], references: [id], onDelete: Restrict)
   vendorId      String
   status        PoStatus @default(draft)
   currencyCode  String   @default("PHP")
@@ -527,9 +529,13 @@ model ErpJournalExport {
   currencyCode   String    @default("PHP")
   status         String    @default("exported") // exported | posted | rejected
   externalRef    String?
-  rejectedReason String?
-  acknowledgedAt DateTime?
-  exportedBy     String
+  rejectedReason   String?
+  acknowledgedAt  DateTime?
+  dispatchClaimId  String?   @unique
+  dispatchClaimedBy String?
+  dispatchStartedAt DateTime?
+  dispatchFailure  String?
+  exportedBy       String
   exportedAt     DateTime  @default(now())
 
   @@map("erpJournalExport")
@@ -789,6 +795,7 @@ model Quote {
   payload       Json? // full offer as received (tamper-evident context for award)
   awardedAt     DateTime?
   rejectedReason String?
+  purchaseOrder PurchaseOrder?
   requestedBy   String
   createdBy     String
   createdAt     DateTime    @default(now())

@@ -231,6 +231,44 @@ describe('ERP artifacts across reconciliation (§8.5)', () => {
     expect(viewed.json).toContain(`PR Vendor frozen ${suffix}`)
   })
 
+  it('retains ambiguous QBO failures for manual acknowledgement', async () => {
+    const vendor = await makeVendorBanked('qbo-failed')
+    const inv = await makeMatchedInvoice(vendor.id, 'qbo-failed')
+    const executed = await makeExecutedRun([inv.id])
+    const exported = await erp.exportRun(executed.id, 'finance-erp')
+    created.erpExport.push(exported.export.id)
+
+    const ready = await erp.prepareQboPush(
+      exported.export.id,
+      'finance-qbo',
+    )
+    const failed = await erp.markQboPushFailed(
+      exported.export.id,
+      ready.claimId,
+      'connection reset after write',
+    )
+    expect(failed.dispatchFailure).toMatch(/connection reset/)
+    await expect(
+      erp.prepareQboPush(exported.export.id, 'finance-qbo-2'),
+    ).rejects.toThrow(/ambiguous QBO dispatch/)
+
+    await expect(
+      erp.acknowledge({
+        exportId: exported.export.id,
+        status: 'posted',
+        externalRef: 'QB-MANUAL-1',
+      }),
+    ).rejects.toThrow(/explicit manual resolution/)
+
+    const resolved = await erp.acknowledge({
+      exportId: exported.export.id,
+      status: 'posted',
+      externalRef: 'QB-MANUAL-1',
+      resolveDispatchClaim: true,
+    })
+    expect(resolved.status).toBe('posted')
+  })
+
   it('refuses a second push once the export settles, before any POST', async () => {
     const vendor = await makeVendorBanked('push')
     const inv = await makeMatchedInvoice(vendor.id, 'push')
@@ -238,16 +276,22 @@ describe('ERP artifacts across reconciliation (§8.5)', () => {
     const exported = await erp.exportRun(executed.id, 'finance-erp')
     created.erpExport.push(exported.export.id)
 
-    const ready = await erp.prepareQboPush(exported.export.id)
-    expect(typeof ready.json).toBe('string')
-
-    await erp.acknowledge({
-      exportId: exported.export.id,
-      status: 'posted',
-      externalRef: 'QB-JE-1',
-    })
-    await expect(erp.prepareQboPush(exported.export.id)).rejects.toThrow(
-      /already posted/,
+    const ready = await erp.prepareQboPush(
+      exported.export.id,
+      'finance-qbo',
     )
+    expect(typeof ready.json).toBe('string')
+    await expect(
+      erp.prepareQboPush(exported.export.id, 'finance-qbo-2'),
+    ).rejects.toThrow(/already being pushed/)
+
+    await erp.completeQboPush(
+      exported.export.id,
+      ready.claimId,
+      'QB-JE-1',
+    )
+    await expect(
+      erp.prepareQboPush(exported.export.id, 'finance-qbo-2'),
+    ).rejects.toThrow(/already posted/)
   })
 })

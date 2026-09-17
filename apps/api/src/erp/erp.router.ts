@@ -24,6 +24,7 @@ const acknowledgeInput = z.object({
   status: z.enum(['posted', 'rejected']),
   externalRef: z.string().min(1).max(100).optional(),
   rejectedReason: z.string().min(1).max(500).optional(),
+  resolveDispatchClaim: z.boolean().optional(),
 })
 
 const vendorIngestInput = z.object({
@@ -113,6 +114,7 @@ export class ErpRouter {
           input: {
             status: input.status,
             externalRef: input.externalRef ?? null,
+            resolveDispatchClaim: input.resolveDispatchClaim ?? false,
           },
           after: updated as object,
         },
@@ -245,21 +247,73 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.qboPushExport')
-    const { json, export: row } = await this.erp.prepareQboPush(input.exportId)
-    const { qboJournalEntryId } = await this.qbo.postJournal(json)
-    const acknowledged = await this.erp.acknowledge({
-      exportId: input.exportId,
-      status: 'posted',
-      externalRef: qboJournalEntryId,
+    const { json, export: row, claimId } = await db.$transaction(async (tx) => {
+      const ready = await this.erp.prepareQboPush(
+        input.exportId,
+        ctx.user.id,
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'erp.qbo.pushClaimed',
+          entity: 'PaymentRun',
+          entityId: ready.export.runId,
+          after: { claimId: ready.claimId },
+        },
+        tx,
+      )
+      return ready
     })
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'erp.qbo.pushExport',
-      entity: 'PaymentRun',
-      entityId: (row as { runId: string }).runId,
-      after: { qboJournalEntryId },
+    let qboJournalEntryId: string
+    try {
+      const posted = await this.qbo.postJournal(json)
+      qboJournalEntryId = posted.qboJournalEntryId
+    } catch (error) {
+      const reason =
+        error instanceof Error ? error.message : 'Unknown QBO dispatch failure'
+      await db.$transaction(async (tx) => {
+        await this.erp.markQboPushFailed(
+          input.exportId,
+          claimId,
+          reason,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'erp.qbo.pushFailed',
+            entity: 'PaymentRun',
+            entityId: row.runId,
+            after: { claimId, requiresManualReview: true },
+          },
+          tx,
+        )
+      })
+      throw error
+    }
+
+    return db.$transaction(async (tx) => {
+      const acknowledged = await this.erp.completeQboPush(
+        input.exportId,
+        claimId,
+        qboJournalEntryId,
+        tx,
+      )
+      await this.audit.record(
+        {
+          actorId: ctx.user.id,
+          actorKind: ctx.actorKind,
+          action: 'erp.qbo.pushExport',
+          entity: 'PaymentRun',
+          entityId: row.runId,
+          after: { claimId, qboJournalEntryId },
+        },
+        tx,
+      )
+      return acknowledged
     })
-    return acknowledged
   }
 }

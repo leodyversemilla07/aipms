@@ -20,6 +20,7 @@ const actorId = `test-user-${suffix}`
 const created: Record<string, string[]> = {
   requisition: [],
   po: [],
+  quote: [],
   approval: [],
   budget: [],
   vendor: [],
@@ -55,6 +56,7 @@ afterAll(async () => {
   await db.user.deleteMany({ where: { id: actorId } })
   await db.approval.deleteMany({ where: { id: { in: created.approval } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
+  await db.quote.deleteMany({ where: { id: { in: created.quote } } })
   await db.requisition.deleteMany({
     where: { id: { in: created.requisition } },
   })
@@ -163,6 +165,64 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     expect((await purchaseOrderService.detail(confirmed.id)).status).toBe(
       'cancelled',
     )
+  })
+})
+
+describe('Awarded quote traceability', () => {
+  it('requires the awarded vendor and uses the accepted commercial total', async () => {
+    await makeThresholdPolicy(500_000)
+    const budget = await makeBudget(100_000_000)
+    const awardedVendor = await makeVendor('active')
+    const otherVendor = await makeVendor('active')
+    const req = await makeApprovedRequisition(budget.id, 125_000)
+
+    const quote = await db.quote.create({
+      data: {
+        requisitionId: req.id,
+        vendorId: awardedVendor.id,
+        status: 'accepted',
+        totalMinor: 110_000,
+        currencyCode: 'PHP',
+        lines: [
+          {
+            description: 'Awarded equipment',
+            quantity: 2,
+            unitPriceMinor: 55_000,
+            amountMinor: 110_000,
+          },
+        ],
+        awardedAt: new Date(),
+        requestedBy: actorId,
+        createdBy: actorId,
+      },
+    })
+    created.quote.push(quote.id)
+
+    await expect(
+      purchaseOrderService.issue(
+        { requisitionId: req.id, vendorId: otherVendor.id },
+        actorId,
+      ),
+    ).rejects.toThrow(/accepted quote/)
+
+    const issued = await purchaseOrderService.issue(
+      { requisitionId: req.id, vendorId: awardedVendor.id },
+      actorId,
+    )
+    expect(issued.outcome).toBe('ISSUED')
+    if (issued.outcome !== 'ISSUED') throw new Error('expected issued PO')
+    created.po.push(issued.purchaseOrder.id)
+    expect(issued.purchaseOrder.awardedQuoteId).toBe(quote.id)
+    expect(issued.purchaseOrder.totalMinor).toBe(110_000)
+    expect(issued.purchaseOrder.lines).toMatchObject([
+      {
+        description: 'Awarded equipment',
+        quantity: 2,
+        unitPriceMinor: 55_000,
+        lineTotalMinor: 110_000,
+      },
+    ])
+    expect((await budgetService.detail(budget.id)).committedMinor).toBe(110_000)
   })
 })
 
