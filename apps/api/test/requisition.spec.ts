@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ApprovalService } from '../src/approval/approval.service'
@@ -100,6 +101,58 @@ async function makeRequisition(budgetId: string, totalMinor: number) {
   created.requisition.push(req.id)
   return req
 }
+
+describe('Currency integrity', () => {
+  it('rejects mixed-currency requisitions', async () => {
+    await expect(
+      requisitionService.create({
+        requestedBy: actorId,
+        costCenter: `CC-${suffix}`,
+        lines: [
+          {
+            description: 'PHP line',
+            quantity: 1,
+            unitPriceMinor: 100,
+            currencyCode: 'PHP',
+          },
+          {
+            description: 'USD line',
+            quantity: 1,
+            unitPriceMinor: 100,
+            currencyCode: 'USD',
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it('rejects requisitions whose currency differs from the budget', async () => {
+    const budget = await budgetService.create({
+      name: `USD Req ${suffix}`,
+      costCenter: `USD-${suffix}`,
+      period: '2026-01',
+      currencyCode: 'USD',
+      limitMinor: 100_000,
+    })
+    created.budget.push(budget.id)
+
+    await expect(
+      requisitionService.create({
+        requestedBy: actorId,
+        costCenter: budget.costCenter,
+        budgetId: budget.id,
+        lines: [
+          {
+            description: 'PHP line',
+            quantity: 1,
+            unitPriceMinor: 100,
+            currencyCode: 'php',
+          },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException)
+  })
+})
 
 describe('Threshold gate (human approval)', () => {
   it('routes above-threshold spend to a pending approval; approve unlocks', async () => {

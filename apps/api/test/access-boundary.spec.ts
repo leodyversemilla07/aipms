@@ -77,6 +77,7 @@ describe('Enrollment, vendor authority, and agent quotas over HTTP', () => {
           accountNumber: '9988776655',
         },
         bankAccountVerifiedAt: new Date(),
+        bankAccountVerifiedBy: 'finance-checker',
       },
     })
     vendorId = vendor.id

@@ -182,6 +182,7 @@ export class VendorRouter {
       const vendor = await this.vendor.verifyBankAccount(
         input.id,
         input.bankAccount,
+        ctx.user.id,
         tx,
       )
       await this.audit.record(

@@ -59,11 +59,13 @@ async function makeVendorBanked(tag: string) {
     data: { name: `PR Vendor ${tag} ${suffix}`, status: 'active' },
   })
   created.vendor.push(vendor.id)
-  await vendors.verifyBankAccount(vendor.id, {
+  const account = {
     bank: 'BDO',
     holder: `PR Vendor ${tag} ${suffix}`,
     accountNo: `pr-${tag}-${suffix}`.slice(0, 20),
-  })
+  }
+  await vendors.verifyBankAccount(vendor.id, account, `${maker}-bank-maker`)
+  await vendors.verifyBankAccount(vendor.id, account, `${maker}-bank-checker`)
   return vendor
 }
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,7 +8,11 @@ import { db, Prisma } from '@workspace/db'
 import { evaluateVendorGate } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { assertDatabaseInt } from '../shared/money/minor-units'
+import {
+  assertDatabaseInt,
+  assertSingleCurrency,
+  normalizeCurrencyCode,
+} from '../shared/money/minor-units'
 import { paginate } from '../trpc/list-input'
 
 export type PurchaseOrderWith = Prisma.PurchaseOrderGetPayload<{
@@ -175,6 +180,19 @@ export class PurchaseOrderService {
       })
       if (!budget) throw new NotFoundException('Budget not found')
 
+      const currencyCode = assertSingleCurrency(
+        requisition.lines.map((line) => line.currencyCode),
+        'Requisition lines',
+      )
+      if (
+        normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+        currencyCode
+      ) {
+        throw new BadRequestException(
+          'Requisition currency must match its budget currency',
+        )
+      }
+
       const totalMinor = assertDatabaseInt(
         requisition.lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
         'Purchase order total',
@@ -204,7 +222,7 @@ export class PurchaseOrderService {
           requisitionId: requisition.id,
           vendorId: vendor.id,
           status: 'issued',
-          currencyCode: budget.currencyCode,
+          currencyCode,
           totalMinor,
           terms: input.terms as Prisma.InputJsonValue | undefined,
           issuedBy: actorId,
@@ -217,7 +235,10 @@ export class PurchaseOrderService {
               quantity: line.quantity,
               unit: line.unit,
               unitPriceMinor: line.unitPriceMinor,
-              currencyCode: line.currencyCode,
+              currencyCode: normalizeCurrencyCode(
+                line.currencyCode,
+                `Requisition line ${i + 1} currency`,
+              ),
               lineTotalMinor: line.lineTotalMinor,
             })),
           },

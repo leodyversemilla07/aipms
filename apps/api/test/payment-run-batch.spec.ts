@@ -208,7 +208,9 @@ describe('generateBatch integration (approved run hand-off)', () => {
           holder: 'Batch Vendor Co',
         },
         bankAccountVerifiedAt: new Date(),
+        bankAccountVerifiedBy: 'finance-checker',
         bankAccountChangedAt: null,
+        bankAccountSubmittedBy: null,
       },
     })
     created.vendor.push(vendor.id)
@@ -268,7 +270,9 @@ describe('generateBatch integration (approved run hand-off)', () => {
           holder: 'Changed',
         },
         bankAccountVerifiedAt: null,
+        bankAccountVerifiedBy: null,
         bankAccountChangedAt: new Date(),
+        bankAccountSubmittedBy: 'finance-maker',
       },
     })
     await runs.execute(runId, actorB)

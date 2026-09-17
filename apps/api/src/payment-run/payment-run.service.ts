@@ -80,7 +80,9 @@ export class PaymentRunService {
       (vendor) =>
         vendor.bankAccount == null ||
         vendor.bankAccountVerifiedAt == null ||
-        vendor.bankAccountChangedAt != null,
+        vendor.bankAccountVerifiedBy == null ||
+        vendor.bankAccountChangedAt != null ||
+        vendor.bankAccountSubmittedBy != null,
     )
     if (unverified.length > 0) {
       throw new BadRequestException(

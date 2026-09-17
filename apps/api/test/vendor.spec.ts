@@ -47,6 +47,7 @@ describe('VendorService', () => {
           accountNumber: '000011112222',
         },
         bankAccountVerifiedAt: new Date(),
+        bankAccountVerifiedBy: 'finance-checker',
       },
     })
     vendorIds.push(stored.id)

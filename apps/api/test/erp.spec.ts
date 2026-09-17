@@ -64,9 +64,11 @@ async function makeExecutedRun(tag: string) {
         holder: `ERP Vendor ${suffix}`,
       },
       bankAccountVerifiedAt: new Date(),
+      bankAccountVerifiedBy: 'finance-checker',
       // Fresh account = verified at creation; a *change* would force
       // re-verification (§8.6), so changedAt stays null.
       bankAccountChangedAt: null,
+      bankAccountSubmittedBy: null,
     },
   })
   created.vendor.push(vendor.id)
@@ -183,7 +185,9 @@ describe('ErpService', () => {
           holder: 'Draft-only Co',
         },
         bankAccountVerifiedAt: new Date(),
+        bankAccountVerifiedBy: 'finance-checker',
         bankAccountChangedAt: null,
+        bankAccountSubmittedBy: null,
       },
     })
     created.vendor.push(vendor.id)

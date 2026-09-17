@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { db, Prisma, type VendorStatus } from '@workspace/db'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
@@ -47,6 +52,17 @@ export type VendorView = Prisma.VendorGetPayload<{
   select: typeof vendorViewSelect
 }>
 
+function normalizeBankAccount(value: unknown) {
+  const account = value as Record<string, unknown>
+  return {
+    bank: String(account.bank ?? '').trim(),
+    accountNumber: String(
+      account.accountNumber ?? account.accountNo ?? '',
+    ).trim(),
+    holder: String(account.holder ?? '').trim(),
+  }
+}
+
 @Injectable()
 export class VendorService {
   list(input: ListInput): Promise<ListResult<VendorView>> {
@@ -92,33 +108,72 @@ export class VendorService {
   }
 
   /**
-   * §8.6 beneficiary bank-account control. Recording an account marks it
-   * verified; a later change (new account payload) clears that stamp so the
-   * payment service refuses to plan it until it is re-verified.
+   * §8.6 beneficiary maker/checker control. The first finance principal
+   * submits an account and makes it non-payable. A different finance principal
+   * must submit the identical normalized account to verify it.
    */
   async verifyBankAccount(
     vendorId: string,
     bankAccount: unknown,
-    tx: Prisma.TransactionClient = db,
+    actorId: string,
+    outerTx?: Prisma.TransactionClient,
   ) {
-    const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
-    if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
-    const prev = vendor.bankAccount as Record<string, unknown> | null
-    const next = bankAccount as Record<string, unknown>
-    // A *change* only when a prior account existed and differs; a fresh,
-    // never-before-recorded account is itself the verification, not a change.
-    const changed =
-      prev != null && JSON.stringify(prev) !== JSON.stringify(next)
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
+      if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
 
-    return tx.vendor.update({
-      where: { id: vendorId },
-      data: {
-        bankAccount: next as Prisma.InputJsonValue,
-        bankAccountVerifiedAt: new Date(),
-        bankAccountChangedAt: changed ? new Date() : null,
-      },
-      select: vendorViewSelect,
-    })
+      const next = normalizeBankAccount(bankAccount)
+      if (!next.bank || !next.accountNumber || !next.holder) {
+        throw new BadRequestException(
+          'Bank, account number, and holder are required',
+        )
+      }
+      const previous = vendor.bankAccount
+        ? normalizeBankAccount(vendor.bankAccount)
+        : null
+      const sameAccount =
+        previous !== null && JSON.stringify(previous) === JSON.stringify(next)
+
+      if (vendor.bankAccountChangedAt && sameAccount) {
+        if (vendor.bankAccountSubmittedBy === actorId) {
+          throw new ForbiddenException(
+            'Beneficiary verification requires a different finance user',
+          )
+        }
+        return tx.vendor.update({
+          where: { id: vendorId },
+          data: {
+            bankAccountVerifiedAt: new Date(),
+            bankAccountVerifiedBy: actorId,
+            bankAccountChangedAt: null,
+            bankAccountSubmittedBy: null,
+          },
+          select: vendorViewSelect,
+        })
+      }
+
+      if (sameAccount && vendor.bankAccountVerifiedAt) {
+        return tx.vendor.findUniqueOrThrow({
+          where: { id: vendorId },
+          select: vendorViewSelect,
+        })
+      }
+
+      return tx.vendor.update({
+        where: { id: vendorId },
+        data: {
+          bankAccount: next as Prisma.InputJsonValue,
+          bankAccountVerifiedAt: null,
+          bankAccountVerifiedBy: null,
+          bankAccountChangedAt: new Date(),
+          bankAccountSubmittedBy: actorId,
+        },
+        select: vendorViewSelect,
+      })
+    }
+
+    return outerTx ? run(outerTx) : db.$transaction(run)
   }
 
   create(input: CreateVendor, tx: Prisma.TransactionClient = db) {

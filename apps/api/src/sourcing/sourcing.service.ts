@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { DATABASE_INT_MAX } from '../shared/money/minor-units'
+import {
+  assertSingleCurrency,
+  DATABASE_INT_MAX,
+  normalizeCurrencyCode,
+} from '../shared/money/minor-units'
 
 /**
  * §8.1/§7.5 structured quoting — the SOURCING → QUOTED leg of the lifecycle.
@@ -70,6 +74,7 @@ export class SourcingService {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`sourcing:${requisitionId}`}))`
       const requisition = await tx.requisition.findUnique({
         where: { id: requisitionId },
+        include: { lines: true },
       })
       if (!requisition) {
         throw new NotFoundException(`Requisition ${requisitionId} not found`)
@@ -79,6 +84,13 @@ export class SourcingService {
           `Requisition ${requisition.requestNumber} is ${requisition.status} — only approved requisitions source quotes`,
         )
       }
+
+      const currencyCode = requisition.lines.length
+        ? assertSingleCurrency(
+            requisition.lines.map((line) => line.currencyCode),
+            'Requisition lines',
+          )
+        : 'PHP'
 
       const vendors = await tx.vendor.findMany({
         where: { id: { in: [...new Set(vendorIds)] } },
@@ -105,6 +117,7 @@ export class SourcingService {
               vendorId: vendor.id,
               requestedBy,
               createdBy: requestedBy,
+              currencyCode,
             },
           }),
         )
@@ -132,6 +145,17 @@ export class SourcingService {
         `totalMinor must be a positive integer no greater than ${DATABASE_INT_MAX}`,
       )
     }
+    const currencyCode = normalizeCurrencyCode(
+      input.currencyCode ?? quote.currencyCode,
+      'Quote currency',
+    )
+    if (
+      currencyCode !== normalizeCurrencyCode(quote.currencyCode, 'RFQ currency')
+    ) {
+      throw new BadRequestException(
+        'Quote currency must match the requisition currency; FX is not configured',
+      )
+    }
     // Conditional write: an awarded/rejected quote must never be overwritten
     // by a late offer, even under concurrent receive + award.
     const changed = await tx.quote.updateMany({
@@ -139,7 +163,7 @@ export class SourcingService {
       data: {
         status: 'received',
         totalMinor: input.totalMinor,
-        currencyCode: input.currencyCode ?? quote.currencyCode,
+        currencyCode,
         leadTimeDays: input.leadTimeDays,
         validUntil: input.validUntil,
         lines: input.lines ? asJson(input.lines) : undefined,
@@ -159,10 +183,36 @@ export class SourcingService {
    * Pure ranking — no side effects — so humans review before award.
    */
   async compare(requisitionId: string) {
-    await this.assertRequisition(requisitionId)
+    const requisition = await this.assertRequisition(requisitionId)
     const quotes = await db.quote.findMany({
       where: { requisitionId, status: 'received' },
     })
+    const vendorRatings = new Map(
+      (
+        await db.vendor.findMany({
+          where: { id: { in: quotes.map((quote) => quote.vendorId) } },
+          select: { id: true, ratingScore: true },
+        })
+      ).map((vendor) => [vendor.id, vendor.ratingScore]),
+    )
+
+    if (quotes.length > 0) {
+      const quoteCurrency = assertSingleCurrency(
+        quotes.map((quote) => quote.currencyCode),
+        'Received quotes',
+      )
+      const requisitionCurrency = requisition.lines.length
+        ? assertSingleCurrency(
+            requisition.lines.map((line) => line.currencyCode),
+            'Requisition lines',
+          )
+        : 'PHP'
+      if (quoteCurrency !== requisitionCurrency) {
+        throw new BadRequestException(
+          'Quote currency must match the requisition currency; FX is not configured',
+        )
+      }
+    }
 
     const config = await this.evaluationCriterion()
     const ranked = [...quotes].sort((a, b) => {
@@ -173,6 +223,7 @@ export class SourcingService {
     })
 
     let scores: Array<{ quoteId: string; score: number }> | null = null
+    let appliedPriceWeight: number | null = null
     if (config.criterion === 'bestValue') {
       const weight =
         config.priceWeight != null &&
@@ -181,13 +232,21 @@ export class SourcingService {
         config.priceWeight <= 1
           ? config.priceWeight
           : 0.6
+      appliedPriceWeight = weight
       const totals = ranked.map((q) => q.totalMinor ?? 0)
-      const maxTotal = Math.max(...totals, 1)
+      const minTotal = Math.min(...totals)
+      const maxTotal = Math.max(...totals)
       scores = ranked.map((q) => {
         const priceComponent =
-          (q.totalMinor == null ? 0 : (maxTotal - q.totalMinor) / maxTotal) *
-          100
-        const ratingComponent = 50 // vendor.ratingScore seam: neutral until populated
+          q.totalMinor == null
+            ? 0
+            : maxTotal === minTotal
+              ? 100
+              : ((maxTotal - q.totalMinor) / (maxTotal - minTotal)) * 100
+        const ratingComponent = Math.max(
+          0,
+          Math.min(100, vendorRatings.get(q.vendorId) ?? 50),
+        )
         return {
           quoteId: q.id,
           score: Math.round(
@@ -202,9 +261,11 @@ export class SourcingService {
 
     return {
       criterion: config.criterion ?? 'lowestCost',
-      priceWeight:
-        config.criterion === 'bestValue' ? (config.priceWeight ?? 0.6) : null,
-      recommendedQuoteId: ranked[0]?.id ?? scores?.[0]?.quoteId ?? null,
+      priceWeight: appliedPriceWeight,
+      recommendedQuoteId:
+        config.criterion === 'bestValue'
+          ? (scores?.[0]?.quoteId ?? null)
+          : (ranked[0]?.id ?? null),
       ranking:
         config.criterion === 'bestValue'
           ? (scores ?? []).map((s) => ({ quoteId: s.quoteId, score: s.score }))
@@ -221,6 +282,22 @@ export class SourcingService {
     const quote = await this.detail(quoteId)
     if (quote.totalMinor == null) {
       throw new BadRequestException('Quote has no recorded offer amount')
+    }
+
+    const requisition = await this.assertRequisition(quote.requisitionId)
+    const requisitionCurrency = requisition.lines.length
+      ? assertSingleCurrency(
+          requisition.lines.map((line) => line.currencyCode),
+          'Requisition lines',
+        )
+      : 'PHP'
+    if (
+      normalizeCurrencyCode(quote.currencyCode, 'Quote currency') !==
+      requisitionCurrency
+    ) {
+      throw new BadRequestException(
+        'Quote currency must match the requisition currency; FX is not configured',
+      )
     }
 
     const criterion =
@@ -300,6 +377,7 @@ export class SourcingService {
   private async assertRequisition(requisitionId: string) {
     const requisition = await db.requisition.findUnique({
       where: { id: requisitionId },
+      include: { lines: true },
     })
     if (!requisition) {
       throw new NotFoundException(`Requisition ${requisitionId} not found`)

@@ -11,7 +11,9 @@ const vendor = () => ({
   taxId: null,
   bankAccount: { bank: 'BDO', accountNumber: '123', holder: 'Supplier' },
   bankAccountVerifiedAt: new Date(),
+  bankAccountVerifiedBy: 'finance-checker',
   bankAccountChangedAt: null,
+  bankAccountSubmittedBy: null,
 })
 
 describe('frozen beneficiary', () => {
@@ -49,6 +51,18 @@ describe('frozen beneficiary', () => {
       freezeBeneficiary('INV-1', {
         ...vendor(),
         bankAccountChangedAt: new Date(),
+      }),
+    ).toThrow('Unverified')
+    expect(() =>
+      freezeBeneficiary('INV-1', {
+        ...vendor(),
+        bankAccountSubmittedBy: 'finance-maker',
+      }),
+    ).toThrow('Unverified')
+    expect(() =>
+      freezeBeneficiary('INV-1', {
+        ...vendor(),
+        bankAccountVerifiedBy: null,
       }),
     ).toThrow('Unverified')
   })

@@ -12,7 +12,11 @@ import {
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { assertDatabaseInt } from '../shared/money/minor-units'
+import {
+  assertDatabaseInt,
+  assertSingleCurrency,
+  normalizeCurrencyCode,
+} from '../shared/money/minor-units'
 import { paginate } from '../trpc/list-input'
 
 export interface CreateRequisitionLineInput {
@@ -122,7 +126,10 @@ export class RequisitionService {
         line.unitPriceMinor,
         `Line ${i + 1} unit price`,
       ),
-      currencyCode: line.currencyCode ?? 'PHP',
+      currencyCode: normalizeCurrencyCode(
+        line.currencyCode ?? 'PHP',
+        `Line ${i + 1} currency`,
+      ),
       lineTotalMinor: assertDatabaseInt(
         line.quantity * line.unitPriceMinor,
         `Line ${i + 1} total`,
@@ -132,10 +139,29 @@ export class RequisitionService {
       lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
       'Requisition total',
     )
+    const currencyCode = assertSingleCurrency(
+      lines.map((line) => line.currencyCode),
+      'Requisition lines',
+    )
 
     // Number mint serializes on an advisory lock inside a transaction, so
     // concurrent creators cannot collide. Standalone calls keep a retry net.
     const attempt = async (tx: Prisma.TransactionClient) => {
+      if (input.budgetId) {
+        const budget = await tx.budget.findUnique({
+          where: { id: input.budgetId },
+          select: { currencyCode: true },
+        })
+        if (!budget) throw new NotFoundException('Budget not found')
+        if (
+          normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+          currencyCode
+        ) {
+          throw new BadRequestException(
+            'Requisition currency must match its budget currency',
+          )
+        }
+      }
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('requisition_number'))`
       const requestNumber = await this.numbers.next('REQ-', () =>
         tx.requisition
@@ -219,6 +245,10 @@ export class RequisitionService {
         (sum, line) => sum + line.lineTotalMinor,
         0,
       )
+      const currencyCode = assertSingleCurrency(
+        requisition.lines.map((line) => line.currencyCode),
+        'Requisition lines',
+      )
 
       const thresholdPolicy = await this.policy.latest('threshold')
       let budgetRemainingMinor: number | undefined
@@ -227,6 +257,14 @@ export class RequisitionService {
           where: { id: requisition.budgetId },
         })
         if (!budget) throw new NotFoundException('Budget not found')
+        if (
+          normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+          currencyCode
+        ) {
+          throw new BadRequestException(
+            'Requisition currency must match its budget currency',
+          )
+        }
         budgetRemainingMinor =
           budget.limitMinor - budget.committedMinor - budget.spentMinor
       }

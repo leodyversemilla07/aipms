@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common'
+import { BadRequestException, ConflictException } from '@nestjs/common'
 import { db } from '@workspace/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { PolicyService } from '../src/policy/policy.service'
@@ -55,15 +55,25 @@ async function makeApprovedRequisition(tag: string) {
       costCenter: 'eng',
       submittedAt: new Date(),
       decidedAt: new Date(),
+      lines: {
+        create: {
+          lineNo: 1,
+          description: 'Sourced requirement',
+          quantity: 1,
+          unitPriceMinor: 100_000,
+          lineTotalMinor: 100_000,
+          currencyCode: 'PHP',
+        },
+      },
     },
   })
   created.requisition.push(requisition.id)
   return requisition
 }
 
-async function makeVendor(name: string) {
+async function makeVendor(name: string, ratingScore?: number) {
   const vendor = await db.vendor.create({
-    data: { name: `${name} ${suffix}`, status: 'active' },
+    data: { name: `${name} ${suffix}`, status: 'active', ratingScore },
   })
   created.vendor.push(vendor.id)
   return vendor
@@ -193,6 +203,50 @@ describe('sourcing quotes (§8.1)', () => {
       where: { requisitionId: requisition.id, status: 'accepted' },
     })
     expect(accepted).toBe(1)
+  })
+
+  it('uses vendor ratings for best-value ranking and refuses implicit FX', async () => {
+    const prior = await policyService.latest('evaluationCriterion', false)
+    const bestValue = await policyService.create({
+      name: `Award-bv ${suffix}`,
+      kind: 'evaluationCriterion',
+      updatedBy: actor,
+      config: { criterion: 'bestValue', priceWeight: 0.2 },
+      supersedesId: prior?.id ?? null,
+    })
+    created.policy.push(bestValue.id)
+
+    const requisition = await makeApprovedRequisition('best-value')
+    const [cheapLowRated, priceyHighRated] = [
+      await makeVendor('CheapLowRated', 0),
+      await makeVendor('PriceyHighRated', 100),
+    ]
+    const quotes = await sourcing.request(
+      requisition.id,
+      [cheapLowRated.id, priceyHighRated.id],
+      actor,
+    )
+    for (const quote of quotes) created.quote.push(quote.id)
+    const cheapQuote = quotes.find(
+      (quote) => quote.vendorId === cheapLowRated.id,
+    )
+    const priceyQuote = quotes.find(
+      (quote) => quote.vendorId === priceyHighRated.id,
+    )
+    if (!cheapQuote || !priceyQuote) throw new Error('expected both quotes')
+
+    await expect(
+      sourcing.receive(cheapQuote.id, {
+        totalMinor: 100_000,
+        currencyCode: 'USD',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException)
+    await sourcing.receive(cheapQuote.id, { totalMinor: 100_000 })
+    await sourcing.receive(priceyQuote.id, { totalMinor: 110_000 })
+
+    const comparison = await sourcing.compare(requisition.id)
+    expect(comparison.recommendedQuoteId).toBe(priceyQuote.id)
+    expect(comparison.ranking[0]?.quoteId).toBe(priceyQuote.id)
   })
 
   it('respects a superseding evaluationCriterion policy (latest version wins)', async () => {

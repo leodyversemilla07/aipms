@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common'
 import { db } from '@workspace/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
@@ -99,12 +103,25 @@ async function makePo(vendorId: string, totalMinor: number, tag: string) {
   return po
 }
 
+function bankAccount(accountNo: string) {
+  return { bank: 'BPI', holder: 'Test Co', accountNo }
+}
+
+async function submitBankAccount(
+  vendorId: string,
+  accountNo: string,
+  actor = actorA,
+) {
+  return vendorService.verifyBankAccount(
+    vendorId,
+    bankAccount(accountNo),
+    actor,
+  )
+}
+
 async function verify(vendorId: string, accountNo: string) {
-  return vendorService.verifyBankAccount(vendorId, {
-    bank: 'BPI',
-    holder: 'Test Co',
-    accountNo,
-  })
+  await submitBankAccount(vendorId, accountNo, actorA)
+  return submitBankAccount(vendorId, accountNo, actorB)
 }
 
 async function makeMatchedInvoice(
@@ -190,6 +207,28 @@ describe('Maker/checker approval (§16.4)', () => {
 })
 
 describe('§8.6 beneficiary bank control', () => {
+  it('requires a different finance checker to verify an account', async () => {
+    const vendor = await makeVendor('DUAL')
+    await submitBankAccount(vendor.id, 'DUAL1', actorA)
+
+    const pending = await db.vendor.findUniqueOrThrow({
+      where: { id: vendor.id },
+    })
+    expect(pending.bankAccountVerifiedAt).toBeNull()
+    expect(pending.bankAccountSubmittedBy).toBe(actorA)
+    await expect(
+      submitBankAccount(vendor.id, 'DUAL1', actorA),
+    ).rejects.toThrow(ForbiddenException)
+
+    await submitBankAccount(vendor.id, 'DUAL1', actorB)
+    const verified = await db.vendor.findUniqueOrThrow({
+      where: { id: vendor.id },
+    })
+    expect(verified.bankAccountVerifiedBy).toBe(actorB)
+    expect(verified.bankAccountSubmittedBy).toBeNull()
+    expect(verified.bankAccountChangedAt).toBeNull()
+  })
+
   it('refuses a run with an unverified bank account', async () => {
     const vendor = await makeVendor('UNV') // never verified
     const inv = await makeMatchedInvoice(vendor.id, [goodsLine], 'unv')
@@ -204,16 +243,16 @@ describe('§8.6 beneficiary bank control', () => {
     await verify(vendor.id, 'C1')
     const inv = await makeMatchedInvoice(vendor.id, [goodsLine], 'chg')
 
-    // change the account → flagged as changed → refused
-    await verify(vendor.id, 'C2')
+    // maker changes the account → flagged as changed → refused
+    await submitBankAccount(vendor.id, 'C2', actorA)
     const changed = await db.vendor.findUnique({ where: { id: vendor.id } })
     expect(changed?.bankAccountChangedAt).not.toBeNull()
     await expect(
       paymentRuns.create({ invoiceIds: [inv.id] }, actorA),
     ).rejects.toThrow(BadRequestException)
 
-    // re-verify with the same account clears the change stamp
-    await verify(vendor.id, 'C2')
+    // a different checker verifies the same account and clears the stamp
+    await submitBankAccount(vendor.id, 'C2', actorB)
     const { run } = await paymentRuns.create({ invoiceIds: [inv.id] }, actorA)
     created.run.push(run.id)
     expect(run.status).toBe('draft')

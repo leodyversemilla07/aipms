@@ -76,11 +76,15 @@ export function VendorsPanel() {
     setNotice(null)
     setError(null)
     try {
-      await verify.mutateAsync({
+      const result = await verify.mutateAsync({
         id: vendorId,
         bankAccount: { bank, accountNumber, holder },
       })
-      setNotice("Beneficiary bank account verified")
+      setNotice(
+        result.bankAccountChangedAt
+          ? "Beneficiary account submitted; a different finance user must verify the same details"
+          : "Beneficiary bank account verified by the second finance user"
+      )
       setBankVendorId(null)
       setBank("")
       setAccountNumber("")
@@ -172,7 +176,11 @@ export function VendorsPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground text-xs">
-                    {needsBankVerification ? "bank —" : "bank ✓"}
+                    {v.bankAccountChangedAt
+                      ? "bank pending checker"
+                      : needsBankVerification
+                        ? "bank —"
+                        : "bank ✓"}
                   </span>
                   {needsBankVerification ? (
                     <Button
@@ -184,7 +192,11 @@ export function VendorsPanel() {
                         setHolder(v.name)
                       }}
                     >
-                      {editingBank ? "Cancel" : "Verify bank"}
+                      {editingBank
+                        ? "Cancel"
+                        : v.bankAccountChangedAt
+                          ? "Check bank"
+                          : "Add bank"}
                     </Button>
                   ) : null}
                 </div>
@@ -224,6 +236,10 @@ export function VendorsPanel() {
                       className="h-9 w-56"
                     />
                   </Field>
+                  <FieldDescription className="basis-full">
+                    Enter the details independently. Submission and verification
+                    must be performed by different finance users.
+                  </FieldDescription>
                   <Button
                     size="sm"
                     disabled={
@@ -234,7 +250,9 @@ export function VendorsPanel() {
                     }
                     onClick={() => verifyBank(v.id)}
                   >
-                    Save verified account
+                    {v.bankAccountChangedAt
+                      ? "Verify matching account"
+                      : "Submit account"}
                   </Button>
                 </FieldGroup>
               ) : null}

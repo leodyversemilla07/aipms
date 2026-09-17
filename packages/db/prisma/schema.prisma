@@ -184,11 +184,14 @@ model Vendor {
   qualifiedEntityClass    EntityClass? // how this vendor is typically sourced
   blacklistReason         String?
   contactChannels         Json? // verified addresses/emails (§8.3 outbox)
-  // §8.6 beneficiary bank control: a run will not plan an invoice whose
-  // vendor has not been verified after the last bank-account change.
-  bankAccount          Json?
-  bankAccountVerifiedAt DateTime?
-  bankAccountChangedAt  DateTime?
+  // §8.6 beneficiary maker/checker control: changedAt/submittedBy marks a
+  // non-payable submission until a different finance principal records the
+  // verifiedAt/verifiedBy pair.
+  bankAccount            Json?
+  bankAccountVerifiedAt  DateTime?
+  bankAccountVerifiedBy  String?
+  bankAccountChangedAt   DateTime?
+  bankAccountSubmittedBy String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
