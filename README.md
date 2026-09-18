@@ -225,13 +225,13 @@ Backups are published atomically with a SHA-256 sidecar. Restore verifies the ch
 
 ### Production image smoke test
 
-Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, verify the production health surfaces, and prove a backup/restore round trip with a disposable data probe:
+Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, verify the production health surfaces, run a read-only concurrency regression, and prove a backup/restore round trip with a disposable data probe:
 
 ```bash
 ./scripts/production-smoke.sh
 ```
 
-The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits.
+The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits. See [`docs/capacity-testing.md`](docs/capacity-testing.md) for the production-safe probe and staging protocol.
 
 ### Health and monitoring
 

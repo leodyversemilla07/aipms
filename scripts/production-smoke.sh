@@ -79,6 +79,13 @@ if [[ "$monitoring_payload" != *'"deadLetters":0'* ]]; then
   exit 1
 fi
 
+CAPACITY_BASE_URL="http://localhost:${API_PORT}" \
+CAPACITY_ALLOW_INSECURE=1 \
+CAPACITY_REQUESTS="${CAPACITY_REQUESTS:-100}" \
+CAPACITY_CONCURRENCY="${CAPACITY_CONCURRENCY:-10}" \
+CAPACITY_MAX_P95_MS="${CAPACITY_MAX_P95_MS:-2500}" \
+  node ./scripts/capacity-smoke.mjs
+
 # The production entrypoint already ran migrate deploy. Verify that the image
 # and database agree and that no migration was silently left pending.
 compose exec --no-TTY api sh -c \

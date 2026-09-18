@@ -16,7 +16,8 @@
     "db:reset": "turbo run db:reset",
     "db:seed": "turbo run db:seed",
     "db:studio": "turbo run db:studio",
-    "auth:generate": "turbo run auth:generate"
+    "auth:generate": "turbo run auth:generate",
+    "capacity:smoke": "node scripts/capacity-smoke.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
