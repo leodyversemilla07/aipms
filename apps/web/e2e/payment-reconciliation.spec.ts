@@ -86,10 +86,10 @@ test("finance reconciles paid and dishonored payment lines", async ({
 
   const paidLine = runRow
     .getByRole("listitem")
-    .filter({ hasText: paidInvoice.id.slice(0, 8) })
+    .filter({ hasText: paidInvoice.id.slice(-8) })
   const dishonoredLine = runRow
     .getByRole("listitem")
-    .filter({ hasText: dishonoredInvoice.id.slice(0, 8) })
+    .filter({ hasText: dishonoredInvoice.id.slice(-8) })
 
   await paidLine.getByRole("button", { name: "Paid", exact: true }).click()
   await expect(paidLine.getByText("Paid", { exact: true })).toBeVisible()

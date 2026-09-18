@@ -362,7 +362,7 @@ export function PaymentRuns() {
                   <TableBody>
                     {run.lines.map((line) => (
                       <TableRow key={line.id}>
-                        <TableCell>{line.invoiceId.slice(0, 8)}</TableCell>
+                        <TableCell>{line.invoiceId.slice(-8)}</TableCell>
                         <TableCell>
                           {LINE_STATUS[line.status] ?? line.status}
                         </TableCell>
@@ -384,7 +384,7 @@ export function PaymentRuns() {
                   className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1 text-xs"
                 >
                   <span className="text-muted-foreground">
-                    {line.invoiceId.slice(0, 8)} ·{" "}
+                    {line.invoiceId.slice(-8)} ·{" "}
                     {LINE_STATUS[line.status] ?? line.status}
                   </span>
                   <span className="font-mono">{minorToPhp(line.netMinor)}</span>
