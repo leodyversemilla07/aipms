@@ -54,7 +54,17 @@ const appRouter = t.router({
       .input(listInput.extend({
   status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
 }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>),
+    staleRuns: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["staleRuns"]>>),
+    cancelStaleRun: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["cancelStaleRun"]>>)
     }),
   analytics: t.router({
     overview: publicProcedure

@@ -56,6 +56,14 @@ type DeadLetter = {
   createdAt: string | Date
 }
 
+type StaleRun = {
+  id: string
+  agentId: string
+  skills: string[]
+  status: string
+  startedAt: string | Date
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The recovery action failed."
 }
@@ -67,12 +75,19 @@ function RecoveryConsole() {
   const [selected, setSelected] = useState<DeadLetter | null>(null)
   const [reason, setReason] = useState("")
   const [error, setError] = useState<string | null>(null)
+  const [staleRun, setStaleRun] = useState<StaleRun | null>(null)
+  const [staleReason, setStaleReason] = useState("")
+  const [staleError, setStaleError] = useState<string | null>(null)
 
   const summary = useQuery(trpc.events.recoverySummary.queryOptions({}))
   const deadLetters = useQuery(
     trpc.events.deadLetters.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
   const rows = (deadLetters.data?.rows ?? []) as DeadLetter[]
+  const staleRuns = useQuery(
+    trpc.agent.staleRuns.queryOptions({ q: "", page: 1, pageSize: 50 })
+  )
+  const staleRows = (staleRuns.data?.rows ?? []) as StaleRun[]
   const requeue = useMutation(
     trpc.events.requeue.mutationOptions({
       onSuccess: () => {
@@ -85,6 +100,10 @@ function RecoveryConsole() {
     })
   )
 
+  const cancelStaleRun = useMutation(
+    trpc.agent.cancelStaleRun.mutationOptions()
+  )
+
   function submitRecovery() {
     if (!selected || !reason.trim()) return
     setError(null)
@@ -93,6 +112,24 @@ function RecoveryConsole() {
       idempotencyKey: crypto.randomUUID(),
       reason: reason.trim(),
     })
+  }
+
+  async function submitStaleCancellation() {
+    if (!staleRun || !staleReason.trim()) return
+    setStaleError(null)
+    try {
+      await cancelStaleRun.mutateAsync({
+        id: staleRun.id,
+        idempotencyKey: crypto.randomUUID(),
+        reason: staleReason.trim(),
+      })
+      setStaleRun(null)
+      setStaleReason("")
+      queryClient.invalidateQueries(trpc.agent.pathFilter())
+      queryClient.invalidateQueries(trpc.events.pathFilter())
+    } catch (cause) {
+      setStaleError(errorMessage(cause))
+    }
   }
 
   const stats = [
@@ -137,7 +174,7 @@ function RecoveryConsole() {
         </nav>
       </header>
 
-      {summary.isError || deadLetters.isError ? (
+      {summary.isError || deadLetters.isError || staleRuns.isError ? (
         <Alert variant="destructive">
           <AlertTitle>Recovery data unavailable</AlertTitle>
           <AlertDescription>
@@ -230,13 +267,70 @@ function RecoveryConsole() {
         )}
       </section>
 
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">Stale agent runs</h2>
+            <p className="text-muted-foreground text-sm">
+              Cancel only after confirming that no worker still owns the run.
+              Cancellation closes supervision state; it does not replay work.
+            </p>
+          </div>
+          <Badge variant={staleRows.length > 0 ? "destructive" : "secondary"}>
+            {staleRuns.data?.total ?? "…"}
+          </Badge>
+        </div>
+
+        {!staleRuns.isPending && staleRows.length === 0 ? (
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyTitle>No stale agent runs</EmptyTitle>
+              <EmptyDescription>
+                No running execution exceeds the configured automation lease.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {staleRows.map((run) => (
+              <li
+                key={run.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 text-sm"
+              >
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="destructive">stale</Badge>
+                    <span className="font-mono">{run.id}</span>
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    agent {run.agentId} · started {fmtTime(run.startedAt)} ·{" "}
+                    {run.skills.join(", ") || "no skills recorded"}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setStaleRun(run)
+                    setStaleReason("")
+                    setStaleError(null)
+                  }}
+                >
+                  Review and cancel
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <Alert>
         <AlertTitle>Other recovery queues</AlertTitle>
         <AlertDescription>
           QBO dispatch resolution remains on the Finance desk to preserve its
-          independent checker flow. Failed messages and stale automation are
-          surfaced above for investigation; they are not automatically retried
-          because delivery outcomes may be ambiguous.
+          independent checker flow. Failed messages remain investigation-only:
+          automatically retrying an ambiguous transport outcome could send a
+          duplicate vendor communication.
         </AlertDescription>
       </Alert>
 
@@ -286,6 +380,62 @@ function RecoveryConsole() {
               disabled={!reason.trim() || requeue.isPending}
             >
               {requeue.isPending ? "Requeueing…" : "Requeue event"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!staleRun}
+        onOpenChange={(open) => {
+          if (!open && !cancelStaleRun.isPending) setStaleRun(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel stale agent run</DialogTitle>
+            <DialogDescription>
+              Confirm from worker logs and leases that this execution is no
+              longer active. This closes the stale run without replaying any
+              command or domain mutation.
+            </DialogDescription>
+          </DialogHeader>
+          <Field data-invalid={!!staleError}>
+            <FieldLabel htmlFor="stale-run-reason">
+              Recovery evidence
+            </FieldLabel>
+            <Textarea
+              id="stale-run-reason"
+              value={staleReason}
+              onChange={(event) => setStaleReason(event.target.value)}
+              placeholder="Describe the lease and worker checks performed"
+              aria-invalid={!!staleError}
+              disabled={cancelStaleRun.isPending}
+            />
+            <FieldDescription>
+              Required and written to the append-only audit trail.
+            </FieldDescription>
+          </Field>
+          {staleError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Cancellation failed</AlertTitle>
+              <AlertDescription>{staleError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <DialogClose
+              render={
+                <Button variant="outline" disabled={cancelStaleRun.isPending} />
+              }
+            >
+              Keep running
+            </DialogClose>
+            <Button
+              variant="destructive"
+              onClick={submitStaleCancellation}
+              disabled={!staleReason.trim() || cancelStaleRun.isPending}
+            >
+              {cancelStaleRun.isPending ? "Cancelling…" : "Cancel stale run"}
             </Button>
           </DialogFooter>
         </DialogContent>

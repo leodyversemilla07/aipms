@@ -1,4 +1,5 @@
-import { Inject } from '@nestjs/common'
+import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
+import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -8,9 +9,10 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
+import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
-import { listInput } from '../trpc/list-input'
+import { listInput, paginate } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { AgentService } from './agent.service'
 import { AgentCommandService } from './agent-command.service'
@@ -28,6 +30,19 @@ const runsInput = listInput.extend({
   status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
 })
 
+const cancelStaleRunInput = z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+})
+
+function staleRunCutoff() {
+  const configured = Number(process.env.AUTOMATION_LEASE_TIMEOUT_MS ?? 900_000)
+  const timeoutMs =
+    Number.isFinite(configured) && configured >= 1000 ? configured : 900_000
+  return new Date(Date.now() - timeoutMs)
+}
+
 /**
  * §3 agent surface — promote a raw intake document to a registered invoice.
  * The extraction algorithm is swappable (structured default, LLM later); the
@@ -42,6 +57,7 @@ export class AgentRouter {
     private readonly commands: AgentCommandService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
+    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   @Mutation({ input: processInput })
@@ -85,6 +101,99 @@ export class AgentRouter {
   @Query({ input: runsInput })
   async runs(@Input() input: z.infer<typeof runsInput>) {
     return this.agent.listRuns(input)
+  }
+
+  @Query({ input: listInput })
+  async staleRuns(@Input() input: z.infer<typeof listInput>) {
+    const { skip, take } = paginate(input)
+    const q = input.q.trim()
+    const where = {
+      status: 'running' as const,
+      startedAt: { lt: staleRunCutoff() },
+      ...(q
+        ? {
+            OR: [
+              { id: { contains: q, mode: 'insensitive' as const } },
+              { agentId: { contains: q, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    }
+    const [rows, total] = await Promise.all([
+      db.agentRun.findMany({
+        where,
+        skip,
+        take,
+        orderBy: { startedAt: 'asc' },
+        select: {
+          id: true,
+          agentId: true,
+          skills: true,
+          startedAt: true,
+          status: true,
+        },
+      }),
+      db.agentRun.count({ where }),
+    ])
+    return { rows, total, facetCounts: {} }
+  }
+
+  @Mutation({ input: cancelStaleRunInput })
+  async cancelStaleRun(
+    @Input() input: z.infer<typeof cancelStaleRunInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'agent.cancelStaleRun',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        await tx.$queryRaw`
+          SELECT id FROM "agentRun" WHERE id = ${input.id} FOR UPDATE
+        `
+        const run = await tx.agentRun.findUnique({ where: { id: input.id } })
+        if (!run) throw new NotFoundException(`Agent run ${input.id} not found`)
+        if (run.status !== 'running' || run.startedAt >= staleRunCutoff()) {
+          throw new ConflictException(
+            'Agent run is not stale and running; reload before recovery',
+          )
+        }
+        const finishedAt = new Date()
+        const changed = await tx.agentRun.updateMany({
+          where: {
+            id: run.id,
+            status: 'running',
+            startedAt: { lt: staleRunCutoff() },
+          },
+          data: { status: 'cancelled', finishedAt },
+        })
+        if (changed.count !== 1) {
+          throw new ConflictException(
+            'Agent run changed; reload before recovery',
+          )
+        }
+        const updated = await tx.agentRun.findUniqueOrThrow({
+          where: { id: run.id },
+        })
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'agent.stale.cancel',
+            entity: 'AgentRun',
+            entityId: run.id,
+            input: { reason: input.reason },
+            before: run as object,
+            after: { ...updated, recoveryReason: input.reason },
+          },
+          tx,
+        )
+        return updated
+      },
+    )
   }
 
   private commandActor(ctx: AuthedTrpcContext, idempotencyKey?: string) {

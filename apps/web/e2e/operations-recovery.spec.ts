@@ -3,9 +3,11 @@ import { expect, test } from "@playwright/test"
 import { db } from "../../../packages/db/src/index"
 
 const createdEventIds: string[] = []
+const createdRunIds: string[] = []
 
 test.afterAll(async () => {
   await db.domainEvent.deleteMany({ where: { id: { in: createdEventIds } } })
+  await db.agentRun.deleteMany({ where: { id: { in: createdRunIds } } })
 })
 
 test("finance operator reviews and requeues a dead-lettered event", async ({
@@ -67,5 +69,46 @@ test("finance operator reviews and requeues a dead-lettered event", async ({
   })
   expect(audit.after).toMatchObject({
     recoveryReason: "Repaired the E2E subscriber and verified its health check",
+  })
+})
+
+test("finance operator closes a stale agent run without replaying it", async ({
+  page,
+}) => {
+  const run = await db.agentRun.create({
+    data: {
+      agentId: `e2e-agent-${randomUUID()}`,
+      status: "running",
+      skills: ["intake"],
+      startedAt: new Date(Date.now() - 60 * 60 * 1000),
+    },
+  })
+  createdRunIds.push(run.id)
+
+  await page.goto("/operations")
+  const row = page.getByRole("listitem").filter({ hasText: run.id })
+  await expect(row).toBeVisible()
+  await row.getByRole("button", { name: "Review and cancel" }).click()
+
+  const dialog = page.getByRole("dialog", { name: "Cancel stale agent run" })
+  await dialog
+    .getByRole("textbox", { name: "Recovery evidence" })
+    .fill("Confirmed the worker lease expired and no process owns the run")
+  await dialog.getByRole("button", { name: "Cancel stale run" }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(row).toBeHidden()
+  const stored = await db.agentRun.findUniqueOrThrow({
+    where: { id: run.id },
+  })
+  expect(stored.status).toBe("cancelled")
+  expect(stored.finishedAt).not.toBeNull()
+  const audit = await db.auditEntry.findFirstOrThrow({
+    where: { action: "agent.stale.cancel", entityId: run.id },
+    orderBy: { seq: "desc" },
+  })
+  expect(audit.after).toMatchObject({
+    recoveryReason:
+      "Confirmed the worker lease expired and no process owns the run",
   })
 })

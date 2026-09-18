@@ -119,6 +119,8 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'agent.process': ['admin'],
   'agent.batch': ['admin'],
   'agent.runs': ['procurement', 'finance'],
+  'agent.staleRuns': ['finance'],
+  'agent.cancelStaleRun': ['finance'],
   'events.poll': ['admin'],
   'events.recoverySummary': ['finance'],
   'events.deadLetters': ['finance'],
