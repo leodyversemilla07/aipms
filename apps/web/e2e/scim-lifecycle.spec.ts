@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
-import { expect, test } from "@playwright/test"
+import { expect, request as requestFactory, test } from "@playwright/test"
 import { db } from "../../../packages/db/src/index"
 
 const CORE_USER = "urn:ietf:params:scim:schemas:core:2.0:User"
@@ -26,9 +26,7 @@ test.afterAll(async () => {
   })
 })
 
-test("SCIM bearer provisions and deprovisions an isolated user", async ({
-  page,
-}) => {
+test("SCIM bearer provisions and deprovisions an isolated user", async () => {
   const suffix = randomUUID().slice(0, 10)
   const providerId = `e2e-scim-${suffix}`
   const email = `${providerId}@example.test`
@@ -57,13 +55,19 @@ test("SCIM bearer provisions and deprovisions an isolated user", async ({
     },
   })
 
+  // SCIM is server-to-server. Use a cookie-free request context: IdPs do not
+  // send browser Origin headers, and session cookies must not influence bearer
+  // authentication or trigger the browser CSRF boundary.
+  const scimRequest = await requestFactory.newContext({
+    baseURL: "http://localhost:3000",
+  })
   const endpoint = "/api/auth/scim/v2/Users"
-  const unauthorized = await page.request.get(endpoint, {
+  const unauthorized = await scimRequest.get(endpoint, {
     headers: { Authorization: "Bearer invalid-e2e-token" },
   })
   expect(unauthorized.status()).toBe(401)
 
-  const createdResponse = await page.request.post(endpoint, {
+  const createdResponse = await scimRequest.post(endpoint, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/scim+json",
@@ -102,7 +106,7 @@ test("SCIM bearer provisions and deprovisions an isolated user", async ({
     active: true,
   })
 
-  const deactivatedResponse = await page.request.patch(
+  const deactivatedResponse = await scimRequest.patch(
     `${endpoint}/${encodeURIComponent(created.id)}`,
     {
       headers: {
@@ -130,4 +134,5 @@ test("SCIM bearer provisions and deprovisions an isolated user", async ({
   })
   expect(deactivated.active).toBe(false)
   expect(await db.session.count({ where: { userId: provisioned.id } })).toBe(0)
+  await scimRequest.dispose()
 })
