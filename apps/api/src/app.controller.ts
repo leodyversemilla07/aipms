@@ -10,9 +10,21 @@ export class AppController {
     return this.appService.getHello()
   }
 
-  /** Container/load-balancer probe (docker compose healthcheck). */
+  /** Process-only probe. It deliberately does not touch dependencies. */
+  @Get('health/live')
+  liveness() {
+    return this.appService.liveness()
+  }
+
+  /** Load-balancer readiness probe: refuse traffic while PostgreSQL is down. */
+  @Get('health/ready')
+  readiness() {
+    return this.appService.readiness()
+  }
+
+  /** Backward-compatible readiness alias used by existing deployments. */
   @Get('health')
-  health(): { ok: true } {
-    return { ok: true }
+  health() {
+    return this.appService.readiness()
   }
 }

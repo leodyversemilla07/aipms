@@ -113,7 +113,7 @@ else
   docker compose up -d --force-recreate api
   echo "[restore] restarting dependent services"
   docker compose up -d web agent
-  echo "[restore] done — verify with: docker compose ps && curl -fsS localhost:${API_PORT:-3001}/health"
+  echo "[restore] done — verify with: docker compose ps && curl -fsS localhost:${API_PORT:-3001}/health/ready"
 fi
 
 trap - EXIT INT TERM

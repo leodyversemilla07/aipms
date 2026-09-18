@@ -53,10 +53,11 @@ wait_for_url() {
 compose build api web agent
 compose up --detach postgres api web
 
-wait_for_url "API" "http://localhost:${API_PORT}/health"
+wait_for_url "API liveness" "http://localhost:${API_PORT}/health/live"
+wait_for_url "API readiness" "http://localhost:${API_PORT}/health/ready"
 wait_for_url "Web" "http://localhost:${WEB_PORT}/"
 
-health_payload=$(curl --silent --show-error --fail "http://localhost:${API_PORT}/health")
+health_payload=$(curl --silent --show-error --fail "http://localhost:${API_PORT}/health/ready")
 if [[ "$health_payload" != *'"ok":true'* ]]; then
   printf 'Unexpected API health payload: %s\n' "$health_payload" >&2
   exit 1
@@ -94,7 +95,7 @@ if [ "$RESTORED_PROBE" != "$PROBE_VALUE" ]; then
   exit 1
 fi
 compose up --detach api web
-wait_for_url "API after restore" "http://localhost:${API_PORT}/health"
+wait_for_url "API after restore" "http://localhost:${API_PORT}/health/ready"
 wait_for_url "Web after restore" "http://localhost:${WEB_PORT}/"
 
 # Confirm all expected production artifacts were built, even though the agent
