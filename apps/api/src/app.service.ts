@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common'
 import { db } from '@workspace/db'
+import { getRecoverySummary } from './shared/operations/recovery-summary'
 
 @Injectable()
 export class AppService {
@@ -15,6 +16,21 @@ export class AppService {
       status: 'live' as const,
       startedAt: this.startedAt.toISOString(),
       uptimeSeconds: Math.floor(process.uptime()),
+    }
+  }
+
+  async operationalHealth() {
+    try {
+      return {
+        ok: true as const,
+        status: 'observed' as const,
+        exceptions: await getRecoverySummary(),
+      }
+    } catch {
+      throw new ServiceUnavailableException({
+        ok: false,
+        status: 'unavailable',
+      })
     }
   }
 

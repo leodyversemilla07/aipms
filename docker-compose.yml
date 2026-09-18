@@ -48,6 +48,7 @@ services:
       # Generate independent values with openssl rand -base64 32.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
+      OPERATIONS_MONITORING_TOKEN: ${OPERATIONS_MONITORING_TOKEN:?Set OPERATIONS_MONITORING_TOKEN in .env}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
       # Unattended agent automation — off by default. AGENT_AUTORUN enables

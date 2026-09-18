@@ -12,6 +12,7 @@ export API_PORT WEB_PORT POSTGRES_PORT
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-release-smoke-db-password}"
 export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-release-smoke-auth-secret-at-least-32-bytes}"
 export AIPMS_SERVICE_TOKEN="${AIPMS_SERVICE_TOKEN:-release-smoke-service-token}"
+export OPERATIONS_MONITORING_TOKEN="${OPERATIONS_MONITORING_TOKEN:-release-smoke-monitoring-token}"
 export APP_URL="${APP_URL:-http://localhost:${WEB_PORT}}"
 export AUTH_TRUSTED_ORIGINS="${AUTH_TRUSTED_ORIGINS:-${APP_URL}}"
 BACKUP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-backups"
@@ -60,6 +61,21 @@ wait_for_url "Web" "http://localhost:${WEB_PORT}/"
 health_payload=$(curl --silent --show-error --fail "http://localhost:${API_PORT}/health/ready")
 if [[ "$health_payload" != *'"ok":true'* ]]; then
   printf 'Unexpected API health payload: %s\n' "$health_payload" >&2
+  exit 1
+fi
+
+monitoring_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "http://localhost:${API_PORT}/health/operations")
+if [ "$monitoring_status" != "401" ]; then
+  printf 'Monitoring endpoint did not reject an unauthenticated probe: %s\n' \
+    "$monitoring_status" >&2
+  exit 1
+fi
+monitoring_payload=$(curl --silent --show-error --fail \
+  -H "Authorization: Bearer ${OPERATIONS_MONITORING_TOKEN}" \
+  "http://localhost:${API_PORT}/health/operations")
+if [[ "$monitoring_payload" != *'"deadLetters":0'* ]]; then
+  printf 'Unexpected monitoring payload: %s\n' "$monitoring_payload" >&2
   exit 1
 fi
 

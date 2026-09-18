@@ -14,6 +14,7 @@ import { listInput, paginate } from '../../trpc/list-input'
 import { AuthMiddleware } from '../../trpc/middlewares/auth.middleware'
 import { AuditService } from '../audit/audit.service'
 import { IdempotencyService } from '../idempotency/idempotency.service'
+import { getRecoverySummary } from '../operations/recovery-summary'
 
 const pollInput = z.object({
   types: z.array(z.string()).min(1),
@@ -59,54 +60,7 @@ export class EventSubscriptionRouter {
 
   @Query({ input: z.object({}) })
   async recoverySummary() {
-    const now = Date.now()
-    const claimTtl = Number(process.env.EVENT_RELAY_CLAIM_TTL_MS ?? 900_000)
-    const runTtl = Number(process.env.AUTOMATION_LEASE_TIMEOUT_MS ?? 900_000)
-    const claimStaleBefore = new Date(
-      now -
-        (Number.isFinite(claimTtl) && claimTtl >= 1000 ? claimTtl : 900_000),
-    )
-    const runStaleBefore = new Date(
-      now - (Number.isFinite(runTtl) && runTtl >= 1000 ? runTtl : 900_000),
-    )
-    const [
-      deadLetters,
-      relayClaims,
-      staleRelayClaims,
-      staleAgentRuns,
-      failedMessages,
-      ambiguousErpDispatches,
-    ] = await Promise.all([
-      db.domainEvent.count({ where: { deadLetteredAt: { not: null } } }),
-      db.domainEvent.count({ where: { dispatchClaimId: { not: null } } }),
-      db.domainEvent.count({
-        where: {
-          dispatchClaimId: { not: null },
-          dispatchClaimedAt: { lt: claimStaleBefore },
-        },
-      }),
-      db.agentRun.count({
-        where: { status: 'running', startedAt: { lt: runStaleBefore } },
-      }),
-      db.message.count({ where: { status: 'failed' } }),
-      db.erpJournalExport.count({
-        where: {
-          status: 'exported',
-          dispatchClaimId: { not: null },
-          dispatchFailure: { not: null },
-          dispatchResolvedAt: null,
-        },
-      }),
-    ])
-    return {
-      deadLetters,
-      relayClaims,
-      staleRelayClaims,
-      staleAgentRuns,
-      failedMessages,
-      ambiguousErpDispatches,
-      checkedAt: new Date(),
-    }
+    return getRecoverySummary()
   }
 
   @Query({ input: listInput })

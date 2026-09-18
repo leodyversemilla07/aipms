@@ -237,9 +237,10 @@ The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and r
 
 - `GET /health/live` confirms that the API process is running without touching dependencies.
 - `GET /health/ready` verifies PostgreSQL connectivity and returns HTTP 503 while the instance must be removed from load-balancer rotation.
+- `GET /health/operations` returns authenticated, low-cardinality exception counters for dead letters, stale claims/runs, failed messaging, and ambiguous ERP dispatches. Supply `Authorization: Bearer $OPERATIONS_MONITORING_TOKEN`.
 - `GET /health` remains a compatibility alias for readiness.
 
-Production monitoring should alert on readiness failures and the authenticated Operations Recovery counters for dead letters, stale claims/runs, failed messaging, and ambiguous ERP dispatches.
+See [`docs/operations-monitoring.md`](docs/operations-monitoring.md) for alert thresholds and response ownership.
 
 ### Single-tenant, Self-hostable
 
@@ -268,6 +269,7 @@ Key environment variables:
 | `DATABASE_URL` | Postgres connection |
 | `BETTER_AUTH_SECRET` | Auth signing key |
 | `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
+| `OPERATIONS_MONITORING_TOKEN` | Dedicated read-only token for operational exception gauges |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
 | `AGENT_AUTORUN` | Enable the unattended intake drain loop |
 | `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes |

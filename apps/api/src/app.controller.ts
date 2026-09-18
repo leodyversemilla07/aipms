@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common'
+import { Controller, Get, UseGuards } from '@nestjs/common'
 import { AppService } from './app.service'
+import { OperationsMonitoringGuard } from './operations-monitoring.guard'
 
 @Controller()
 export class AppController {
@@ -20,6 +21,13 @@ export class AppController {
   @Get('health/ready')
   readiness() {
     return this.appService.readiness()
+  }
+
+  /** Authenticated low-cardinality exception gauges for alerting systems. */
+  @Get('health/operations')
+  @UseGuards(OperationsMonitoringGuard)
+  operationalHealth() {
+    return this.appService.operationalHealth()
   }
 
   /** Backward-compatible readiness alias used by existing deployments. */

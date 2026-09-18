@@ -14,6 +14,7 @@ import { ErpModule } from './erp/erp.module'
 import { IntakeModule } from './intake/intake.module'
 import { InvoiceModule } from './invoice/invoice.module'
 import { MessagingModule } from './messaging/messaging.module'
+import { OperationsMonitoringGuard } from './operations-monitoring.guard'
 import { PaymentRunModule } from './payment-run/payment-run.module'
 import { PolicyModule } from './policy/policy.module'
 import { PurchaseOrderModule } from './purchase-order/purchase-order.module'
@@ -53,6 +54,6 @@ import { VendorModule } from './vendor/vendor.module'
     EventsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, OperationsMonitoringGuard],
 })
 export class AppModule {}
