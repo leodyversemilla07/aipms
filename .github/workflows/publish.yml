@@ -58,6 +58,7 @@ jobs:
       - name: Verify source
         run: |
           pnpm check
+          ./scripts/test-deployment-preflight.sh
           pnpm typecheck
           pnpm --filter api test
           pnpm --filter agent test

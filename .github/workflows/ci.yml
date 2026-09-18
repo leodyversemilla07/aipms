@@ -67,6 +67,9 @@ jobs:
       - name: Lint & format check (Biome)
         run: pnpm check
 
+      - name: Validate deployment preflight controls
+        run: ./scripts/test-deployment-preflight.sh
+
       - name: Typecheck (turbo)
         run: pnpm typecheck
 
