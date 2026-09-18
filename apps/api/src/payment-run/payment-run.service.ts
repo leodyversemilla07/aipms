@@ -473,15 +473,33 @@ export class PaymentRunService {
     })
   }
 
-  async voidRun(runId: string, tx: Prisma.TransactionClient = db) {
+  async voidRun(
+    runId: string,
+    voidedBy: string,
+    reason: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    if (!reason.trim()) {
+      throw new BadRequestException('A payment-run void reason is required')
+    }
     const run = await tx.paymentRun.findUnique({ where: { id: runId } })
     if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
     if (run.status !== 'draft' && run.status !== 'approved') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
+    if (run.status === 'approved' && run.createdBy === voidedBy) {
+      throw new BadRequestException(
+        'The payment-run maker cannot override an approved run',
+      )
+    }
     const changed = await tx.paymentRun.updateMany({
       where: { id: runId, status: { in: ['draft', 'approved'] } },
-      data: { status: 'voided' },
+      data: {
+        status: 'voided',
+        voidedBy,
+        voidedAt: new Date(),
+        voidReason: reason.trim(),
+      },
     })
     if (changed.count !== 1)
       throw new ConflictException('Payment run changed; reload before voiding')

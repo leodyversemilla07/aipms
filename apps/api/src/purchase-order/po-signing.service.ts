@@ -61,52 +61,68 @@ export class PoSigningService {
   async sign(
     poId: string,
     ctx: AuthedTrpcContext,
-    tx: Prisma.TransactionClient = db,
+    outerTx?: Prisma.TransactionClient,
   ): Promise<PoSignatureView> {
-    const po = await this.load(poId)
-    if (po.status !== 'issued' && po.status !== 'confirmed') {
-      throw new TRPCError({
-        code: 'PRECONDITION_FAILED',
-        message: 'Only an issued or confirmed PO can be signed',
-      })
-    }
-
-    const canonical = this.signing.canonicalize(this.canonicalPo(po))
-    let sig: DetachedSignature
-    try {
-      sig = this.signing.sign(canonical)
-    } catch (error) {
-      if (error instanceof SigningNotConfiguredError) {
+    PoSigningService.assertHumanSigner(ctx)
+    const run = async (tx: Prisma.TransactionClient) => {
+      // Freeze the signed snapshot against concurrent PO changes and enforce
+      // countersignature separation from the principal that issued it.
+      await tx.$queryRaw`
+        SELECT id FROM "purchaseOrder" WHERE id = ${poId} FOR UPDATE
+      `
+      const po = await this.load(poId, tx)
+      if (po.status !== 'issued' && po.status !== 'confirmed') {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
-          message: error.message,
+          message: 'Only an issued or confirmed PO can be signed',
         })
       }
-      throw error
-    }
+      if (po.issuedBy === ctx.user.id) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'PO issuer and countersigner must be different principals',
+        })
+      }
 
-    const created = await tx.poSignature.create({
-      data: {
-        poId: po.id,
-        keyId: sig.keyId,
-        algorithm: sig.algorithm,
-        payloadHash: this.signing.sha256(canonical),
-        signature: sig.signature,
-        publicKeyPem: sig.publicKeyPem,
-        signerId: ctx.user.id,
-      },
-    })
+      const canonical = this.signing.canonicalize(this.canonicalPo(po))
+      let sig: DetachedSignature
+      try {
+        sig = this.signing.sign(canonical)
+      } catch (error) {
+        if (error instanceof SigningNotConfiguredError) {
+          throw new TRPCError({
+            code: 'PRECONDITION_FAILED',
+            message: error.message,
+          })
+        }
+        throw error
+      }
 
-    return {
-      signed: true,
-      configured: true,
-      keyId: created.keyId,
-      algorithm: created.algorithm,
-      signerId: created.signerId,
-      signedAt: created.signedAt.toISOString(),
-      signatureValid: true,
-      documentUnchanged: true,
+      const created = await tx.poSignature.create({
+        data: {
+          poId: po.id,
+          keyId: sig.keyId,
+          algorithm: sig.algorithm,
+          payloadHash: this.signing.sha256(canonical),
+          signature: sig.signature,
+          publicKeyPem: sig.publicKeyPem,
+          signerId: ctx.user.id,
+        },
+      })
+
+      return {
+        signed: true,
+        configured: true,
+        keyId: created.keyId,
+        algorithm: created.algorithm,
+        signerId: created.signerId,
+        signedAt: created.signedAt.toISOString(),
+        signatureValid: true,
+        documentUnchanged: true,
+      }
     }
+    if (outerTx) return run(outerTx)
+    return db.$transaction(run)
   }
 
   /**
@@ -163,8 +179,11 @@ export class PoSigningService {
     }
   }
 
-  private load(poId: string) {
-    return db.purchaseOrder
+  private load(
+    poId: string,
+    client: Prisma.TransactionClient | typeof db = db,
+  ) {
+    return client.purchaseOrder
       .findUnique({ where: { id: poId }, include: { lines: true } })
       .then((po) => {
         if (!po) {

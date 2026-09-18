@@ -336,6 +336,7 @@ export class ErpService {
       rejectedReason?: string | null
       resolveDispatchClaim?: boolean
     },
+    acknowledgedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
     const row = await tx.erpJournalExport.findUnique({
@@ -350,6 +351,15 @@ export class ErpService {
     if (row.dispatchClaimId && !input.resolveDispatchClaim) {
       throw new ConflictException(
         `Export for ${row.runNumber} has a QBO dispatch claim; explicit manual resolution is required`,
+      )
+    }
+    if (
+      row.dispatchClaimId &&
+      input.resolveDispatchClaim &&
+      row.dispatchClaimedBy === acknowledgedBy
+    ) {
+      throw new ConflictException(
+        'QBO dispatch maker and manual-resolution checker must differ',
       )
     }
     if (
@@ -375,6 +385,12 @@ export class ErpService {
         rejectedReason:
           input.status === 'rejected' ? (input.rejectedReason ?? null) : null,
         acknowledgedAt: new Date(),
+        ...(row.dispatchClaimId && input.resolveDispatchClaim
+          ? {
+              dispatchResolvedBy: acknowledgedBy,
+              dispatchResolvedAt: new Date(),
+            }
+          : {}),
       },
     })
     if (changed.count !== 1) {

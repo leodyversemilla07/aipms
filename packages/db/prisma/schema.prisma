@@ -476,7 +476,8 @@ model Approval {
   route         Json           // ordered assignees/roles
   citations     Json           @default("[]") // policy citations
   status        ApprovalStatus @default(pending)
-  decidedBy     String?
+  requestedBy   String         // maker that opened the human gate
+  decidedBy     String?        // checker; must differ from requestedBy
   decidedAt     DateTime?
   evidence      String?
   // §10.3 SLA escalation — set once by the escalator when a pending
@@ -538,6 +539,8 @@ model ErpJournalExport {
   dispatchClaimedBy String?
   dispatchStartedAt DateTime?
   dispatchFailure  String?
+  dispatchResolvedBy String?
+  dispatchResolvedAt DateTime?
   exportedBy       String
   exportedAt     DateTime  @default(now())
 
@@ -598,6 +601,9 @@ model PaymentRun {
   approvedAt   DateTime?
   executedBy   String?
   executedAt   DateTime?
+  voidedBy     String?
+  voidedAt     DateTime?
+  voidReason   String?
   reconciledAt DateTime?
   lines        PaymentRunLine[]
   createdAt    DateTime       @default(now())

@@ -42,7 +42,9 @@ function ctx(partial: {
   }
 }
 
-async function seedIssuedPo(): Promise<{ poId: string; vendorId: string }> {
+async function seedIssuedPo(
+  issuedBy = 'seed',
+): Promise<{ poId: string; vendorId: string }> {
   const vendor = await db.vendor.create({
     data: { id: `ven-${randomUUID()}`, name: 'Sig Vendor', status: 'active' },
   })
@@ -52,7 +54,7 @@ async function seedIssuedPo(): Promise<{ poId: string; vendorId: string }> {
       vendorId: vendor.id,
       status: 'issued',
       totalMinor: 2500,
-      issuedBy: 'seed',
+      issuedBy,
       issuedAt: new Date('2026-01-15T08:00:00Z'),
       terms: { paymentDays: 30 },
       lines: {
@@ -146,9 +148,18 @@ describe('Qualified PO signing', () => {
   })
 
   it('rejects agent principals — agents never countersign', async () => {
-    expect(() =>
-      PoSigningService.assertHumanSigner(ctx({ kind: 'agent', role: 'admin' })),
-    ).toThrow(/never sign/)
+    const agent = ctx({ kind: 'agent', role: 'admin' })
+    expect(() => PoSigningService.assertHumanSigner(agent)).toThrow(/never sign/)
+    const { poId } = await seedIssuedPo()
+    await expect(service.sign(poId, agent)).rejects.toThrow(/never sign/)
+  })
+
+  it('requires the countersigner to differ from the PO issuer', async () => {
+    const issuer = ctx({ id: 'same-principal', role: 'procurement' })
+    const { poId } = await seedIssuedPo(issuer.user.id)
+    await expect(service.sign(poId, issuer)).rejects.toThrow(
+      /issuer and countersigner/i,
+    )
   })
 
   it('enforces the human role gate', () => {

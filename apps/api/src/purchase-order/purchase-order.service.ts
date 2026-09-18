@@ -264,6 +264,7 @@ export class PurchaseOrderService {
               route: (vendorDecision.approvers ?? []) as string[],
               citations: vendorDecision.citations as string[],
               status: 'pending',
+              requestedBy: actorId,
               evidence: vendorDecision.reason,
             },
           })
@@ -438,6 +439,7 @@ export class PurchaseOrderService {
   async requestCancellation(
     id: string,
     reason: string,
+    requestedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
     await tx.$queryRaw`
@@ -462,6 +464,7 @@ export class PurchaseOrderService {
         route: ['finance'],
         citations: ['policy:po-cancellation'],
         status: 'pending',
+        requestedBy,
         evidence: reason,
       },
     })

@@ -24,6 +24,9 @@ const createInput = z.object({
 })
 
 const runIdInput = z.object({ id: z.string().min(1) })
+const voidInput = runIdInput.extend({
+  reason: z.string().trim().min(1).max(500),
+})
 
 const reconcileInput = z.object({
   runId: z.string().min(1),
@@ -176,14 +179,19 @@ export class PaymentRunRouter {
     })
   }
 
-  @Mutation({ input: runIdInput })
+  @Mutation({ input: voidInput })
   async voidRun(
-    @Input() input: z.infer<typeof runIdInput>,
+    @Input() input: z.infer<typeof voidInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.void')
     return db.$transaction(async (tx) => {
-      const run = await this.runs.voidRun(input.id, tx)
+      const run = await this.runs.voidRun(
+        input.id,
+        ctx.user.id,
+        input.reason,
+        tx,
+      )
       await this.audit.record(
         {
           actorId: ctx.user.id,

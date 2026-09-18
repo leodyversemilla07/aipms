@@ -126,10 +126,30 @@ describe('Claim release (§8.6 reservations)', () => {
       ConflictException,
     )
 
-    await runs.voidRun(first.run.id)
+    await runs.voidRun(first.run.id, 'finance-checker', 'replace failed run')
     const replacement = await runs.create({ invoiceIds: [inv.id] }, maker)
     created.run.push(replacement.run.id)
     expect(replacement.run.status).toBe('draft')
+  })
+
+  it('requires a different checker to void an approved run', async () => {
+    const vendor = await makeVendorBanked('approved-void')
+    const inv = await makeMatchedInvoice(vendor.id, 'approved-void')
+    const { run } = await runs.create({ invoiceIds: [inv.id] }, maker)
+    created.run.push(run.id)
+    await runs.approve(run.id, checker)
+
+    await expect(
+      runs.voidRun(run.id, maker, 'maker changed their mind'),
+    ).rejects.toThrow(/maker cannot override/i)
+    const voided = await runs.voidRun(
+      run.id,
+      checker,
+      'checker cancelled after review',
+    )
+    expect(voided.status).toBe('voided')
+    expect(voided.voidedBy).toBe(checker)
+    expect(voided.voidReason).toBe('checker cancelled after review')
   })
 
   it('releases dishonored lines but never paid invoices', async () => {
@@ -253,20 +273,39 @@ describe('ERP artifacts across reconciliation (§8.5)', () => {
     ).rejects.toThrow(/ambiguous QBO dispatch/)
 
     await expect(
-      erp.acknowledge({
+      erp.acknowledge(
+        {
+          exportId: exported.export.id,
+          status: 'posted',
+          externalRef: 'QB-MANUAL-1',
+        },
+        'finance-reviewer',
+      ),
+    ).rejects.toThrow(/explicit manual resolution/)
+
+    await expect(
+      erp.acknowledge(
+        {
+          exportId: exported.export.id,
+          status: 'posted',
+          externalRef: 'QB-MANUAL-1',
+          resolveDispatchClaim: true,
+        },
+        'finance-qbo',
+      ),
+    ).rejects.toThrow(/maker and manual-resolution checker/i)
+
+    const resolved = await erp.acknowledge(
+      {
         exportId: exported.export.id,
         status: 'posted',
         externalRef: 'QB-MANUAL-1',
-      }),
-    ).rejects.toThrow(/explicit manual resolution/)
-
-    const resolved = await erp.acknowledge({
-      exportId: exported.export.id,
-      status: 'posted',
-      externalRef: 'QB-MANUAL-1',
-      resolveDispatchClaim: true,
-    })
+        resolveDispatchClaim: true,
+      },
+      'finance-reviewer',
+    )
     expect(resolved.status).toBe('posted')
+    expect(resolved.dispatchResolvedBy).toBe('finance-reviewer')
   })
 
   it('refuses a second push once the export settles, before any POST', async () => {

@@ -103,12 +103,18 @@ export class ErpRouter {
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.acknowledge')
     return db.$transaction(async (tx) => {
-      const updated = await this.erp.acknowledge(input, tx)
+      const updated = await this.erp.acknowledge(
+        input,
+        ctx.user.id,
+        tx,
+      )
       await this.audit.record(
         {
           actorId: ctx.user.id,
           actorKind: ctx.actorKind,
-          action: 'erp.acknowledge',
+          action: input.resolveDispatchClaim
+            ? 'erp.qbo.resolveDispatch'
+            : 'erp.acknowledge',
           entity: 'ErpJournalExport',
           entityId: updated.id,
           input: {

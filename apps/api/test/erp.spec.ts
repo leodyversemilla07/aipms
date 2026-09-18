@@ -216,22 +216,31 @@ describe('ErpService', () => {
     created.erpExport.push(exp.id)
 
     await expect(
-      erp.acknowledge({
-        exportId: exp.id,
-        status: 'rejected',
-        rejectedReason: null,
-      }),
+      erp.acknowledge(
+        {
+          exportId: exp.id,
+          status: 'rejected',
+          rejectedReason: null,
+        },
+        'erp-feed',
+      ),
     ).rejects.toThrow(/reason/i)
 
-    const posted = await erp.acknowledge({
-      exportId: exp.id,
-      status: 'posted',
-      externalRef: 'QB-JE-991',
-    })
+    const posted = await erp.acknowledge(
+      {
+        exportId: exp.id,
+        status: 'posted',
+        externalRef: 'QB-JE-991',
+      },
+      'erp-feed',
+    )
     expect(posted.status).toBe('posted')
 
     await expect(
-      erp.acknowledge({ exportId: exp.id, status: 'rejected' }),
+      erp.acknowledge(
+        { exportId: exp.id, status: 'rejected' },
+        'erp-feed',
+      ),
     ).rejects.toThrow(/already posted/)
   })
 

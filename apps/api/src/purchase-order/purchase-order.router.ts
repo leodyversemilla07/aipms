@@ -173,6 +173,7 @@ export class PurchaseOrderRouter {
         const approval = await this.purchaseOrder.requestCancellation(
           input.id,
           input.reason,
+          ctx.user.id,
           tx,
         )
         await this.audit.record(

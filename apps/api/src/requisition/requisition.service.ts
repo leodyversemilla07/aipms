@@ -297,6 +297,7 @@ export class RequisitionService {
             route: [],
             citations: decision.citations,
             status: 'approved',
+            requestedBy: requisition.requestedBy,
             decidedBy: 'system',
             decidedAt: now,
             evidence: decision.reason,
@@ -339,6 +340,7 @@ export class RequisitionService {
           route: (decision.approvers ?? []) as string[],
           citations: decision.citations as string[],
           status: 'pending',
+          requestedBy: requisition.requestedBy,
           evidence: decision.reason,
         },
       })

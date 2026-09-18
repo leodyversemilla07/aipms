@@ -304,6 +304,7 @@ describe('generateBatch integration (approved run hand-off)', () => {
         totalMinor: 10_000,
         createdBy: actorA,
         approvedBy: actorB,
+        approvedAt: new Date(),
         lines: { create: { invoiceId: invoice.id, netMinor: 10_000 } },
       },
     })

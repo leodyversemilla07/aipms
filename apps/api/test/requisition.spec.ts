@@ -16,6 +16,7 @@ import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 const suffix = Math.random().toString(36).slice(2, 8)
 const actorId = `test-user-${suffix}`
+const checkerId = `test-checker-${suffix}`
 
 const created: Record<string, string[]> = {
   requisition: [],
@@ -35,18 +36,26 @@ const policyService = new PolicyService()
 
 // §10: decide() requires a real actor — an admin bypasses route membership.
 beforeAll(async () => {
-  await db.user.create({
-    data: {
-      id: actorId,
-      name: 'Test Admin',
-      email: `${actorId}@test.aipms`,
-      role: 'admin',
-    },
+  await db.user.createMany({
+    data: [
+      {
+        id: actorId,
+        name: 'Test Admin',
+        email: `${actorId}@test.aipms`,
+        role: 'admin',
+      },
+      {
+        id: checkerId,
+        name: 'Test Checker',
+        email: `${checkerId}@test.aipms`,
+        role: 'admin',
+      },
+    ],
   })
 })
 
 afterAll(async () => {
-  await db.user.deleteMany({ where: { id: actorId } })
+  await db.user.deleteMany({ where: { id: { in: [actorId, checkerId] } } })
   await db.approval.deleteMany({ where: { id: { in: created.approval } } })
   await db.requisition.deleteMany({
     where: { id: { in: created.requisition } },
@@ -172,10 +181,14 @@ describe('Threshold gate (human approval)', () => {
     if (!gate) throw new Error('expected a pending threshold approval')
     created.approval.push(gate.id)
 
+    await expect(
+      approvalService.decide(gate.id, 'approve', actorId, 'self approval'),
+    ).rejects.toThrow(/maker and checker/i)
+
     const decided = await approvalService.decide(
       gate.id,
       'approve',
-      actorId,
+      checkerId,
       'ok',
     )
     expect(decided.outcome).toBe('APPROVED')

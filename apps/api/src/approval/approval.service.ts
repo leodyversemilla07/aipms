@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -59,6 +60,11 @@ export class ApprovalService {
       if (approval.status !== 'pending') {
         throw new ConflictException('Approval already decided')
       }
+      if (verdict === 'override' && !evidence?.trim()) {
+        throw new BadRequestException(
+          'An explicit evidence reason is required to override an approval',
+        )
+      }
 
       // §10 authorization: the deciding actor must be a human whose role is on
       // the approval's route (or an admin). Unknown principals (e.g. the
@@ -76,6 +82,13 @@ export class ApprovalService {
       if (actor.role !== 'admin' && !route.includes(actor.role)) {
         throw new ForbiddenException(
           `Role ${actor.role} is not on this approval's route (${route.join(', ') || 'admin only'})`,
+        )
+      }
+
+      // Maker/checker: no principal may decide a gate they opened.
+      if (approval.requestedBy === actorId) {
+        throw new ForbiddenException(
+          'Approval maker and checker must be different principals',
         )
       }
 

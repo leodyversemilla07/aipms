@@ -34,6 +34,7 @@ const created: Record<string, string[]> = {
 
 const users = {
   finance: `authz-finance-${suffix}`,
+  financeChecker: `authz-finance-checker-${suffix}`,
   procurement: `authz-procurement-${suffix}`,
   plain: `authz-plain-${suffix}`,
   admin: `authz-admin-${suffix}`,
@@ -59,6 +60,12 @@ beforeAll(async () => {
         id: users.finance,
         name: 'A Finance',
         email: `${users.finance}@test.aipms`,
+        role: 'finance',
+      },
+      {
+        id: users.financeChecker,
+        name: 'A Finance Checker',
+        email: `${users.financeChecker}@test.aipms`,
         role: 'finance',
       },
       {
@@ -122,9 +129,13 @@ async function makeBudget(limitMinor: number) {
   return budget
 }
 
-async function makeRequisition(budgetId: string, totalMinor: number) {
+async function makeRequisition(
+  budgetId: string,
+  totalMinor: number,
+  requestedBy = users.plain,
+) {
   const req = await requisitionService.create({
-    requestedBy: users.plain,
+    requestedBy,
     costCenter: `CC-AUTHZ-${suffix}`,
     budgetId,
     lines: [
@@ -166,6 +177,54 @@ describe('Approval route enforcement (§10)', () => {
       'ok',
     )
     expect(decided.outcome).toBe('APPROVED')
+  })
+
+  it('prevents a routed requester from approving their own gate', async () => {
+    await makePolicy('Threshold Maker Checker', {
+      autoApproveUpTo: 0,
+      budgetRequired: true,
+      approvalChain: ['finance'],
+    })
+    const budget = await makeBudget(100_000_000)
+    const req = await makeRequisition(budget.id, 250_000, users.finance)
+    await requisitionService.submit(req.id)
+    const gate = (await approvalService.pendingList()).find(
+      (row) => row.requisitionId === req.id,
+    )
+    if (!gate) throw new Error('expected maker/checker approval')
+    created.approval.push(gate.id)
+    expect(gate.requestedBy).toBe(users.finance)
+
+    await expect(
+      approvalService.decide(gate.id, 'approve', users.finance, 'self'),
+    ).rejects.toThrow(/maker and checker/i)
+    const decided = await approvalService.decide(
+      gate.id,
+      'approve',
+      users.financeChecker,
+      'independent review',
+    )
+    expect(decided.outcome).toBe('APPROVED')
+  })
+
+  it('requires explicit evidence for approval overrides', async () => {
+    await makePolicy('Threshold Override Evidence', {
+      autoApproveUpTo: 0,
+      budgetRequired: true,
+      approvalChain: ['finance'],
+    })
+    const budget = await makeBudget(100_000_000)
+    const req = await makeRequisition(budget.id, 250_000)
+    await requisitionService.submit(req.id)
+    const gate = (await approvalService.pendingList()).find(
+      (row) => row.requisitionId === req.id,
+    )
+    if (!gate) throw new Error('expected override approval')
+    created.approval.push(gate.id)
+
+    await expect(
+      approvalService.decide(gate.id, 'override', users.finance, '   '),
+    ).rejects.toThrow(/evidence reason/i)
   })
 
   it('vendor gates route to procurement: finance cannot decide them', async () => {

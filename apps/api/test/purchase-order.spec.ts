@@ -16,6 +16,7 @@ import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 const suffix = Math.random().toString(36).slice(2, 8)
 const actorId = `test-user-${suffix}`
+const checkerId = `test-checker-${suffix}`
 
 const created: Record<string, string[]> = {
   requisition: [],
@@ -42,18 +43,26 @@ const policyService = new PolicyService()
 
 // §10: decide() requires a real actor — an admin bypasses route membership.
 beforeAll(async () => {
-  await db.user.create({
-    data: {
-      id: actorId,
-      name: 'Test Admin',
-      email: `${actorId}@test.aipms`,
-      role: 'admin',
-    },
+  await db.user.createMany({
+    data: [
+      {
+        id: actorId,
+        name: 'Test Admin',
+        email: `${actorId}@test.aipms`,
+        role: 'admin',
+      },
+      {
+        id: checkerId,
+        name: 'Test Checker',
+        email: `${checkerId}@test.aipms`,
+        role: 'admin',
+      },
+    ],
   })
 })
 
 afterAll(async () => {
-  await db.user.deleteMany({ where: { id: actorId } })
+  await db.user.deleteMany({ where: { id: { in: [actorId, checkerId] } } })
   await db.approval.deleteMany({ where: { id: { in: created.approval } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.quote.deleteMany({ where: { id: { in: created.quote } } })
@@ -148,6 +157,7 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     const cancelGate = await purchaseOrderService.requestCancellation(
       confirmed.id,
       'test cancellation',
+      actorId,
     )
     created.approval.push(cancelGate.id)
     expect(cancelGate.kind).toBe('poCancellation')
@@ -155,7 +165,7 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     const decided = await approvalService.decide(
       cancelGate.id,
       'approve',
-      actorId,
+      checkerId,
       'ok',
     )
     expect(decided.outcome).toBe('PO_CANCELLED')
@@ -247,7 +257,10 @@ describe('Vendor gate at PO issue', () => {
     if (!gate) throw new Error('expected a pending vendor-gate approval')
     created.approval.push(gate.id)
 
-    await approvalService.decide(gate.id, 'approve', actorId, 'vendor ok')
+    await expect(
+      approvalService.decide(gate.id, 'approve', actorId, 'self approval'),
+    ).rejects.toThrow(/maker and checker/i)
+    await approvalService.decide(gate.id, 'approve', checkerId, 'vendor ok')
     expect(
       (await db.vendor.findUnique({ where: { id: vendor.id } }))?.status,
     ).toBe('active')

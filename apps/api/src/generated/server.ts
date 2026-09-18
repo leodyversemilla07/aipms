@@ -413,7 +413,10 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["reconcile"]>>),
     voidRun: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({
+  id: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["voidRun"]>>)
     }),
   policy: t.router({

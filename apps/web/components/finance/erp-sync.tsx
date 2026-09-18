@@ -35,6 +35,8 @@ type ExportRow = {
   dispatchClaimedBy: string | null
   dispatchStartedAt: string | Date | null
   dispatchFailure: string | null
+  dispatchResolvedBy: string | null
+  dispatchResolvedAt: string | Date | null
   exportedAt: string | Date
 }
 
@@ -319,8 +321,8 @@ export function ErpSync() {
               {e.dispatchClaimId && e.status === "exported" ? (
                 <p className="mt-1 text-amber-600 text-xs">
                   {e.dispatchFailure
-                    ? `QBO outcome requires manual review: ${e.dispatchFailure}`
-                    : "QBO dispatch is claimed; do not retry unless its journal list has been reviewed."}
+                    ? `QBO outcome requires review by a different finance user than ${e.dispatchClaimedBy ?? "the dispatcher"}: ${e.dispatchFailure}`
+                    : `QBO dispatch is claimed by ${e.dispatchClaimedBy ?? "another user"}; a different finance user must review it before manual resolution.`}
                 </p>
               ) : null}
               {e.rejectedReason ? (
