@@ -1,7 +1,7 @@
 import { db } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
-import { AgentCommandService } from '../src/agent/agent-command.service'
 import { AgentService } from '../src/agent/agent.service'
+import { AgentCommandService } from '../src/agent/agent-command.service'
 import { extractStructuredInvoice } from '../src/agent/extract'
 import { IntakeService } from '../src/intake/intake.service'
 import { InvoiceService } from '../src/invoice/invoice.service'
@@ -23,11 +23,7 @@ const events = new EventEmitterService()
 const invoice = new InvoiceService(policy, events)
 const intake = new IntakeService(events)
 const agent = new AgentService(intake, invoice, extractStructuredInvoice)
-const commands = new AgentCommandService(
-  agent,
-  {} as never,
-  new AuditService(),
-)
+const commands = new AgentCommandService(agent, {} as never, new AuditService())
 
 beforeEach(() => {
   invoiceIds = []

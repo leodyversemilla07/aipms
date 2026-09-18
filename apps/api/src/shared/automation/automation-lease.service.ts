@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
 
-export type LeaseResult<T> =
-  | { acquired: false }
-  | { acquired: true; value: T }
+export type LeaseResult<T> = { acquired: false } | { acquired: true; value: T }
 
 /**
  * Cross-replica execution guard backed by a transaction-scoped PostgreSQL

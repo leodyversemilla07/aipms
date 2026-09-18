@@ -12,8 +12,8 @@ import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
-import { AgentCommandService } from './agent-command.service'
 import { AgentService } from './agent.service'
+import { AgentCommandService } from './agent-command.service'
 
 const processInput = z.object({
   id: z.string().min(1),
@@ -87,17 +87,16 @@ export class AgentRouter {
     return this.agent.listRuns(input)
   }
 
-  private commandActor(
-    ctx: AuthedTrpcContext,
-    idempotencyKey?: string,
-  ) {
+  private commandActor(ctx: AuthedTrpcContext, idempotencyKey?: string) {
     const rawScopes = (ctx.user as { scopes?: unknown }).scopes
     return {
       id: ctx.user.id,
       kind: ctx.actorKind,
       role: ctx.user.role,
       scopes: Array.isArray(rawScopes)
-        ? rawScopes.filter((scope): scope is string => typeof scope === 'string')
+        ? rawScopes.filter(
+            (scope): scope is string => typeof scope === 'string',
+          )
         : undefined,
       idempotencyKey,
       source: 'trpc' as const,

@@ -139,9 +139,7 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
         if (changed) escalated += 1
       }
       if (escalated > 0) {
-        console.log(
-          `[approval-sla] escalated ${escalated} overdue approval(s)`,
-        )
+        console.log(`[approval-sla] escalated ${escalated} overdue approval(s)`)
       }
       return escalated
     } catch (error) {
@@ -161,6 +159,8 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
   }
 
   private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+    return error instanceof Error
+      ? error.message.slice(0, 500)
+      : 'Unknown error'
   }
 }

@@ -61,7 +61,8 @@ function normalizeRun(row: {
             typeof meta.triggeredBy === "string" ? meta.triggeredBy : undefined,
           entityType:
             typeof meta.entityType === "string" ? meta.entityType : undefined,
-          entityId: typeof meta.entityId === "string" ? meta.entityId : undefined,
+          entityId:
+            typeof meta.entityId === "string" ? meta.entityId : undefined,
         }
       : null,
   }

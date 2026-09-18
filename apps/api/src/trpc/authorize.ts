@@ -9,10 +9,7 @@ import type { UserKind, UserRole } from '@workspace/db'
  * `admin` is an implicit member of every grant. Agent principals never use
  * this table: their separate capability map remains default-deny.
  */
-export const HUMAN_PROCEDURE_ROLES: Record<
-  string,
-  readonly UserRole[]
-> = {
+export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'users.me': ['user', 'procurement', 'finance'],
   'users.list': ['admin'],
 
@@ -132,10 +129,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<
 }
 
 /** Enforce the centralized human role matrix; unknown procedures fail closed. */
-export function assertHumanProcedureRole(
-  path: string,
-  role: UserRole,
-): void {
+export function assertHumanProcedureRole(path: string, role: UserRole): void {
   const roles = HUMAN_PROCEDURE_ROLES[path]
   if (!roles) {
     throw new TRPCError({

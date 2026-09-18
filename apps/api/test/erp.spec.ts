@@ -237,10 +237,7 @@ describe('ErpService', () => {
     expect(posted.status).toBe('posted')
 
     await expect(
-      erp.acknowledge(
-        { exportId: exp.id, status: 'rejected' },
-        'erp-feed',
-      ),
+      erp.acknowledge({ exportId: exp.id, status: 'rejected' }, 'erp-feed'),
     ).rejects.toThrow(/already posted/)
   })
 

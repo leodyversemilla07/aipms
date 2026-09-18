@@ -101,6 +101,8 @@ export class IntakeCommandService {
   }
 
   private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+    return error instanceof Error
+      ? error.message.slice(0, 500)
+      : 'Unknown error'
   }
 }

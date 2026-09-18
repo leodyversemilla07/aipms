@@ -1,6 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common'
 import { db, type Prisma, type UserKind, type UserRole } from '@workspace/db'
-import { PurchaseOrderService, type IssueInput } from '../purchase-order/purchase-order.service'
+import {
+  type IssueInput,
+  PurchaseOrderService,
+} from '../purchase-order/purchase-order.service'
 import { AuditService } from '../shared/audit/audit.service'
 import {
   assertAgentCapability,
@@ -67,9 +70,16 @@ export class AgentCommandService {
     try {
       return await db.$transaction(run)
     } catch (error) {
-      await this.recordFailure('agent.process', 'IntakeDocument', docId, actor, {
+      await this.recordFailure(
+        'agent.process',
+        'IntakeDocument',
         docId,
-      }, error)
+        actor,
+        {
+          docId,
+        },
+        error,
+      )
       throw error
     }
   }
@@ -103,9 +113,7 @@ export class AgentCommandService {
             },
           },
         })
-    const effectiveActor = ownedRun
-      ? { ...actor, runId: ownedRun.id }
-      : actor
+    const effectiveActor = ownedRun ? { ...actor, runId: ownedRun.id } : actor
     try {
       const docs = await db.intakeDocument.findMany({
         where: { status: 'new' },
@@ -185,11 +193,7 @@ export class AgentCommandService {
   }
 
   async issuePurchaseOrder(input: IssueInput, actor: CommandActor) {
-    await this.authorize(
-      actor,
-      'purchaseOrder.issue',
-      'purchaseOrder.issue',
-    )
+    await this.authorize(actor, 'purchaseOrder.issue', 'purchaseOrder.issue')
     try {
       return await db.$transaction(async (tx) => {
         const result = await this.purchaseOrders.issue(input, actor.id, tx)
@@ -291,6 +295,8 @@ export class AgentCommandService {
   }
 
   private errorMessage(error: unknown) {
-    return error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
+    return error instanceof Error
+      ? error.message.slice(0, 500)
+      : 'Unknown error'
   }
 }

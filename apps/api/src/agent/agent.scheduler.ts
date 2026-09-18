@@ -58,9 +58,7 @@ export class AgentScheduler implements OnModuleInit, OnModuleDestroy {
         }),
       )
       if (!leased.acquired) {
-        this.logger.debug(
-          'agent drain skipped: another replica owns the lease',
-        )
+        this.logger.debug('agent drain skipped: another replica owns the lease')
         return
       }
       const result = leased.value

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AgentCommandService } from '../src/agent/agent-command.service'
 import { AgentScheduler } from '../src/agent/agent.scheduler'
+import type { AgentCommandService } from '../src/agent/agent-command.service'
 import type { AutomationLeaseService } from '../src/shared/automation/automation-lease.service'
 
 /**

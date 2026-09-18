@@ -258,10 +258,7 @@ describe('ERP artifacts across reconciliation (§8.5)', () => {
     const exported = await erp.exportRun(executed.id, 'finance-erp')
     created.erpExport.push(exported.export.id)
 
-    const ready = await erp.prepareQboPush(
-      exported.export.id,
-      'finance-qbo',
-    )
+    const ready = await erp.prepareQboPush(exported.export.id, 'finance-qbo')
     const failed = await erp.markQboPushFailed(
       exported.export.id,
       ready.claimId,
@@ -315,20 +312,13 @@ describe('ERP artifacts across reconciliation (§8.5)', () => {
     const exported = await erp.exportRun(executed.id, 'finance-erp')
     created.erpExport.push(exported.export.id)
 
-    const ready = await erp.prepareQboPush(
-      exported.export.id,
-      'finance-qbo',
-    )
+    const ready = await erp.prepareQboPush(exported.export.id, 'finance-qbo')
     expect(typeof ready.json).toBe('string')
     await expect(
       erp.prepareQboPush(exported.export.id, 'finance-qbo-2'),
     ).rejects.toThrow(/already being pushed/)
 
-    await erp.completeQboPush(
-      exported.export.id,
-      ready.claimId,
-      'QB-JE-1',
-    )
+    await erp.completeQboPush(exported.export.id, ready.claimId, 'QB-JE-1')
     await expect(
       erp.prepareQboPush(exported.export.id, 'finance-qbo-2'),
     ).rejects.toThrow(/already posted/)

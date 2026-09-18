@@ -23,7 +23,10 @@ export const positiveDatabaseInt = z
   .max(DATABASE_INT_MAX)
 
 /** Normalize an ISO-style currency code at every money boundary. */
-export function normalizeCurrencyCode(value: string, label = 'Currency'): string {
+export function normalizeCurrencyCode(
+  value: string,
+  label = 'Currency',
+): string {
   const code = value.trim().toUpperCase()
   if (!/^[A-Z]{3}$/.test(code)) {
     throw new BadRequestException(`${label} must be a three-letter code`)

@@ -103,11 +103,7 @@ export class ErpRouter {
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.acknowledge')
     return db.$transaction(async (tx) => {
-      const updated = await this.erp.acknowledge(
-        input,
-        ctx.user.id,
-        tx,
-      )
+      const updated = await this.erp.acknowledge(input, ctx.user.id, tx)
       await this.audit.record(
         {
           actorId: ctx.user.id,
@@ -253,7 +249,11 @@ export class ErpRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.qboPushExport')
-    const { json, export: row, claimId } = await db.$transaction(async (tx) => {
+    const {
+      json,
+      export: row,
+      claimId,
+    } = await db.$transaction(async (tx) => {
       const ready = await this.erp.prepareQboPush(
         input.exportId,
         ctx.user.id,
@@ -280,12 +280,7 @@ export class ErpRouter {
       const reason =
         error instanceof Error ? error.message : 'Unknown QBO dispatch failure'
       await db.$transaction(async (tx) => {
-        await this.erp.markQboPushFailed(
-          input.exportId,
-          claimId,
-          reason,
-          tx,
-        )
+        await this.erp.markQboPushFailed(input.exportId, claimId, reason, tx)
         await this.audit.record(
           {
             actorId: ctx.user.id,

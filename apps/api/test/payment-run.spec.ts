@@ -216,9 +216,9 @@ describe('§8.6 beneficiary bank control', () => {
     })
     expect(pending.bankAccountVerifiedAt).toBeNull()
     expect(pending.bankAccountSubmittedBy).toBe(actorA)
-    await expect(
-      submitBankAccount(vendor.id, 'DUAL1', actorA),
-    ).rejects.toThrow(ForbiddenException)
+    await expect(submitBankAccount(vendor.id, 'DUAL1', actorA)).rejects.toThrow(
+      ForbiddenException,
+    )
 
     await submitBankAccount(vendor.id, 'DUAL1', actorB)
     const verified = await db.vendor.findUniqueOrThrow({

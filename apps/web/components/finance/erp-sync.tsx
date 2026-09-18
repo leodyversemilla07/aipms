@@ -133,7 +133,7 @@ export function ErpSync() {
               </span>
             </span>
             <span className="text-muted-foreground">
-              QBO review: {" "}
+              QBO review:{" "}
               <span className="font-mono">
                 {report.data.ambiguousDispatches.length}
               </span>

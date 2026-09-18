@@ -112,7 +112,9 @@ describe('EventRelayService (§13)', () => {
 
     await db.domainEvent.update({
       where: { id: event.id },
-      data: { dispatchClaimedAt: new Date(Date.now() - 365 * 24 * 60 * 60_000) },
+      data: {
+        dispatchClaimedAt: new Date(Date.now() - 365 * 24 * 60 * 60_000),
+      },
     })
     row = await pollUntilPublished(relay, event.id)
     expect(row?.publishedAt).not.toBeNull()

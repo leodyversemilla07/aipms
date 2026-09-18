@@ -129,9 +129,7 @@ function Dashboard() {
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {isSupervisor && (
-          <StatCard label="Approvals" value={count(pending)} />
-        )}
+        {isSupervisor && <StatCard label="Approvals" value={count(pending)} />}
         <StatCard label="Requisitions" value={count(requisitions)} />
         {isSupervisor && <StatCard label="POs" value={count(orders)} />}
         {isFinance && <StatCard label="Invoices" value={count(invoices)} />}

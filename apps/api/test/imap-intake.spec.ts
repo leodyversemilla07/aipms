@@ -7,8 +7,8 @@ import {
   matchVendorSender,
   type ParsedMailLike,
 } from '../src/intake/imap-message'
-import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { IntakeService } from '../src/intake/intake.service'
+import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { IntakeImapService } from '../src/intake/intake-imap.service'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'

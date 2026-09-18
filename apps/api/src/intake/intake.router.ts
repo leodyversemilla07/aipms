@@ -17,8 +17,8 @@ import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
-import { IntakeCommandService } from './intake-command.service'
 import { IntakeService } from './intake.service'
+import { IntakeCommandService } from './intake-command.service'
 import { parseStructuredInvoice } from './structured-invoice'
 
 const ingestInput = z.object({

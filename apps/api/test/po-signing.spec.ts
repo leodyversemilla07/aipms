@@ -149,7 +149,9 @@ describe('Qualified PO signing', () => {
 
   it('rejects agent principals — agents never countersign', async () => {
     const agent = ctx({ kind: 'agent', role: 'admin' })
-    expect(() => PoSigningService.assertHumanSigner(agent)).toThrow(/never sign/)
+    expect(() => PoSigningService.assertHumanSigner(agent)).toThrow(
+      /never sign/,
+    )
     const { poId } = await seedIssuedPo()
     await expect(service.sign(poId, agent)).rejects.toThrow(/never sign/)
   })

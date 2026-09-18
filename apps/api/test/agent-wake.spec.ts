@@ -28,16 +28,13 @@ describe('AgentWakeService', () => {
   })
 
   it('publishes an intake wake only after the handler succeeds', async () => {
-    const wake = new AgentWakeService(
-      relay,
-      {
-        processDocument: async () => ({
-          doc: { status: 'matched' },
-          invoice: { id: 'invoice-1' },
-          match: { outcome: 'PASS' },
-        }),
-      } as never,
-    )
+    const wake = new AgentWakeService(relay, {
+      processDocument: async () => ({
+        doc: { status: 'matched' },
+        invoice: { id: 'invoice-1' },
+        match: { outcome: 'PASS' },
+      }),
+    } as never)
     wake.onModuleInit()
 
     const event = await db.domainEvent.create({
@@ -60,14 +57,11 @@ describe('AgentWakeService', () => {
   })
 
   it('leaves failed wakes unpublished so the relay can retry/dead-letter', async () => {
-    const wake = new AgentWakeService(
-      relay,
-      {
-        processDocument: async () => {
-          throw new Error('extractor offline')
-        },
-      } as never,
-    )
+    const wake = new AgentWakeService(relay, {
+      processDocument: async () => {
+        throw new Error('extractor offline')
+      },
+    } as never)
     wake.onModuleInit()
 
     const event = await db.domainEvent.create({

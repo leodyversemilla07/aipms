@@ -46,10 +46,7 @@ function linesFromAwardedQuote(
   if (quote.totalMinor == null) {
     throw new ConflictException('Accepted quote has no commercial total')
   }
-  const totalMinor = assertDatabaseInt(
-    quote.totalMinor,
-    'Accepted quote total',
-  )
+  const totalMinor = assertDatabaseInt(quote.totalMinor, 'Accepted quote total')
   if (totalMinor <= 0) {
     throw new BadRequestException('Accepted quote total must be positive')
   }
@@ -296,8 +293,10 @@ export class PurchaseOrderService {
       }
       if (
         awardedQuote &&
-        normalizeCurrencyCode(awardedQuote.currencyCode, 'Accepted quote currency') !==
-          currencyCode
+        normalizeCurrencyCode(
+          awardedQuote.currencyCode,
+          'Accepted quote currency',
+        ) !== currencyCode
       ) {
         throw new BadRequestException(
           'Accepted quote currency must match the requisition and budget',

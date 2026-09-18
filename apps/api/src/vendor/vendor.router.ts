@@ -15,7 +15,7 @@ import { requireHumanRole, requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
-import { vendorViewSelect, VendorService } from './vendor.service'
+import { VendorService, vendorViewSelect } from './vendor.service'
 
 const idInput = z.object({ id: z.string().min(1) })
 

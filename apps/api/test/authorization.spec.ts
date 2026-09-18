@@ -328,7 +328,9 @@ describe('requester row-level boundary (§10)', () => {
       requestedBy: users.finance,
       costCenter: `CC-AUTHZ-${suffix}`,
       budgetId: budget.id,
-      lines: [{ description: 'Other requester', quantity: 1, unitPriceMinor: 1 }],
+      lines: [
+        { description: 'Other requester', quantity: 1, unitPriceMinor: 1 },
+      ],
     })
     created.requisition.push(other.id)
 
@@ -360,9 +362,9 @@ describe('central human procedure policy (§10)', () => {
     expect(() =>
       assertHumanProcedureRole('paymentRun.approve', 'finance'),
     ).not.toThrow()
-    expect(() =>
-      assertHumanProcedureRole('vendor.create', 'finance'),
-    ).toThrow(TRPCError)
+    expect(() => assertHumanProcedureRole('vendor.create', 'finance')).toThrow(
+      TRPCError,
+    )
     expect(() =>
       assertHumanProcedureRole('paymentRun.approve', 'procurement'),
     ).toThrow(TRPCError)
