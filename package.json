@@ -18,7 +18,8 @@
     "db:studio": "turbo run db:studio",
     "auth:generate": "turbo run auth:generate",
     "capacity:smoke": "node scripts/capacity-smoke.mjs",
-    "staging:validate": "node scripts/staging-validate.mjs"
+    "staging:validate": "node scripts/staging-validate.mjs",
+    "deployment:preflight": "node scripts/deployment-preflight.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",

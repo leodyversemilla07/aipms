@@ -5,6 +5,21 @@ images per environment. Configure staging with independent secrets, test IdP and
 provider tenants, inert payment destinations, and production-equivalent TLS,
 reverse proxy, database, and container limits.
 
+## Configuration preflight
+
+Create the deployment environment file with mode `0600`, then validate it
+without starting containers:
+
+```bash
+pnpm deployment:preflight -- /secure/path/staging.env
+```
+
+The preflight rejects HTTP origins, shared or placeholder secrets, demo
+identities, wildcard host bindings, incomplete integration credential groups,
+invalid LLM residency configuration, insecure IMAP, and unsafe file
+permissions. Disabled optional integrations are reported as warnings without
+printing secret values.
+
 ## Automated boundary check
 
 ```bash
