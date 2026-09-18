@@ -217,11 +217,14 @@ AUTH_SEED_DEMO=1
 # One-off or cron-scheduled logical dump (keeps last 14 by default)
 ./scripts/backup.sh /var/backups/aipms        # AIPMS_BACKUP_KEEP=30 to override
 
-# Rollback: stop writers, load a dump, restart on the previous image tag
+# Alertable freshness and integrity check
+./scripts/backup-health.sh /var/backups/aipms
+
+# Rollback: stop writers, validate, load a dump, then migrate and restart
 ./scripts/restore.sh backups/aipms-20260825-020000.sql.gz
 ```
 
-Backups are published atomically with a SHA-256 sidecar. Restore verifies the checksum and loads the full SQL stream into a disposable validation database before touching the target. It then stops every application writer, terminates stale target sessions, restores in one database transaction, validates the migration ledger, and force-recreates the API so `prisma migrate deploy` runs before dependants restart. A failed target restore rolls back and leaves writers stopped for investigation.
+Backups are published atomically with a SHA-256 sidecar. Restore verifies the checksum and loads the full SQL stream into a disposable validation database before touching the target. It then stops every application writer, terminates stale target sessions, restores in one database transaction, validates the migration ledger, and force-recreates the API so `prisma migrate deploy` runs before dependants restart. A failed target restore rolls back and leaves writers stopped for investigation. See [`docs/disaster-recovery.md`](docs/disaster-recovery.md) for monitoring and the staging drill procedure.
 
 ### Production image smoke test
 

@@ -106,6 +106,7 @@ if [ -z "$BACKUP_FILE" ]; then
   printf 'Backup file was not created.\n' >&2
   exit 1
 fi
+BACKUP_MAX_AGE_SECONDS=300 ./scripts/backup-health.sh "$BACKUP_DIR"
 compose exec --no-TTY postgres psql -U "${POSTGRES_USER:-user}" \
   -d "${POSTGRES_DB:-aipms}" -v ON_ERROR_STOP=1 -q \
   -c 'DROP TABLE "restoreSmokeProbe"'
