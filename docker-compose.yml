@@ -40,14 +40,14 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-aipms}
       PORT: 3001
       NODE_ENV: production
-      # Browser-facing origin of the web app (auth cookies) — override in .env
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      # Browser-facing origin of the web app (auth cookies).
+      APP_URL: ${APP_URL:?Set APP_URL to the public HTTPS web origin}
       # Internal origin of the auth endpoints (the web app proxies /api/auth here)
       API_URL: http://api:3001
-      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:-http://localhost:3000}
-      # Generate with: openssl rand -base64 32 — required in production
+      AUTH_TRUSTED_ORIGINS: ${AUTH_TRUSTED_ORIGINS:?Set AUTH_TRUSTED_ORIGINS in .env}
+      # Generate independent values with openssl rand -base64 32.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
-      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
+      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
       # Unattended agent automation — off by default. AGENT_AUTORUN enables
@@ -96,7 +96,7 @@ services:
       PORT: 3000
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://api:3001
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_URL: ${APP_URL:?Set APP_URL to the public HTTPS web origin}
     ports:
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
@@ -116,7 +116,7 @@ services:
         condition: service_healthy
     environment:
       AIPMS_API_URL: http://api:3001
-      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:-}
+      AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
       # Separate inbound operator credential; unset means production access denied.
       AIPMS_AGENT_ACCESS_TOKEN: ${AIPMS_AGENT_ACCESS_TOKEN:-}
       # LLM provider gate: "cloud" (BYO OpenAI-compatible keys) or "offline"
@@ -127,7 +127,7 @@ services:
       AIPMS_LLM_MODEL: ${AIPMS_LLM_MODEL:-}
       # Cloud key. Dev-only placeholder for local compose; set a real key in
       # production (openssl rand -base64 32).
-      AIPMS_LLM_API_KEY: ${AIPMS_LLM_API_KEY:-dev-only-key-change-me}
+      AIPMS_LLM_API_KEY: ${AIPMS_LLM_API_KEY:-}
       # Cloud key fallback (BYO keys).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Optional provider gate policies: residency, retention, no-retention.

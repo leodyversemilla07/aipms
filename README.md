@@ -170,6 +170,7 @@ pnpm install
 
 ### Setup Database
 ```bash
+# First copy .env.example to .env and fill the required Compose values.
 # Start PostgreSQL
 docker compose up -d postgres
 
