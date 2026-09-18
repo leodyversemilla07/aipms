@@ -7,8 +7,10 @@ import {
   matchVendorSender,
   type ParsedMailLike,
 } from '../src/intake/imap-message'
+import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { IntakeService } from '../src/intake/intake.service'
 import { IntakeImapService } from '../src/intake/intake-imap.service'
+import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
@@ -22,7 +24,11 @@ const docIds: string[] = []
 const vendorIds: string[] = []
 
 const intakeService = new IntakeService(new EventEmitterService())
-const imapService = new IntakeImapService(intakeService)
+const intakeCommands = new IntakeCommandService(
+  intakeService,
+  new AuditService(),
+)
+const imapService = new IntakeImapService(intakeCommands)
 
 function mail(overrides: Partial<ParsedMailLike> = {}): ParsedMailLike {
   return {

@@ -31,13 +31,12 @@ describe('AgentWakeService', () => {
     const wake = new AgentWakeService(
       relay,
       {
-        processPending: async () => ({
-          documents: 1,
-          succeeded: 1,
-          failed: [],
+        processDocument: async () => ({
+          doc: { status: 'matched' },
+          invoice: { id: 'invoice-1' },
+          match: { outcome: 'PASS' },
         }),
       } as never,
-      {} as never,
     )
     wake.onModuleInit()
 
@@ -64,11 +63,10 @@ describe('AgentWakeService', () => {
     const wake = new AgentWakeService(
       relay,
       {
-        processPending: async () => {
+        processDocument: async () => {
           throw new Error('extractor offline')
         },
       } as never,
-      {} as never,
     )
     wake.onModuleInit()
 

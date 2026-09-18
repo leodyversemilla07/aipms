@@ -1,10 +1,12 @@
 import { db } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { AgentCommandService } from '../src/agent/agent-command.service'
 import { AgentService } from '../src/agent/agent.service'
 import { extractStructuredInvoice } from '../src/agent/extract'
 import { IntakeService } from '../src/intake/intake.service'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
@@ -21,6 +23,11 @@ const events = new EventEmitterService()
 const invoice = new InvoiceService(policy, events)
 const intake = new IntakeService(events)
 const agent = new AgentService(intake, invoice, extractStructuredInvoice)
+const commands = new AgentCommandService(
+  agent,
+  {} as never,
+  new AuditService(),
+)
 
 beforeEach(() => {
   invoiceIds = []
@@ -97,7 +104,7 @@ describe('Agent pipeline (§3 classify→register)', () => {
   })
 
   it('drains the pending queue in a batch', async () => {
-    // processPending drains the whole 'new' queue; flush stale docs left by
+    // The command boundary drains the whole 'new' queue; flush stale docs left by
     // aborted runs or earlier specs so the batch only sees our own docs.
     await db.intakeDocument.deleteMany({ where: { status: 'new' } })
     const a = await intake.ingest({
@@ -127,7 +134,12 @@ describe('Agent pipeline (§3 classify→register)', () => {
     intakeIds.push(a.id)
     intakeIds.push(b.id)
 
-    const res = await agent.processPending(10)
+    const res = await commands.processPending(10, {
+      id: `agent:test-batch-${suffix}`,
+      kind: 'agent',
+      scopes: ['invoice.ingest'],
+      source: 'scheduler',
+    })
     expect(res.succeeded).toBeGreaterThanOrEqual(2)
     expect(res.failed.length).toBe(0)
 

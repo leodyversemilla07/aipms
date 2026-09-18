@@ -248,8 +248,11 @@ Key environment variables:
 | `BETTER_AUTH_SECRET` | Auth signing key |
 | `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
-| `AGENT_AUTORUN` | Enable unattended agent drain loop and event wakes |
-| `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes without interval drain |
+| `AGENT_AUTORUN` | Enable the unattended intake drain loop |
+| `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes |
+| `AIPMS_AGENT_SCOPES` | Replace the default automation capability grants |
+| `AUTOMATION_LEASE_TIMEOUT_MS` | Cross-replica scheduler lease timeout |
+| `EVENT_RELAY_CLAIM_TTL_MS` | Recovery window for abandoned outbox claims |
 
 ---
 

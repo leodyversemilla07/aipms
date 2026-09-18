@@ -5,6 +5,7 @@ import { PurchaseOrderModule } from '../purchase-order/purchase-order.module'
 import { EventsModule } from '../shared/events/events.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
+import { AgentCommandService } from './agent-command.service'
 import { AgentController } from './agent.controller'
 import { AgentRouter } from './agent.router'
 import { AgentScheduler } from './agent.scheduler'
@@ -25,6 +26,7 @@ import { ServiceTokenGuard } from './service-token.guard'
   controllers: [AgentController],
   providers: [
     AgentService,
+    AgentCommandService,
     AgentRouter,
     AgentScheduler,
     AgentWakeService,
@@ -33,6 +35,6 @@ import { ServiceTokenGuard } from './service-token.guard'
     // changing the pipeline.
     { provide: AGENT_EXTRACTOR, useValue: extractStructuredInvoice },
   ],
-  exports: [AgentService],
+  exports: [AgentCommandService],
 })
 export class AgentModule {}

@@ -312,10 +312,13 @@ model DomainEvent {
   lastError         String?
   deadLetteredAt    DateTime? // null = still retryable
   deadLetterReason  String?
+  dispatchClaimId   String?   // relay lease owner; prevents multi-node delivery races
+  dispatchClaimedAt DateTime? // stale claims are recoverable after the lease window
   createdAt         DateTime  @default(now())
 
   @@map("domainEvent")
   @@index([publishedAt])
+  @@index([dispatchClaimedAt])
   @@index([deadLetteredAt])
   @@index([type])
   @@index([createdAt])

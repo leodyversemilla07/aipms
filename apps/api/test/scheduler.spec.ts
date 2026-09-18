@@ -1,20 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { AgentCommandService } from '../src/agent/agent-command.service'
 import { AgentScheduler } from '../src/agent/agent.scheduler'
-import type { AgentService } from '../src/agent/agent.service'
+import type { AutomationLeaseService } from '../src/shared/automation/automation-lease.service'
 
 /**
  * @workspace agent scheduler — drain loop gating + re-entrancy guard.
- * No DB: the AgentService dependency is stubbed.
+ * No DB: the authorized command boundary is stubbed.
  */
 
-function stubAgent(batchArgs: number[], count: { n: number }): AgentService {
+const leases = {
+  runExclusive: async <T>(_name: string, task: () => Promise<T>) => ({
+    acquired: true as const,
+    value: await task(),
+  }),
+} as AutomationLeaseService
+
+function stubCommands(
+  batchArgs: number[],
+  count: { n: number },
+): AgentCommandService {
   return {
     processPending: vi.fn(async (limit: number) => {
       batchArgs.push(limit)
       count.n += 1
       return { documents: 0, succeeded: 0, failed: [] }
     }),
-  } as unknown as AgentService
+  } as unknown as AgentCommandService
 }
 
 describe('AgentScheduler (§3 drain loop)', () => {
@@ -25,11 +36,26 @@ describe('AgentScheduler (§3 drain loop)', () => {
   it('runs a drain pass via tick with the configured batch', async () => {
     process.env.AGENT_AUTORUN = '1'
     process.env.AGENT_BATCH_SIZE = '7'
-    const scheduler = new AgentScheduler(stubAgent(batchInvocations, count))
+    const scheduler = new AgentScheduler(
+      stubCommands(batchInvocations, count),
+      leases,
+    )
     await scheduler.tick()
     await scheduler.tick()
     expect(count.n).toBe(2)
     expect(batchInvocations).toEqual([7, 7])
+    scheduler.onModuleDestroy()
+  })
+
+  it('skips a pass when another replica owns the database lease', async () => {
+    process.env.AGENT_AUTORUN = '1'
+    const command = stubCommands(batchInvocations, count)
+    const scheduler = new AgentScheduler(command, {
+      runExclusive: vi.fn(async () => ({ acquired: false as const })),
+    } as unknown as AutomationLeaseService)
+    const before = count.n
+    await scheduler.tick()
+    expect(count.n).toBe(before)
     scheduler.onModuleDestroy()
   })
 
@@ -47,8 +73,8 @@ describe('AgentScheduler (§3 drain loop)', () => {
             },
           ),
       ),
-    } as unknown as AgentService
-    const scheduler = new AgentScheduler(agent)
+    } as unknown as AgentCommandService
+    const scheduler = new AgentScheduler(agent, leases)
     const first = scheduler.tick()
     const second = scheduler.tick() // overlaps — must be skipped
     gate?.()

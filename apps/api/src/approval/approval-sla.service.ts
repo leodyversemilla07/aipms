@@ -4,8 +4,13 @@ import {
   type OnModuleInit,
 } from '@nestjs/common'
 import { db } from '@workspace/db'
+import { AuditService } from '../shared/audit/audit.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { DomainEventTypes } from '../shared/events/event-types'
+import {
+  assertAgentCapability,
+  resolveAgentScopes,
+} from '../trpc/agent-capabilities'
 
 /**
  * §10.3 approval SLA escalation — the automation half of "on timeout,
@@ -34,7 +39,10 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
   private interval: ReturnType<typeof setInterval> | null = null
   private running = false
 
-  constructor(private readonly events: EventEmitterService) {}
+  constructor(
+    private readonly events: EventEmitterService,
+    private readonly audit: AuditService,
+  ) {}
 
   onModuleInit() {
     const hours = resolveSlaHours()
@@ -43,7 +51,13 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
       return
     }
     // Poll hourly regardless of window size; breaches only need hour precision.
-    this.interval = setInterval(() => void this.sweep(), 3_600_000)
+    this.interval = setInterval(
+      () =>
+        void this.sweep().catch((error) =>
+          console.error('[approval-sla] sweep failed:', error),
+        ),
+      3_600_000,
+    )
     console.log(`[approval-sla] escalating pending approvals after ${hours}h`)
   }
 
@@ -54,11 +68,29 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
   async sweep(now: Date = new Date()): Promise<number> {
     if (this.running) return 0
     this.running = true
+    const actorId = 'agent:approval-sla'
     try {
+      try {
+        assertAgentCapability(
+          'approval.escalateOverdue',
+          resolveAgentScopes(process.env),
+        )
+      } catch (error) {
+        await this.audit.record({
+          actorId,
+          actorKind: 'agent',
+          action: 'approval.escalateOverdue.denied',
+          entity: 'Authorization',
+          entityId: 'approval.escalateOverdue',
+          input: { source: 'scheduler' },
+          after: { error: this.errorMessage(error) },
+        })
+        throw error
+      }
+
       const hours = resolveSlaHours()
       if (hours === 0) return 0
       const cutoff = new Date(now.getTime() - hours * 3_600_000)
-
       const overdue = await db.approval.findMany({
         where: {
           status: 'pending',
@@ -68,34 +100,67 @@ export class ApprovalSlaService implements OnModuleInit, OnModuleDestroy {
         select: { id: true },
       })
 
+      let escalated = 0
       for (const approval of overdue) {
-        await db.$transaction(async (tx) => {
+        const changed = await db.$transaction(async (tx) => {
           // Guard against a decision landing between select and update.
           const updated = await tx.approval.updateMany({
             where: { id: approval.id, status: 'pending', escalatedAt: null },
             data: { escalatedAt: now },
           })
-          if (updated.count > 0) {
-            await this.events.emit(
-              {
-                type: SLA_EVENT_TYPE,
-                entityType: 'Approval',
-                entityId: approval.id,
-                payload: { breachedAt: now.toISOString(), slaHours: hours },
+          if (updated.count === 0) return false
+          await this.events.emit(
+            {
+              type: SLA_EVENT_TYPE,
+              entityType: 'Approval',
+              entityId: approval.id,
+              payload: { breachedAt: now.toISOString(), slaHours: hours },
+            },
+            tx,
+          )
+          await this.audit.record(
+            {
+              actorId,
+              actorKind: 'agent',
+              action: 'approval.escalateOverdue',
+              entity: 'Approval',
+              entityId: approval.id,
+              input: {
+                slaHours: hours,
+                cutoff: cutoff.toISOString(),
+                source: 'scheduler',
               },
-              tx,
-            )
-          }
+              after: { escalatedAt: now.toISOString() },
+            },
+            tx,
+          )
+          return true
         })
+        if (changed) escalated += 1
       }
-      if (overdue.length > 0) {
+      if (escalated > 0) {
         console.log(
-          `[approval-sla] escalated ${overdue.length} overdue approval(s)`,
+          `[approval-sla] escalated ${escalated} overdue approval(s)`,
         )
       }
-      return overdue.length
+      return escalated
+    } catch (error) {
+      await this.audit.record({
+        actorId,
+        actorKind: 'agent',
+        action: 'approval.escalateOverdue.failed',
+        entity: 'Approval',
+        entityId: null,
+        input: { source: 'scheduler', at: now.toISOString() },
+        after: { error: this.errorMessage(error) },
+      })
+      throw error
     } finally {
       this.running = false
     }
+  }
+
+  private errorMessage(error: unknown) {
+    return error instanceof Error ? error.message.slice(0, 500) : 'Unknown error'
   }
 }

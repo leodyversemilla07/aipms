@@ -8,11 +8,11 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
-import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
+import { AgentCommandService } from './agent-command.service'
 import { AgentService } from './agent.service'
 
 const processInput = z.object({
@@ -38,9 +38,10 @@ const runsInput = listInput.extend({
 export class AgentRouter {
   constructor(
     @Inject(AgentService) private readonly agent: AgentService,
+    @Inject(AgentCommandService)
+    private readonly commands: AgentCommandService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
-    @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
   @Mutation({ input: processInput })
@@ -56,24 +57,11 @@ export class AgentRouter {
         input,
       },
       async (tx) => {
-        const result = await this.agent.classifyAndRegister(input.id, tx)
-        await this.audit.record(
-          {
-            actorId: ctx.user.id,
-            actorKind: ctx.actorKind,
-            action: 'agent.process',
-            entity: 'IntakeDocument',
-            entityId: input.id,
-            input,
-            after: {
-              docStatus: result.doc.status,
-              invoiceId: (result.invoice as { id?: string }).id,
-              matchOutcome: result.match?.outcome,
-            },
-          },
+        return this.commands.processDocument(
+          input.id,
+          this.commandActor(ctx, input.idempotencyKey),
           tx,
         )
-        return result
       },
     )
   }
@@ -87,25 +75,32 @@ export class AgentRouter {
     @Input() input: z.infer<typeof batchInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    // Per-document pipelines commit independently (one bad document cannot
-    // block the queue); the batch summary audit commits atomically with
-    // nothing else outstanding. Retries only pick up still-new documents.
-    const result = await this.agent.processPending(input.limit)
-    await this.audit.record({
-      actorId: ctx.user.id,
-      actorKind: ctx.actorKind,
-      action: 'agent.batch',
-      entity: 'IntakeDocument',
-      entityId: null,
-      input,
-      after: result,
-    })
-    return result
+    // The shared command boundary authorizes once, commits and audits each
+    // document independently, then appends the batch summary. Retries only
+    // pick up documents that remain new.
+    return this.commands.processPending(input.limit, this.commandActor(ctx))
   }
 
   /** §7.1 — run history for the supervisory desk. */
   @Query({ input: runsInput })
   async runs(@Input() input: z.infer<typeof runsInput>) {
     return this.agent.listRuns(input)
+  }
+
+  private commandActor(
+    ctx: AuthedTrpcContext,
+    idempotencyKey?: string,
+  ) {
+    const rawScopes = (ctx.user as { scopes?: unknown }).scopes
+    return {
+      id: ctx.user.id,
+      kind: ctx.actorKind,
+      role: ctx.user.role,
+      scopes: Array.isArray(rawScopes)
+        ? rawScopes.filter((scope): scope is string => typeof scope === 'string')
+        : undefined,
+      idempotencyKey,
+      source: 'trpc' as const,
+    }
   }
 }

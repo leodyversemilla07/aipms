@@ -94,6 +94,31 @@ describe('EventRelayService (§13)', () => {
     expect(row?.publishedAt).not.toBeNull()
   })
 
+  it('skips active claims and recovers an expired relay lease', async () => {
+    const relay = new EventRelayService()
+    const event = await makeEvent('intake.received', 'claimed')
+    await db.domainEvent.update({
+      where: { id: event.id },
+      data: {
+        dispatchClaimId: 'other-worker',
+        dispatchClaimedAt: new Date(),
+      },
+    })
+
+    await relay.poll()
+    let row = await db.domainEvent.findUnique({ where: { id: event.id } })
+    expect(row?.publishedAt).toBeNull()
+    expect(row?.dispatchClaimId).toBe('other-worker')
+
+    await db.domainEvent.update({
+      where: { id: event.id },
+      data: { dispatchClaimedAt: new Date(Date.now() - 365 * 24 * 60 * 60_000) },
+    })
+    row = await pollUntilPublished(relay, event.id)
+    expect(row?.publishedAt).not.toBeNull()
+    expect(row?.dispatchClaimId).toBeNull()
+  })
+
   it('retries failing events and dead-letters after max attempts', async () => {
     const relay = new EventRelayService()
     relay.subscribe('invoice.received', async () => {

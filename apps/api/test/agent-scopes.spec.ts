@@ -70,6 +70,7 @@ describe('Agent capability model', () => {
         'invoice.compute',
         'requisition.create',
         'requisition.submit',
+        'approval.escalateOverdue',
         'purchaseOrder.issue',
         'purchaseOrder.confirm',
         'events.poll',

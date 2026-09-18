@@ -1,9 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
-import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
 import { EventRelayService } from '../shared/events/event-relay.service'
-import { AgentService } from './agent.service'
+import { AgentCommandService } from './agent-command.service'
 
 /** Shape the relay hands to handlers (§13 outbox rows). */
 interface RelayedEvent {
@@ -34,8 +33,7 @@ const asJson = (value: unknown): Prisma.InputJsonObject =>
 export class AgentWakeService implements OnModuleInit {
   constructor(
     private readonly relay: EventRelayService,
-    private readonly agent: AgentService,
-    private readonly po: PurchaseOrderService,
+    private readonly commands: AgentCommandService,
   ) {}
 
   onModuleInit() {
@@ -129,12 +127,21 @@ export class AgentWakeService implements OnModuleInit {
         })
         return
       }
-      // Policy-driven vendor selection: preferredVendor policy takes precedence
+      // A sourcing award is authoritative. Unsourced requisitions fall back
+      // to preferred-vendor policy, then the active vendor pool.
       let vendor: Vendor | null = null
+      const awardedQuote = await db.quote.findFirst({
+        where: { requisitionId: requisition.id, status: 'accepted' },
+      })
+      if (awardedQuote) {
+        vendor = await db.vendor.findUnique({
+          where: { id: awardedQuote.vendorId },
+        })
+      }
       const prefPolicy = await db.policy.findFirst({
         where: { kind: 'preferredVendor', enabled: true },
       })
-      if (prefPolicy?.config) {
+      if (!vendor && prefPolicy?.config) {
         const cfg = prefPolicy.config as PreferredVendorConfig
         const vendorId = cfg.vendorId ?? cfg.vendor_id
         if (vendorId) {
@@ -146,9 +153,15 @@ export class AgentWakeService implements OnModuleInit {
         vendor = await db.vendor.findFirst({ where: { status: 'active' } })
       }
       if (!vendor) throw new Error('No active vendor found')
-      const result = await this.po.issue(
+      const result = await this.commands.issuePurchaseOrder(
         { requisitionId: requisition.id, vendorId: vendor.id, terms: {} },
-        'agent-operator',
+        {
+          id: 'agent:operator',
+          kind: 'agent',
+          runId: run.id,
+          idempotencyKey: `event:${event.id}`,
+          source: 'event-wake',
+        },
       )
       const poNumber =
         'outcome' in result && result.outcome === 'ISSUED'
@@ -162,7 +175,14 @@ export class AgentWakeService implements OnModuleInit {
           finishedAt: new Date(),
           meta: {
             ...(run.meta as Prisma.InputJsonObject),
-            result: asJson(result),
+            result:
+              result.outcome === 'ISSUED'
+                ? {
+                    outcome: result.outcome,
+                    purchaseOrderId: result.purchaseOrder.id,
+                    poNumber: result.purchaseOrder.poNumber,
+                  }
+                : result,
           },
         },
       })
@@ -205,9 +225,15 @@ export class AgentWakeService implements OnModuleInit {
     console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
     try {
       if (event.type === 'intake.received') {
-        const result = await this.agent.processPending(5)
+        const result = await this.commands.processDocument(event.entityId, {
+          id: 'agent:operator',
+          kind: 'agent',
+          runId: run.id,
+          idempotencyKey: `event:${event.id}`,
+          source: 'event-wake',
+        })
         console.log(
-          `[agent-wake] run ${run.id} processed ${result.succeeded}/${result.documents} docs`,
+          `[agent-wake] run ${run.id} processed intake ${event.entityId}`,
         )
         await db.agentRun.update({
           where: { id: run.id },
@@ -216,7 +242,11 @@ export class AgentWakeService implements OnModuleInit {
             finishedAt: new Date(),
             meta: {
               ...(run.meta as Prisma.InputJsonObject),
-              result: asJson(result),
+              result: {
+                docStatus: result.doc.status,
+                invoiceId: (result.invoice as { id?: string }).id,
+                matchOutcome: result.match?.outcome,
+              },
             },
           },
         })

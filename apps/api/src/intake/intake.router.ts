@@ -17,6 +17,7 @@ import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
+import { IntakeCommandService } from './intake-command.service'
 import { IntakeService } from './intake.service'
 import { parseStructuredInvoice } from './structured-invoice'
 
@@ -64,6 +65,8 @@ const ingestStructuredInput = z.object({
 export class IntakeRouter {
   constructor(
     @Inject(IntakeService) private readonly intake: IntakeService,
+    @Inject(IntakeCommandService)
+    private readonly commands: IntakeCommandService,
     @Inject(InvoiceService) private readonly invoice: InvoiceService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
@@ -88,19 +91,24 @@ export class IntakeRouter {
         input,
       },
       async (tx) => {
-        const doc = await this.intake.ingest(input, tx)
-        await this.audit.record(
+        const { idempotencyKey, ...ingestInput } = input
+        const rawScopes = (ctx.user as { scopes?: unknown }).scopes
+        return this.commands.ingest(
+          ingestInput,
           {
-            actorId: ctx.user.id,
-            actorKind: ctx.actorKind,
-            action: 'intake.ingest',
-            entity: 'IntakeDocument',
-            entityId: doc.id,
-            input,
+            id: ctx.user.id,
+            kind: ctx.actorKind,
+            role: ctx.user.role,
+            scopes: Array.isArray(rawScopes)
+              ? rawScopes.filter(
+                  (scope): scope is string => typeof scope === 'string',
+                )
+              : undefined,
+            source: 'trpc',
+            idempotencyKey,
           },
           tx,
         )
-        return doc
       },
     )
   }

@@ -4,7 +4,8 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common'
-import { AgentService } from './agent.service'
+import { AutomationLeaseService } from '../shared/automation/automation-lease.service'
+import { AgentCommandService } from './agent-command.service'
 
 /**
  * §3 optional drain loop — periodically runs `agent.batch` so the intake
@@ -22,7 +23,10 @@ export class AgentScheduler implements OnModuleInit, OnModuleDestroy {
   private readonly intervalMs = Number(process.env.AGENT_INTERVAL_MS ?? 60_000)
   private readonly enabled = process.env.AGENT_AUTORUN === '1'
 
-  constructor(private readonly agent: AgentService) {}
+  constructor(
+    private readonly commands: AgentCommandService,
+    private readonly leases: AutomationLeaseService,
+  ) {}
 
   onModuleInit() {
     if (!this.enabled) {
@@ -45,7 +49,21 @@ export class AgentScheduler implements OnModuleInit, OnModuleDestroy {
     if (this.running) return
     this.running = true
     try {
-      const result = await this.agent.processPending(batchSize)
+      const leased = await this.leases.runExclusive('agent-drain', () =>
+        this.commands.processPending(batchSize, {
+          id: 'agent:scheduler',
+          kind: 'agent',
+          idempotencyKey: `scheduler:${Math.floor(Date.now() / this.intervalMs)}`,
+          source: 'scheduler',
+        }),
+      )
+      if (!leased.acquired) {
+        this.logger.debug(
+          'agent drain skipped: another replica owns the lease',
+        )
+        return
+      }
+      const result = leased.value
       if (result.documents > 0) {
         this.logger.log(
           `agent drain: ${result.succeeded}/${result.documents} processed, ${result.failed.length} failed`,

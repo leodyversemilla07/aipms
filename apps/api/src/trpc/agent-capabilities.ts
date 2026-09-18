@@ -35,6 +35,10 @@ export const AGENT_CAPABILITIES: Record<string, string> = {
   'requisition.create': 'requisition.create',
   'requisition.submit': 'requisition.submit',
 
+  // Internal approval SLA automation. No public decision capability exists;
+  // agents still cannot approve or reject on a human's behalf.
+  'approval.escalateOverdue': 'approval.escalate',
+
   // Budget
   'budget.list': 'budget.read',
   'budget.detail': 'budget.read',
@@ -108,6 +112,7 @@ export const DEFAULT_AGENT_SCOPES = [
   'requisition.read',
   'requisition.create',
   'requisition.submit',
+  'approval.escalate',
   'budget.read',
   'po.read',
   'po.issue',

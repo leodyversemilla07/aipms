@@ -78,14 +78,14 @@ describe('AgentWakeService policy-driven vendor selection', () => {
     await requisitionService.submit(req.id)
 
     relay = new EventRelayService()
-    const agentService = {
+    const commands = {
       processPending: async () => ({ documents: 0, succeeded: 0, failed: [] }),
+      issuePurchaseOrder: (
+        input: Parameters<PurchaseOrderService['issue']>[0],
+        actor: { id: string },
+      ) => poService.issue(input, actor.id),
     }
-    wake = new AgentWakeService(
-      relay,
-      agentService as unknown as AgentService,
-      poService,
-    )
+    wake = new AgentWakeService(relay, commands as never)
     wake.onModuleInit()
 
     await (relay as unknown as { poll(): Promise<void> }).poll()

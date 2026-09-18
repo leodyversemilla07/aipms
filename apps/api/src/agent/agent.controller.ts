@@ -1,14 +1,5 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Inject,
-  Post,
-  UseGuards,
-} from '@nestjs/common'
-import { AuditService } from '../shared/audit/audit.service'
-import { agentMayInvoke, resolveAgentScopes } from '../trpc/agent-capabilities'
-import { AgentService } from './agent.service'
+import { Body, Controller, Inject, Post, UseGuards } from '@nestjs/common'
+import { AgentCommandService } from './agent-command.service'
 import { ServiceTokenGuard } from './service-token.guard'
 
 const AGENT_ACTOR_ID = 'agent:service'
@@ -24,27 +15,17 @@ const AGENT_ACTOR_ID = 'agent:service'
 @UseGuards(ServiceTokenGuard)
 export class AgentController {
   constructor(
-    @Inject(AgentService) private readonly agent: AgentService,
-    @Inject(AuditService) private readonly audit: AuditService,
+    @Inject(AgentCommandService)
+    private readonly commands: AgentCommandService,
   ) {}
 
   @Post('batch')
-  async batch(@Body() body: { limit?: number }) {
-    if (!agentMayInvoke('intake.registerInvoice', resolveAgentScopes())) {
-      throw new ForbiddenException(
-        'Agent lacks required scope "invoice.ingest" for batch processing',
-      )
-    }
-    const result = await this.agent.processPending(body.limit ?? 25)
-    await this.audit.record({
-      actorId: AGENT_ACTOR_ID,
-      actorKind: 'agent',
-      action: 'agent.batch',
-      entity: 'IntakeDocument',
-      entityId: null,
-      input: { limit: body.limit },
-      after: result,
+  async batch(@Body() body: { limit?: number; idempotencyKey?: string }) {
+    return this.commands.processPending(body.limit ?? 25, {
+      id: AGENT_ACTOR_ID,
+      kind: 'agent',
+      idempotencyKey: body.idempotencyKey,
+      source: 'service-api',
     })
-    return result
   }
 }
