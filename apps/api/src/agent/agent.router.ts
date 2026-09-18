@@ -43,6 +43,20 @@ function staleRunCutoff() {
   return new Date(Date.now() - timeoutMs)
 }
 
+function commandActor(ctx: AuthedTrpcContext, idempotencyKey?: string) {
+  const rawScopes = (ctx.user as { scopes?: unknown }).scopes
+  return {
+    id: ctx.user.id,
+    kind: ctx.actorKind,
+    role: ctx.user.role,
+    scopes: Array.isArray(rawScopes)
+      ? rawScopes.filter((scope): scope is string => typeof scope === 'string')
+      : undefined,
+    idempotencyKey,
+    source: 'trpc' as const,
+  }
+}
+
 /**
  * §3 agent surface — promote a raw intake document to a registered invoice.
  * The extraction algorithm is swappable (structured default, LLM later); the
@@ -75,7 +89,7 @@ export class AgentRouter {
       async (tx) => {
         return this.commands.processDocument(
           input.id,
-          this.commandActor(ctx, input.idempotencyKey),
+          commandActor(ctx, input.idempotencyKey),
           tx,
         )
       },
@@ -94,7 +108,7 @@ export class AgentRouter {
     // The shared command boundary authorizes once, commits and audits each
     // document independently, then appends the batch summary. Retries only
     // pick up documents that remain new.
-    return this.commands.processPending(input.limit, this.commandActor(ctx))
+    return this.commands.processPending(input.limit, commandActor(ctx))
   }
 
   /** §7.1 — run history for the supervisory desk. */
@@ -194,21 +208,5 @@ export class AgentRouter {
         return updated
       },
     )
-  }
-
-  private commandActor(ctx: AuthedTrpcContext, idempotencyKey?: string) {
-    const rawScopes = (ctx.user as { scopes?: unknown }).scopes
-    return {
-      id: ctx.user.id,
-      kind: ctx.actorKind,
-      role: ctx.user.role,
-      scopes: Array.isArray(rawScopes)
-        ? rawScopes.filter(
-            (scope): scope is string => typeof scope === 'string',
-          )
-        : undefined,
-      idempotencyKey,
-      source: 'trpc' as const,
-    }
   }
 }
