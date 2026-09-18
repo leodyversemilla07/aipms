@@ -44,6 +44,7 @@ function makeApproval(createdAt: Date) {
         kind: 'threshold',
         route: ['manager'],
         status: 'pending',
+        requestedBy: 'sla-test-maker',
         createdAt,
         updatedAt: createdAt,
       },
