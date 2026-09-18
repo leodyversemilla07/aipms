@@ -110,6 +110,14 @@ function Dashboard() {
           )}
           {isFinance && (
             <Link
+              href="/operations"
+              className="text-muted-foreground underline hover:text-foreground"
+            >
+              Recovery
+            </Link>
+          )}
+          {isFinance && (
+            <Link
               href="/intake"
               className="text-muted-foreground underline hover:text-foreground"
             >

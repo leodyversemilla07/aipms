@@ -553,7 +553,20 @@ const appRouter = t.router({
   since: z.string().datetime().optional(),
   limit: z.number().int().min(1).max(100).default(20),
 }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>),
+    recoverySummary: publicProcedure
+      .input(z.object({}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["recoverySummary"]>>),
+    deadLetters: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["deadLetters"]>>),
+    requeue: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["requeue"]>>)
     }),
   sourcing: t.router({
     list: publicProcedure

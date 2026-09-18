@@ -120,6 +120,9 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'agent.batch': ['admin'],
   'agent.runs': ['procurement', 'finance'],
   'events.poll': ['admin'],
+  'events.recoverySummary': ['finance'],
+  'events.deadLetters': ['finance'],
+  'events.requeue': ['finance'],
 
   'sso.listProviders': ['admin'],
   'sso.listScimConnections': ['admin'],
