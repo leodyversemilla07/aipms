@@ -53,4 +53,3 @@ describe('operational health probes', () => {
     )
   })
 })
-})

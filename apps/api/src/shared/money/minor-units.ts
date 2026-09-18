@@ -47,7 +47,11 @@ export function assertSingleCurrency(
       `${label} must use one currency; currency conversion is not configured`,
     )
   }
-  return [...currencies][0]!
+  const [currency] = currencies
+  if (currency === undefined) {
+    throw new BadRequestException(`${label} requires a currency`)
+  }
+  return currency
 }
 
 /** Guard derived values before Prisma turns overflow into a database error. */
