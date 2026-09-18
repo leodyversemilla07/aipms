@@ -77,7 +77,7 @@ services:
       # §10.3 approval SLA (hours) — visible escalation of overdue pendings
       AIPMS_APPROVAL_SLA_HOURS: ${AIPMS_APPROVAL_SLA_HOURS:-48}
     ports:
-      - "${API_PORT:-3001}:3001"
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3001}:3001"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health/ready || exit 1"]
       interval: 10s
@@ -99,7 +99,7 @@ services:
       NEXT_PUBLIC_API_URL: http://api:3001
       APP_URL: ${APP_URL:?Set APP_URL to the public HTTPS web origin}
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
       interval: 10s

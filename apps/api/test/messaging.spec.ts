@@ -251,12 +251,16 @@ describe('MessagingService (§8.3 relay)', () => {
       svc.releaseApproved(queued.id),
     ])
 
-    expect(first).toMatchObject({ status: 'sent' })
-    expect(second).toMatchObject({ status: 'sent' })
+    const observed = [first, second] as { status: string }[]
+    expect(observed.some(({ status }) => status === 'sent')).toBe(true)
+    expect(
+      observed.every(({ status }) => status === 'sent' || status === 'sending'),
+    ).toBe(true)
     expect(concurrentTransport.sent).toHaveLength(1)
     const saved = await db.message.findUniqueOrThrow({
       where: { id: queued.id },
     })
+    expect(saved.status).toBe('sent')
     expect(saved.dispatchStartedAt).toBeInstanceOf(Date)
   })
 

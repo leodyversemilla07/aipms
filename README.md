@@ -211,6 +211,8 @@ AUTH_SEED_DEMO=1
 
 ## Enterprise Deployment
 
+Compose binds PostgreSQL, API, and web host ports to `127.0.0.1` by default. Put a TLS-terminating reverse proxy with request-size, timeout, and rate limits in front of the web service; browser API/auth traffic is proxied internally by Next.js. Change `WEB_BIND_ADDRESS` or `API_BIND_ADDRESS` only for an intentional firewalled network path—never to bypass TLS or authentication.
+
 ### Backup & restore (§16.2.1)
 
 ```bash
