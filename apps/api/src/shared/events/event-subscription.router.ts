@@ -220,7 +220,7 @@ export class EventSubscriptionRouter {
               deadLetteredAt: event.deadLetteredAt,
               deadLetterReason: event.deadLetterReason,
             },
-            after: updated,
+            after: { ...updated, recoveryReason: input.reason },
           },
           tx,
         )

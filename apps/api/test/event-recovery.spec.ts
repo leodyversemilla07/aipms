@@ -92,8 +92,13 @@ describe('domain event recovery', () => {
       },
       orderBy: { seq: 'desc' },
     })
-    expect(audit.input).toEqual({
-      reason: 'Subscriber repaired and verified healthy',
+    expect(audit.inputHash).toBe(
+      new AuditService().hash({
+        reason: 'Subscriber repaired and verified healthy',
+      }),
+    )
+    expect(audit.after).toMatchObject({
+      recoveryReason: 'Subscriber repaired and verified healthy',
     })
   })
 
