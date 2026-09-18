@@ -16,20 +16,20 @@ test("beneficiary account requires a different finance checker", async ({
   const vendorName = `E2E dual control ${suffix}`
   const accountNumber = `9900${Date.now()}`
 
-  await page.goto("/master-data")
-  await page.getByLabel("Name", { exact: true }).fill(vendorName)
-  await page
-    .getByLabel("Email", { exact: true })
-    .fill(`dual-${suffix}@example.test`)
-  await page.getByRole("button", { name: "Add vendor" }).click()
-  await expect(page.getByText(`Vendor ${vendorName} created`)).toBeVisible()
-
-  const makerRow = page.getByRole("listitem").filter({ hasText: vendorName })
-  await expect(makerRow).toBeVisible()
-  const vendor = await db.vendor.findFirstOrThrow({
-    where: { name: vendorName },
+  // Procurement owns vendor creation; seed the supplier so this finance
+  // scenario exercises only the beneficiary dual-control boundary.
+  const vendor = await db.vendor.create({
+    data: {
+      name: vendorName,
+      email: `dual-${suffix}@example.test`,
+      status: "qualified",
+    },
   })
   vendorIds.push(vendor.id)
+
+  await page.goto("/master-data")
+  const makerRow = page.getByRole("listitem").filter({ hasText: vendorName })
+  await expect(makerRow).toBeVisible()
 
   await makerRow.getByRole("button", { name: "Add bank" }).click()
   await makerRow.getByLabel("Bank").fill("E2E Bank")
