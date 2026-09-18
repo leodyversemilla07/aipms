@@ -243,7 +243,7 @@ The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and r
 - `GET /health/operations` returns authenticated, low-cardinality exception counters for dead letters, stale claims/runs, failed messaging, and ambiguous ERP dispatches. Supply `Authorization: Bearer $OPERATIONS_MONITORING_TOKEN`.
 - `GET /health` remains a compatibility alias for readiness.
 
-See [`docs/operations-monitoring.md`](docs/operations-monitoring.md) for alert thresholds and response ownership.
+See [`docs/operations-monitoring.md`](docs/operations-monitoring.md) for alert thresholds and response ownership, and [`docs/staging-validation.md`](docs/staging-validation.md) for TLS, security-header, identity, integration, and secret-rotation release checks.
 
 ### Single-tenant, Self-hostable
 

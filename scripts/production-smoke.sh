@@ -58,6 +58,20 @@ wait_for_url "API liveness" "http://localhost:${API_PORT}/health/live"
 wait_for_url "API readiness" "http://localhost:${API_PORT}/health/ready"
 wait_for_url "Web" "http://localhost:${WEB_PORT}/"
 
+web_headers=$(curl --silent --show-error --fail --head \
+  "http://localhost:${WEB_PORT}/" | tr -d '\r')
+for required_header in \
+  'content-security-policy:' \
+  'strict-transport-security:' \
+  'x-content-type-options: nosniff' \
+  'x-frame-options: DENY' \
+  'referrer-policy: no-referrer'; do
+  if ! grep -Fqi "$required_header" <<< "$web_headers"; then
+    printf 'Missing production web security header: %s\n' "$required_header" >&2
+    exit 1
+  fi
+done
+
 health_payload=$(curl --silent --show-error --fail "http://localhost:${API_PORT}/health/ready")
 if [[ "$health_payload" != *'"ok":true'* ]]; then
   printf 'Unexpected API health payload: %s\n' "$health_payload" >&2
