@@ -61,6 +61,8 @@ services:
       AGENT_BATCH_SIZE: ${AGENT_BATCH_SIZE:-25}
       EVENT_RELAY_INTERVAL_MS: ${EVENT_RELAY_INTERVAL_MS:-1000}
       EVENT_RELAY_MAX_ATTEMPTS: ${EVENT_RELAY_MAX_ATTEMPTS:-5}
+      EVENT_RELAY_CLAIM_TTL_MS: ${EVENT_RELAY_CLAIM_TTL_MS:-900000}
+      AUTOMATION_LEASE_TIMEOUT_MS: ${AUTOMATION_LEASE_TIMEOUT_MS:-900000}
       # §8.2 email intake (optional): set host/user/password in .env to poll
       # the org's supplier mailbox and feed the normalized intake queue.
       AIPMS_IMAP_HOST: ${AIPMS_IMAP_HOST:-}

@@ -160,7 +160,7 @@ aipms/
 
 ### Prerequisites
 - Node.js 24.x
-- pnpm 10.33.4+
+- pnpm 11.23.0+
 - Docker (for PostgreSQL)
 
 ### Install Dependencies
@@ -220,7 +220,17 @@ AUTH_SEED_DEMO=1
 ./scripts/restore.sh backups/aipms-20260825-020000.sql.gz
 ```
 
-Restore verifies the archive integrity before touching the database and stops web/agent during the window; the api re-runs `prisma migrate deploy` on boot, so restoring an older schema version is safe.
+Restore verifies the archive integrity before touching the database and stops every application writer during the window. The API is force-recreated afterward and runs `prisma migrate deploy` before dependants restart.
+
+### Production image smoke test
+
+Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, and verify the production health surfaces:
+
+```bash
+./scripts/production-smoke.sh
+```
+
+The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits.
 
 ### Single-tenant, Self-hostable
 

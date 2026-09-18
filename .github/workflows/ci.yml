@@ -79,6 +79,27 @@ jobs:
       - name: Tax engine tests
         run: pnpm --filter tax test
 
+  release-smoke:
+    name: Production image smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: aipms-ci-${{ github.run_id }}
+      API_PORT: "3101"
+      WEB_PORT: "3100"
+      POSTGRES_PORT: "55432"
+      POSTGRES_PASSWORD: release-smoke-db-password
+      BETTER_AUTH_SECRET: release-smoke-auth-secret-at-least-32-bytes
+      AIPMS_SERVICE_TOKEN: release-smoke-service-token
+      APP_URL: http://localhost:3100
+      AUTH_TRUSTED_ORIGINS: http://localhost:3100
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build and smoke production images
+        run: ./scripts/production-smoke.sh
+
   e2e:
     name: E2E
     runs-on: ubuntu-latest

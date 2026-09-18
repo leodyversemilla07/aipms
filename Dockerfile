@@ -21,6 +21,7 @@ RUN pnpm --filter @workspace/db db:generate
 # is `docker compose up -d --build` — pending migrations apply before the
 # server accepts traffic.
 FROM base AS api
+RUN pnpm --filter api build
 WORKDIR /app/apps/api
 ENV NODE_ENV=production
 EXPOSE 3001
