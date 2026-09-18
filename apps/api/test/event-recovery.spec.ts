@@ -84,7 +84,7 @@ describe('domain event recovery', () => {
       dispatchClaimId: null,
       dispatchClaimedAt: null,
     })
-    const audit = await db.auditEvent.findFirstOrThrow({
+    const audit = await db.auditEntry.findFirstOrThrow({
       where: {
         actorId,
         action: 'events.requeue',
