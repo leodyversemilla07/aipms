@@ -3,19 +3,98 @@ name: Publish Docker images
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
+  verify-release:
+    name: Verify release source
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aipms
+          POSTGRES_PASSWORD: aipms
+          POSTGRES_DB: aipms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aipms -d aipms"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
+      BETTER_AUTH_SECRET: release-verification-only-secret
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare release database
+        run: |
+          pnpm db:generate
+          pnpm db:deploy
+          pnpm db:seed
+
+      - name: Verify source
+        run: |
+          pnpm check
+          pnpm typecheck
+          pnpm --filter api test
+          pnpm --filter agent test
+          pnpm --filter tax test
+          pnpm audit --prod
+
+  build-and-push:
+    name: Build, attest, and publish
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      COMPOSE_PROJECT_NAME: aipms-release-${{ github.run_id }}
+      API_PORT: "3101"
+      WEB_PORT: "3100"
+      POSTGRES_PORT: "55432"
+      POSTGRES_PASSWORD: release-smoke-db-password
+      BETTER_AUTH_SECRET: release-smoke-auth-secret-at-least-32-bytes
+      AIPMS_SERVICE_TOKEN: release-smoke-service-token
+      APP_URL: http://localhost:3100
+      AUTH_TRUSTED_ORIGINS: http://localhost:3100
+      REGISTRY: ghcr.io
+      API_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-api
+      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-web
+      AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-agent
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Smoke production images and recovery procedures
+        run: ./scripts/production-smoke.sh
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -28,36 +107,63 @@ jobs:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and push API image
-      - name: Build & push API image
-        uses: docker/build-push-action@v5
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: api
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-api:${{ github.ref_name }}
+          tags: |
+            ${{ env.API_IMAGE }}:${{ github.ref_name }}
+            ${{ env.API_IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
-      # Build and push Web image
-      - name: Build & push Web image
-        uses: docker/build-push-action@v5
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: web
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-web:${{ github.ref_name }}
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.ref_name }}
+            ${{ env.WEB_IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
-      # Build and push Agent image
-      - name: Build & push Agent image
-        uses: docker/build-push-action@v5
+      - name: Build and push Agent image
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: agent
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-agent:${{ github.ref_name }}
+          tags: |
+            ${{ env.AGENT_IMAGE }}:${{ github.ref_name }}
+            ${{ env.AGENT_IMAGE }}:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,mode=max,scope=agent
