@@ -56,17 +56,10 @@ test("beneficiary account requires a different finance checker", async ({
 
   const checkerContext = await browser.newContext({
     baseURL: "http://localhost:3000",
+    storageState: "e2e/.auth/checker.json",
   })
   try {
     const checkerPage = await checkerContext.newPage()
-    const signIn = await checkerPage.request.post("/api/auth/sign-in/email", {
-      data: {
-        email: "checker@demo.aipms",
-        password: "demo-checker-123",
-      },
-    })
-    expect(signIn.ok()).toBeTruthy()
-
     await checkerPage.goto("/master-data")
     const checkerRow = checkerPage
       .getByRole("listitem")
