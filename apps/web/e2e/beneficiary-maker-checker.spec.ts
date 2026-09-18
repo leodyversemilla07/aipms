@@ -22,7 +22,7 @@ test("beneficiary account requires a different finance checker", async ({
     data: {
       name: vendorName,
       email: `dual-${suffix}@example.test`,
-      status: "qualified",
+      status: "active",
     },
   })
   vendorIds.push(vendor.id)
