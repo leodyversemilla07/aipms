@@ -4,6 +4,7 @@ set -euo pipefail
 # Build the exact deployment targets, apply migrations through the production
 # API entrypoint, and verify both externally reachable health surfaces.
 PROJECT_NAME="${COMPOSE_PROJECT_NAME:-aipms-release-smoke}"
+export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
 API_PORT="${API_PORT:-3101}"
 WEB_PORT="${WEB_PORT:-3100}"
 POSTGRES_PORT="${POSTGRES_PORT:-55432}"
@@ -13,6 +14,8 @@ export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-release-smoke-auth-secret-at-le
 export AIPMS_SERVICE_TOKEN="${AIPMS_SERVICE_TOKEN:-release-smoke-service-token}"
 export APP_URL="${APP_URL:-http://localhost:${WEB_PORT}}"
 export AUTH_TRUSTED_ORIGINS="${AUTH_TRUSTED_ORIGINS:-${APP_URL}}"
+BACKUP_DIR="${TMPDIR:-/tmp}/${PROJECT_NAME}-backups"
+PROBE_VALUE="restore-probe-$(date +%s)-$$"
 
 compose() {
   docker compose -p "$PROJECT_NAME" "$@"
@@ -26,6 +29,7 @@ cleanup() {
     compose logs --no-color postgres api web || true
   fi
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  rm -rf "$BACKUP_DIR"
   exit "$exit_code"
 }
 trap cleanup EXIT
@@ -62,6 +66,36 @@ fi
 # and database agree and that no migration was silently left pending.
 compose exec --no-TTY api sh -c \
   'cd /app && pnpm --filter @workspace/db exec prisma migrate status'
+
+# Exercise the operational backup and restore procedures against the same
+# production images. A probe created before the dump must survive a destructive
+# mutation and the validated restore.
+printf 'Validating backup and restore round trip.\n'
+compose exec --no-TTY postgres psql -U "${POSTGRES_USER:-user}" \
+  -d "${POSTGRES_DB:-aipms}" -v ON_ERROR_STOP=1 -q \
+  -c 'CREATE TABLE "restoreSmokeProbe" (value text PRIMARY KEY)' \
+  -c "INSERT INTO \"restoreSmokeProbe\" (value) VALUES ('$PROBE_VALUE')"
+mkdir -p "$BACKUP_DIR"
+./scripts/backup.sh "$BACKUP_DIR"
+BACKUP_FILE="$(find "$BACKUP_DIR" -maxdepth 1 -name 'aipms-*.sql.gz' -type f -print -quit)"
+if [ -z "$BACKUP_FILE" ]; then
+  printf 'Backup file was not created.\n' >&2
+  exit 1
+fi
+compose exec --no-TTY postgres psql -U "${POSTGRES_USER:-user}" \
+  -d "${POSTGRES_DB:-aipms}" -v ON_ERROR_STOP=1 -q \
+  -c 'DROP TABLE "restoreSmokeProbe"'
+AIPMS_RESTORE_SKIP_RESTART=1 ./scripts/restore.sh "$BACKUP_FILE"
+RESTORED_PROBE="$(compose exec --no-TTY postgres psql \
+  -U "${POSTGRES_USER:-user}" -d "${POSTGRES_DB:-aipms}" -Atq \
+  -c 'SELECT value FROM "restoreSmokeProbe"')"
+if [ "$RESTORED_PROBE" != "$PROBE_VALUE" ]; then
+  printf 'Restore probe mismatch.\n' >&2
+  exit 1
+fi
+compose up --detach api web
+wait_for_url "API after restore" "http://localhost:${API_PORT}/health"
+wait_for_url "Web after restore" "http://localhost:${WEB_PORT}/"
 
 # Confirm all expected production artifacts were built, even though the agent
 # is not started during the HTTP smoke test (it requires a real provider).

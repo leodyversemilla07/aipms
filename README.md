@@ -220,11 +220,11 @@ AUTH_SEED_DEMO=1
 ./scripts/restore.sh backups/aipms-20260825-020000.sql.gz
 ```
 
-Restore verifies the archive integrity before touching the database and stops every application writer during the window. The API is force-recreated afterward and runs `prisma migrate deploy` before dependants restart.
+Backups are published atomically with a SHA-256 sidecar. Restore verifies the checksum and loads the full SQL stream into a disposable validation database before touching the target. It then stops every application writer, terminates stale target sessions, restores in one database transaction, validates the migration ledger, and force-recreates the API so `prisma migrate deploy` runs before dependants restart. A failed target restore rolls back and leaves writers stopped for investigation.
 
 ### Production image smoke test
 
-Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, and verify the production health surfaces:
+Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, verify the production health surfaces, and prove a backup/restore round trip with a disposable data probe:
 
 ```bash
 ./scripts/production-smoke.sh
