@@ -1,13 +1,15 @@
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
 import { db } from "../../../packages/db/src/index"
 
 const createdEventIds: string[] = []
 const createdRunIds: string[] = []
+const createdMessageIds: string[] = []
 
 test.afterAll(async () => {
   await db.domainEvent.deleteMany({ where: { id: { in: createdEventIds } } })
   await db.agentRun.deleteMany({ where: { id: { in: createdRunIds } } })
+  await db.message.deleteMany({ where: { id: { in: createdMessageIds } } })
 })
 
 test("finance operator reviews and requeues a dead-lettered event", async ({
@@ -70,6 +72,65 @@ test("finance operator reviews and requeues a dead-lettered event", async ({
   expect(audit.after).toMatchObject({
     recoveryReason: "Repaired the E2E subscriber and verified its health check",
   })
+})
+
+test("finance operator retries only after provider-confirmed non-delivery", async ({
+  page,
+}) => {
+  const vendor = await db.vendor.findFirstOrThrow({
+    where: { status: "active" },
+  })
+  const marker = `E2E failed delivery ${randomUUID()}`
+  const message = await db.message.create({
+    data: {
+      vendorId: vendor.id,
+      recipient: "billing@acme.example",
+      subject: marker,
+      body: "Recovery probe",
+      bodyHash: createHash("sha256").update("Recovery probe").digest("hex"),
+      tier: "auto",
+      status: "failed",
+      failedReason: "E2E transport timeout after dispatch",
+      dispatchStartedAt: new Date(Date.now() - 20 * 60 * 1000),
+    },
+  })
+  createdMessageIds.push(message.id)
+
+  await page.goto("/operations")
+  const row = page.getByRole("listitem").filter({ hasText: marker })
+  await expect(row).toBeVisible()
+  await row.getByRole("button", { name: "Reconcile delivery" }).click()
+
+  const dialog = page.getByRole("dialog", {
+    name: "Reconcile message delivery",
+  })
+  await dialog.getByRole("button", { name: "Non-delivery confirmed" }).click()
+  await dialog
+    .getByRole("textbox", { name: "Provider evidence" })
+    .fill("Provider case E2E-42 confirms its gateway never accepted delivery")
+  await dialog.getByRole("button", { name: "Authorize one retry" }).click()
+
+  await expect(dialog).toBeHidden()
+  await expect(row).toBeHidden()
+  const stored = (await db.message.findUniqueOrThrow({
+    where: { id: message.id },
+  })) as typeof message & {
+    deliveryResolution: string | null
+    deliveryResolutionEvidence: string | null
+    deliveryResolvedBy: string | null
+  }
+  expect(stored).toMatchObject({
+    status: "sent",
+    deliveryResolution: "confirmed_not_sent",
+    deliveryResolutionEvidence:
+      "Provider case E2E-42 confirms its gateway never accepted delivery",
+  })
+  expect(stored.deliveryResolvedBy).not.toBeNull()
+  const audit = await db.auditEntry.findFirstOrThrow({
+    where: { action: "messaging.delivery.resolve", entityId: message.id },
+    orderBy: { seq: "desc" },
+  })
+  expect(audit.inputHash).toBeTruthy()
 })
 
 test("finance operator closes a stale agent run without replaying it", async ({

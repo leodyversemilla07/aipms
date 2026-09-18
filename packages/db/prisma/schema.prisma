@@ -763,6 +763,12 @@ model Message {
   rejectedReason String?
   failedReason   String?
   dispatchStartedAt DateTime?
+  // Operator recovery for ambiguous transport failures. confirmed_sent closes
+  // the row; confirmed_not_sent authorizes exactly one fresh dispatch claim.
+  deliveryResolution         String?
+  deliveryResolutionEvidence String?
+  deliveryResolvedBy         String?
+  deliveryResolvedAt         DateTime?
   sentAt         DateTime?
   threadId       String?
   createdAt      DateTime      @default(now())

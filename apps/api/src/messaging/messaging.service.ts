@@ -135,6 +135,22 @@ export interface DecideMessageInput {
   reason?: string | null
 }
 
+export type DeliveryResolution = 'confirmed_sent' | 'confirmed_not_sent'
+
+export interface ResolveFailedMessageInput {
+  id: string
+  resolverId: string
+  outcome: DeliveryResolution
+  evidence: string
+}
+
+type MessageDeliveryRecoveryUpdate = Prisma.MessageUpdateManyMutationInput & {
+  deliveryResolution: DeliveryResolution
+  deliveryResolutionEvidence: string
+  deliveryResolvedBy: string
+  deliveryResolvedAt: Date
+}
+
 /** Delivery seam: swap for org SMTP / transactional API per deployment. */
 export interface MessageTransport {
   send(message: { to: string; subject: string; body: string }): Promise<void>
@@ -430,6 +446,96 @@ export class MessagingService {
     )
 
     return updated
+  }
+
+  /**
+   * Record an operator-confirmed delivery outcome for an ambiguous transport
+   * failure. A gated message's approver cannot also resolve its delivery.
+   * `confirmed_not_sent` merely stages a new dispatch state; the caller must
+   * release it after this transaction commits.
+   */
+  async resolveFailedDelivery(
+    input: ResolveFailedMessageInput,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<object> {
+    await tx.$queryRaw`
+      SELECT id FROM "message" WHERE id = ${input.id} FOR UPDATE
+    `
+    const message = await tx.message.findUnique({ where: { id: input.id } })
+    if (!message) throw new NotFoundException(`Message ${input.id} not found`)
+    if (message.status !== 'failed') {
+      throw new ConflictException(
+        `Message ${input.id} is no longer failed — reload before recovery`,
+      )
+    }
+    if (message.approvedBy === input.resolverId) {
+      throw new ForbiddenException(
+        'The message approver cannot resolve its ambiguous delivery outcome',
+      )
+    }
+
+    const resolvedAt = new Date()
+    const nextStatus: MessageStatus =
+      input.outcome === 'confirmed_sent'
+        ? 'sent'
+        : message.tier === 'auto'
+          ? 'queued'
+          : 'approved'
+    const recoveryUpdate: MessageDeliveryRecoveryUpdate = {
+      status: nextStatus,
+      deliveryResolution: input.outcome,
+      deliveryResolutionEvidence: input.evidence,
+      deliveryResolvedBy: input.resolverId,
+      deliveryResolvedAt: resolvedAt,
+      ...(input.outcome === 'confirmed_not_sent'
+        ? { dispatchStartedAt: null }
+        : { sentAt: resolvedAt }),
+    }
+    const changed = await tx.message.updateMany({
+      where: { id: message.id, status: 'failed' },
+      data: recoveryUpdate,
+    })
+    if (changed.count !== 1) {
+      throw new ConflictException(
+        `Message ${input.id} changed — reload before recovery`,
+      )
+    }
+    const updated = await tx.message.findUniqueOrThrow({
+      where: { id: message.id },
+    })
+
+    if (input.outcome === 'confirmed_sent') {
+      await this.events.emit(
+        {
+          type: 'message.sent',
+          entityType: 'Message',
+          entityId: message.id,
+          payload: {
+            recipient: message.recipient,
+            deliveryRecovery: true,
+            resolvedBy: input.resolverId,
+          },
+        },
+        tx,
+      )
+    }
+    return updated
+  }
+
+  /**
+   * Release an operator-authorized redispatch after its recovery transaction.
+   * Safe to call repeatedly: only the staged queued/approved state can claim.
+   */
+  async releaseRecovered(id: string): Promise<object> {
+    const message = await this.detail(id)
+    const recovery = message as typeof message & {
+      deliveryResolution?: string | null
+    }
+    if (recovery.deliveryResolution !== 'confirmed_not_sent') return message
+    return this.claimAndDispatch(
+      id,
+      message.tier === 'auto' ? 'queued' : 'approved',
+    )
   }
 
   /** Release an auto-tier queued message after its staging transaction. */

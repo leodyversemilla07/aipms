@@ -77,6 +77,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'messaging.submit': ['procurement', 'finance'],
   'messaging.approve': ['procurement', 'finance'],
   'messaging.reject': ['procurement', 'finance'],
+  'messaging.resolveFailed': ['finance'],
 
   'paymentRun.list': ['finance'],
   'paymentRun.detail': ['finance'],

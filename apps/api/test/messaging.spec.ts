@@ -335,6 +335,94 @@ describe('MessagingService (§8.3 relay)', () => {
     ).toBeInstanceOf(Date)
   })
 
+  it('redispatches only after provider-confirmed non-delivery evidence', async () => {
+    const recovering = new SpyTransport()
+    recovering.failNext = true
+    const svc = makeService(recovering)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      templateId: 'invoice_ack',
+      templateParams: { invoiceNumber: `INV-RECOVERY-${suffix}` },
+    })
+    const failed = message as { id: string; status: string }
+    messageIds.push(failed.id)
+    expect(failed.status).toBe('failed')
+
+    const staged = (await svc.resolveFailedDelivery({
+      id: failed.id,
+      resolverId: 'finance-checker-1',
+      outcome: 'confirmed_not_sent',
+      evidence: 'Provider case SMTP-42 confirms the message was not accepted',
+    })) as { status: string }
+    expect(staged.status).toBe('queued')
+    expect(recovering.sent).toHaveLength(0)
+
+    const released = (await svc.releaseRecovered(failed.id)) as {
+      status: string
+      deliveryResolution: string
+      deliveryResolvedBy: string
+    }
+    expect(released).toMatchObject({
+      status: 'sent',
+      deliveryResolution: 'confirmed_not_sent',
+      deliveryResolvedBy: 'finance-checker-1',
+    })
+    expect(recovering.sent).toHaveLength(1)
+    await svc.releaseRecovered(failed.id)
+    expect(recovering.sent).toHaveLength(1)
+  })
+
+  it('closes provider-confirmed delivery without sending again', async () => {
+    const recovering = new SpyTransport()
+    recovering.failNext = true
+    const svc = makeService(recovering)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      templateId: 'invoice_ack',
+      templateParams: { invoiceNumber: `INV-CONFIRMED-${suffix}` },
+    })
+    const failed = message as { id: string }
+    messageIds.push(failed.id)
+
+    const resolved = (await svc.resolveFailedDelivery({
+      id: failed.id,
+      resolverId: 'finance-checker-2',
+      outcome: 'confirmed_sent',
+      evidence: 'Provider delivery log SMTP-43 confirms recipient acceptance',
+    })) as { status: string; sentAt: Date | null }
+    expect(resolved.status).toBe('sent')
+    expect(resolved.sentAt).toBeInstanceOf(Date)
+    expect(recovering.sent).toHaveLength(0)
+  })
+
+  it('requires a different operator from the gated-message approver', async () => {
+    const recovering = new SpyTransport()
+    const svc = makeService(recovering)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      subject: `Checker separation ${suffix}`,
+      body: 'Human-approved terms.',
+    })
+    const queued = message as { id: string }
+    messageIds.push(queued.id)
+    await svc.approve({ id: queued.id, approverId: 'finance-maker' })
+    recovering.failNext = true
+    const failed = (await svc.releaseApproved(queued.id)) as { status: string }
+    expect(failed.status).toBe('failed')
+
+    await expect(
+      svc.resolveFailedDelivery({
+        id: queued.id,
+        resolverId: 'finance-maker',
+        outcome: 'confirmed_sent',
+        evidence: 'Maker cannot self-check this outcome',
+      }),
+    ).rejects.toThrow(/approver cannot resolve/)
+  })
+
   it('lists messages with filters', async () => {
     const svc = makeService(transport)
     const queuedOnly = await svc.list({ status: 'queued' })

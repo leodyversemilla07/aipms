@@ -381,6 +381,14 @@ const appRouter = t.router({
   reason: z.string().min(1).max(500).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["approve"]>>),
+    resolveFailed: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  outcome: z.enum(['confirmed_sent', 'confirmed_not_sent']),
+  evidence: z.string().trim().min(1).max(1000),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["resolveFailed"]>>),
     reject: publicProcedure
       .input(z.object({
   id: z.string().min(1),

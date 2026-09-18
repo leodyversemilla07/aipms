@@ -61,6 +61,13 @@ const decideInput = z.object({
   reason: z.string().min(1).max(500).optional(),
 })
 
+const resolveFailedInput = z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  outcome: z.enum(['confirmed_sent', 'confirmed_not_sent']),
+  evidence: z.string().trim().min(1).max(1000),
+})
+
 const listInputWithFilters = listInput.extend({
   status: z
     .enum(['queued', 'approved', 'rejected', 'sent', 'failed'])
@@ -185,6 +192,52 @@ export class MessagingRouter {
       return { message }
     })
     return { message: await this.messaging.releaseApproved(input.id) }
+  }
+
+  @Mutation({ input: resolveFailedInput })
+  async resolveFailed(
+    @Input() input: z.infer<typeof resolveFailedInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'messaging.resolveFailed')
+    const staged = await this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'messaging.resolveFailed',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const before = await tx.message.findUnique({ where: { id: input.id } })
+        const message = await this.messaging.resolveFailedDelivery(
+          {
+            id: input.id,
+            resolverId: ctx.user.id,
+            outcome: input.outcome,
+            evidence: input.evidence,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'messaging.delivery.resolve',
+            entity: 'Message',
+            entityId: input.id,
+            input: { outcome: input.outcome, evidence: input.evidence },
+            before: before as object,
+            after: message as object,
+          },
+          tx,
+        )
+        return { message }
+      },
+    )
+    if (input.outcome === 'confirmed_not_sent') {
+      return { message: await this.messaging.releaseRecovered(input.id) }
+    }
+    return staged
   }
 
   @Mutation({ input: decideInput })

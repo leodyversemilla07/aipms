@@ -37,6 +37,10 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Textarea } from "@workspace/ui/components/textarea"
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@workspace/ui/components/toggle-group"
 import Link from "next/link"
 import { useState } from "react"
 import { fmtTime } from "@/lib/time"
@@ -64,6 +68,17 @@ type StaleRun = {
   startedAt: string | Date
 }
 
+type FailedMessage = {
+  id: string
+  recipient: string
+  subject: string
+  tier: string
+  failedReason: string | null
+  dispatchStartedAt: string | Date | null
+}
+
+type DeliveryOutcome = "confirmed_sent" | "confirmed_not_sent"
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "The recovery action failed."
 }
@@ -78,6 +93,11 @@ function RecoveryConsole() {
   const [staleRun, setStaleRun] = useState<StaleRun | null>(null)
   const [staleReason, setStaleReason] = useState("")
   const [staleError, setStaleError] = useState<string | null>(null)
+  const [failedMessage, setFailedMessage] = useState<FailedMessage | null>(null)
+  const [deliveryOutcome, setDeliveryOutcome] =
+    useState<DeliveryOutcome | null>(null)
+  const [deliveryEvidence, setDeliveryEvidence] = useState("")
+  const [deliveryError, setDeliveryError] = useState<string | null>(null)
 
   const summary = useQuery(trpc.events.recoverySummary.queryOptions({}))
   const deadLetters = useQuery(
@@ -88,6 +108,15 @@ function RecoveryConsole() {
     trpc.agent.staleRuns.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
   const staleRows = (staleRuns.data?.rows ?? []) as StaleRun[]
+  const failedMessages = useQuery(
+    trpc.messaging.list.queryOptions({
+      q: "",
+      page: 1,
+      pageSize: 50,
+      status: "failed",
+    })
+  )
+  const failedRows = (failedMessages.data?.rows ?? []) as FailedMessage[]
   const requeue = useMutation(
     trpc.events.requeue.mutationOptions({
       onSuccess: () => {
@@ -102,6 +131,9 @@ function RecoveryConsole() {
 
   const cancelStaleRun = useMutation(
     trpc.agent.cancelStaleRun.mutationOptions()
+  )
+  const resolveFailedMessage = useMutation(
+    trpc.messaging.resolveFailed.mutationOptions()
   )
 
   function submitRecovery() {
@@ -129,6 +161,26 @@ function RecoveryConsole() {
       queryClient.invalidateQueries(trpc.events.pathFilter())
     } catch (cause) {
       setStaleError(errorMessage(cause))
+    }
+  }
+
+  async function submitDeliveryResolution() {
+    if (!failedMessage || !deliveryOutcome || !deliveryEvidence.trim()) return
+    setDeliveryError(null)
+    try {
+      await resolveFailedMessage.mutateAsync({
+        id: failedMessage.id,
+        idempotencyKey: crypto.randomUUID(),
+        outcome: deliveryOutcome,
+        evidence: deliveryEvidence.trim(),
+      })
+      setFailedMessage(null)
+      setDeliveryOutcome(null)
+      setDeliveryEvidence("")
+      queryClient.invalidateQueries(trpc.messaging.pathFilter())
+      queryClient.invalidateQueries(trpc.events.pathFilter())
+    } catch (cause) {
+      setDeliveryError(errorMessage(cause))
     }
   }
 
@@ -174,7 +226,10 @@ function RecoveryConsole() {
         </nav>
       </header>
 
-      {summary.isError || deadLetters.isError || staleRuns.isError ? (
+      {summary.isError ||
+      deadLetters.isError ||
+      staleRuns.isError ||
+      failedMessages.isError ? (
         <Alert variant="destructive">
           <AlertTitle>Recovery data unavailable</AlertTitle>
           <AlertDescription>
@@ -324,13 +379,76 @@ function RecoveryConsole() {
         )}
       </section>
 
+      <section className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <h2 className="font-semibold">Failed vendor messages</h2>
+            <p className="text-muted-foreground text-sm">
+              Reconcile with the transport provider before closing or retrying
+              an ambiguous delivery. Automatic retries are prohibited.
+            </p>
+          </div>
+          <Badge variant={failedRows.length > 0 ? "destructive" : "secondary"}>
+            {failedMessages.data?.total ?? "…"}
+          </Badge>
+        </div>
+
+        {!failedMessages.isPending && failedRows.length === 0 ? (
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyTitle>No failed messages</EmptyTitle>
+              <EmptyDescription>
+                The outbound relay has no failures requiring reconciliation.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {failedRows.map((message) => (
+              <li
+                key={message.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 text-sm"
+              >
+                <div className="flex max-w-2xl flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="destructive">failed</Badge>
+                    <span className="font-medium">{message.subject}</span>
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    {message.recipient} · {message.tier} · attempt{" "}
+                    {message.dispatchStartedAt
+                      ? fmtTime(message.dispatchStartedAt)
+                      : "time unavailable"}
+                  </span>
+                  <span className="break-words text-xs">
+                    {message.failedReason ?? "No transport error detail"}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setFailedMessage(message)
+                    setDeliveryOutcome(null)
+                    setDeliveryEvidence("")
+                    setDeliveryError(null)
+                  }}
+                >
+                  Reconcile delivery
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <Alert>
-        <AlertTitle>Other recovery queues</AlertTitle>
+        <AlertTitle>Independent financial recovery</AlertTitle>
         <AlertDescription>
           QBO dispatch resolution remains on the Finance desk to preserve its
-          independent checker flow. Failed messages remain investigation-only:
-          automatically retrying an ambiguous transport outcome could send a
-          duplicate vendor communication.
+          dedicated maker/checker flow. Message redispatch is available only
+          after an operator records provider evidence that delivery did not
+          occur.
         </AlertDescription>
       </Alert>
 
@@ -436,6 +554,100 @@ function RecoveryConsole() {
               disabled={!staleReason.trim() || cancelStaleRun.isPending}
             >
               {cancelStaleRun.isPending ? "Cancelling…" : "Cancel stale run"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!failedMessage}
+        onOpenChange={(open) => {
+          if (!open && !resolveFailedMessage.isPending) setFailedMessage(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reconcile message delivery</DialogTitle>
+            <DialogDescription>
+              Use transport-provider evidence to confirm the external outcome. A
+              confirmed non-delivery authorizes one new claimed dispatch.
+            </DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel>Provider-confirmed outcome</FieldLabel>
+            <ToggleGroup
+              aria-label="Provider-confirmed outcome"
+              value={deliveryOutcome ? [deliveryOutcome] : []}
+              onValueChange={(values) =>
+                setDeliveryOutcome((values[0] as DeliveryOutcome) ?? null)
+              }
+              variant="outline"
+              spacing={0}
+              disabled={resolveFailedMessage.isPending}
+            >
+              <ToggleGroupItem value="confirmed_sent">
+                Delivery confirmed
+              </ToggleGroupItem>
+              <ToggleGroupItem value="confirmed_not_sent">
+                Non-delivery confirmed
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <FieldDescription>
+              Do not authorize redispatch when the provider outcome remains
+              unknown.
+            </FieldDescription>
+          </Field>
+          <Field data-invalid={!!deliveryError}>
+            <FieldLabel htmlFor="delivery-evidence">
+              Provider evidence
+            </FieldLabel>
+            <Textarea
+              id="delivery-evidence"
+              value={deliveryEvidence}
+              onChange={(event) => setDeliveryEvidence(event.target.value)}
+              placeholder="Record the provider case, delivery log, and checks performed"
+              aria-invalid={!!deliveryError}
+              disabled={resolveFailedMessage.isPending}
+            />
+            <FieldDescription>
+              Required and written to the append-only audit trail.
+            </FieldDescription>
+          </Field>
+          {deliveryError ? (
+            <Alert variant="destructive">
+              <AlertTitle>Resolution failed</AlertTitle>
+              <AlertDescription>{deliveryError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <DialogClose
+              render={
+                <Button
+                  variant="outline"
+                  disabled={resolveFailedMessage.isPending}
+                />
+              }
+            >
+              Leave unresolved
+            </DialogClose>
+            <Button
+              variant={
+                deliveryOutcome === "confirmed_not_sent"
+                  ? "destructive"
+                  : "default"
+              }
+              onClick={submitDeliveryResolution}
+              disabled={
+                !deliveryOutcome ||
+                !deliveryEvidence.trim() ||
+                resolveFailedMessage.isPending
+              }
+            >
+              {resolveFailedMessage.isPending
+                ? "Resolving…"
+                : deliveryOutcome === "confirmed_not_sent"
+                  ? "Authorize one retry"
+                  : "Record confirmed delivery"}
             </Button>
           </DialogFooter>
         </DialogContent>
