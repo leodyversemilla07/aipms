@@ -314,9 +314,12 @@ The agent (`apps/agent`) runs on the eve framework. See `apps/agent/AGENTS.md` f
 
 ### Tool Surface
 
-The eve agent calls tRPC procedures directly:
-- `agent.process({ id, idempotencyKey })` — Classify & register an invoice
-- `agent.batch({ limit })` — Drain pending intake documents
+The eve agent uses a default-deny tRPC tool surface. Intake tools include:
+- `list_intake` and `get_intake_document` — inspect bounded, prompt-safe projections; payment credentials and binary bodies are omitted server-side
+- `classify_document` and `register_invoice` — persist a validated invoice payload and run deterministic tax/matching logic
+- `agent.process({ id, idempotencyKey })` and `agent.batch({ limit })` — process deterministic structured intake only
+
+Text, JSON, XML, and CSV email attachments receive bounded UTF-8 projections. PDF/image invoices require the configured OCR integration or human review; agents must not infer missing content.
 
 ### Agent machine authentication
 
