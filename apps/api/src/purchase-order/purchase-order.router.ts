@@ -56,14 +56,14 @@ export class PurchaseOrderRouter {
     return this.purchaseOrder.detail(input.id)
   }
 
-  /** §16.3 — verification status of the PO's qualified signature. */
+  /** §16.3 — verification status of the PO's cryptographic signature. */
   @Query({ input: idInput })
   async signature(@Input() input: z.infer<typeof idInput>) {
     return this.signing.verify(input.id)
   }
 
   /**
-   * §16.4 — human countersignature with the instance certificate. Agents are
+   * §16.4 — human countersignature with the configured instance key. Agents are
    * refused by construction; every signature is audited.
    */
   @Mutation({ input: signInput })

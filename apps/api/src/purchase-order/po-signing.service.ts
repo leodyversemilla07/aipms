@@ -10,14 +10,14 @@ import {
 import type { AuthedTrpcContext } from '../trpc/context.types'
 
 /**
- * §16.4 — "agents prepare documents but never countersign; POs carry
- * qualified electronic signature gates (human + certificate)". The signature
- * is detached, over the canonical PO snapshot at signing time; verification
+ * §16.4 — agents prepare documents but never countersign. This implementation
+ * provides a detached ECDSA integrity signature over the canonical PO snapshot;
+ * it is not by itself a legally qualified electronic signature. Verification
  * recomputes the snapshot from current state so any post-signing drift is
  * detectable even before the cryptographic check.
  */
 
-/** Roles allowed to countersign a PO with the instance certificate. */
+/** Roles allowed to countersign a PO with the configured instance key. */
 const SIGNING_ROLES: UserRole[] = ['admin', 'procurement', 'finance']
 
 export interface PoSignatureView {

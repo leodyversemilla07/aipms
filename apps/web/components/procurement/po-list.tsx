@@ -41,7 +41,7 @@ const PO_STATUS: Record<string, string> = {
 /**
  * §9 — purchase orders after issue: expanded line detail, confirm (vendor
  * acceptance), a two-step-confirmed §10.1 cancellation request (routes a
- * human gate into the exception queue), and §16.3 qualified signatures.
+ * human gate into the exception queue), and §16.3 ECDSA integrity signatures.
  */
 export function PoList() {
   const trpc = useTRPC()
@@ -194,7 +194,7 @@ function PoRowItem({
               title={
                 sig && !sig.configured
                   ? "Configure AIPMS_SIGNING_KEYS_DIR to enable signing"
-                  : "Countersign with the instance certificate"
+                  : "Countersign with the configured instance key"
               }
               onClick={() =>
                 sign.mutate({

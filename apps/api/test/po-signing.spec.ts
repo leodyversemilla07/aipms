@@ -12,7 +12,7 @@ import {
 import type { AuthedTrpcContext } from '../src/trpc/context.types'
 
 /**
- * §16.3/§16.4 — qualified PO signatures: detached ECDSA over a canonical
+ * §16.3/§16.4 — PO integrity signatures: detached ECDSA over a canonical
  * snapshot, human-only countersigning (agents never sign), tamper detection
  * against the PO's current state.
  */
@@ -81,7 +81,7 @@ async function seedIssuedPo(
   return { poId: po.id, vendorId: vendor.id }
 }
 
-describe('Qualified PO signing', () => {
+describe('Cryptographic PO signing', () => {
   let signing: SigningService
   let service: PoSigningService
 
