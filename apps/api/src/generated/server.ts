@@ -604,7 +604,7 @@ const appRouter = t.router({
       .input(z.object({
   idempotencyKey: z.string().min(1),
   requisitionId: z.string().min(1),
-  vendorIds: z.array(z.string().min(1)).min(1),
+  vendorIds: z.array(z.string().min(1)).min(1).max(100),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["request"]>>),
     receive: publicProcedure

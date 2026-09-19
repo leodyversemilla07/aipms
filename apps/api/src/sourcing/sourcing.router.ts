@@ -23,7 +23,7 @@ import { SourcingService } from './sourcing.service'
 const requestInput = z.object({
   idempotencyKey: z.string().min(1),
   requisitionId: z.string().min(1),
-  vendorIds: z.array(z.string().min(1)).min(1),
+  vendorIds: z.array(z.string().min(1)).min(1).max(100),
 })
 
 const quoteIdInput = z.object({ id: z.string().min(1) })

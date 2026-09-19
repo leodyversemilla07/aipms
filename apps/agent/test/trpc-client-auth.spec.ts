@@ -23,11 +23,12 @@ describe("agent tRPC token exchange", () => {
           { status: 201, headers: { "content-type": "application/json" } }
         )
       )
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({ result: { data: { json: { ok: true } } } }),
-          { status: 200, headers: { "content-type": "application/json" } }
-        )
+      .mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({ result: { data: { json: { ok: true } } } }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
       )
     vi.stubGlobal("fetch", fetchMock)
 

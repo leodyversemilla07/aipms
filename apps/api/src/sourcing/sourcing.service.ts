@@ -365,7 +365,11 @@ export class SourcingService {
       status?: 'requested' | 'received' | 'accepted' | 'rejected'
     } = {},
   ) {
-    return db.quote.findMany({ where, orderBy: { createdAt: 'desc' } })
+    return db.quote.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    })
   }
 
   async detail(id: string) {

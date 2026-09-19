@@ -37,6 +37,55 @@ const monitoringToken = process.env.OPERATIONS_MONITORING_TOKEN?.trim()
 if (!monitoringToken) {
   throw new Error("OPERATIONS_MONITORING_TOKEN is required")
 }
+const bootstrapToken = (
+  process.env.CAPACITY_AGENT_BOOTSTRAP_TOKEN ?? process.env.AIPMS_SERVICE_TOKEN
+)?.trim()
+if (!bootstrapToken) {
+  throw new Error(
+    "CAPACITY_AGENT_BOOTSTRAP_TOKEN (or AIPMS_SERVICE_TOKEN) is required"
+  )
+}
+
+let cachedAgentAccess = null
+let pendingAgentExchange = null
+async function agentAuthorization() {
+  if (cachedAgentAccess?.expiresAt - 30_000 > Date.now()) {
+    return `Bearer ${cachedAgentAccess.token}`
+  }
+  if (!pendingAgentExchange) {
+    pendingAgentExchange = (async () => {
+      const response = await fetch(
+        new URL("/api/service/agent/token", baseUrl),
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${bootstrapToken}`,
+          },
+          body: "{}",
+          signal: AbortSignal.timeout(5000),
+        }
+      )
+      if (!response.ok) {
+        throw new Error(`Agent token exchange failed (${response.status})`)
+      }
+      const exchange = await response.json()
+      const expiresAt = Date.parse(exchange?.expiresAt)
+      if (
+        typeof exchange?.accessToken !== "string" ||
+        !Number.isFinite(expiresAt)
+      ) {
+        throw new Error("Agent token exchange returned an invalid response")
+      }
+      cachedAgentAccess = { token: exchange.accessToken, expiresAt }
+    })().finally(() => {
+      pendingAgentExchange = null
+    })
+  }
+  await pendingAgentExchange
+  return `Bearer ${cachedAgentAccess.token}`
+}
+await agentAuthorization()
 
 const requestCount = positiveInteger("CAPACITY_REQUESTS", 300)
 const concurrency = Math.min(
@@ -50,11 +99,36 @@ if (maximumErrorRate > 1) {
   throw new Error("CAPACITY_MAX_ERROR_RATE must be between 0 and 1")
 }
 
+function trpcPath(procedure, input) {
+  if (input === undefined) return `/api/trpc/${procedure}`
+  const params = new URLSearchParams({ input: JSON.stringify(input) })
+  return `/api/trpc/${procedure}?${params}`
+}
+
+const healthPayload = (payload) => payload?.ok === true
+const trpcPayload = (payload) =>
+  !payload?.error && payload?.result?.data != null
 const targets = [
-  { path: "/health/ready", headers: {} },
+  { path: "/health/ready", headers: {}, valid: healthPayload },
   {
     path: "/health/operations",
     headers: { Authorization: `Bearer ${monitoringToken}` },
+    valid: healthPayload,
+  },
+  {
+    path: trpcPath("requisition.list", { q: "", page: 1, pageSize: 20 }),
+    headers: async () => ({ Authorization: await agentAuthorization() }),
+    valid: trpcPayload,
+  },
+  {
+    path: trpcPath("vendor.list", { q: "", page: 1, pageSize: 20 }),
+    headers: async () => ({ Authorization: await agentAuthorization() }),
+    valid: trpcPayload,
+  },
+  {
+    path: trpcPath("audit.meta"),
+    headers: async () => ({ Authorization: await agentAuthorization() }),
+    valid: trpcPayload,
   },
 ]
 const latencies = []
@@ -65,12 +139,16 @@ async function probe(index) {
   const target = targets[index % targets.length]
   const startedAt = performance.now()
   try {
+    const headers =
+      typeof target.headers === "function"
+        ? await target.headers()
+        : target.headers
     const response = await fetch(new URL(target.path, baseUrl), {
-      headers: target.headers,
+      headers,
       signal: AbortSignal.timeout(timeoutMs),
     })
     const payload = await response.json()
-    if (!response.ok || payload?.ok !== true) {
+    if (!response.ok || !target.valid(payload)) {
       throw new Error(`HTTP ${response.status} or unhealthy payload`)
     }
   } catch (error) {

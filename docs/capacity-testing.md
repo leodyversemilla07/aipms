@@ -1,9 +1,11 @@
 # Capacity validation
 
 `scripts/capacity-smoke.mjs` is a dependency-free, read-only concurrency probe
-for the API and PostgreSQL path. It alternates between readiness and the
-operational exception gauges, so it exercises HTTP handling, authentication,
-the Prisma pool, and indexed recovery queries without creating business data.
+for the API and PostgreSQL path. It mixes readiness, operational exception
+gauges, and paginated requisition, vendor, and audit metadata queries. This
+exercises HTTP handling, monitoring authentication, short-lived agent token
+exchange, centralized authorization, the Prisma pool, and indexed business and
+recovery reads without creating business data.
 It is a regression gate, not a substitute for a workload model.
 
 The production image smoke runs 100 requests at concurrency 10. For staging,
@@ -12,6 +14,7 @@ start with:
 ```bash
 CAPACITY_BASE_URL=https://api.staging.example.com \
 OPERATIONS_MONITORING_TOKEN="$STAGING_MONITORING_TOKEN" \
+CAPACITY_AGENT_BOOTSTRAP_TOKEN="$STAGING_AGENT_BOOTSTRAP_TOKEN" \
 CAPACITY_REQUESTS=5000 \
 CAPACITY_CONCURRENCY=25 \
 CAPACITY_MAX_P95_MS=750 \

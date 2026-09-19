@@ -269,7 +269,7 @@ AIPMS is designed for **enterprise-only** deployment:
 - Audit trail for all actions
 - Maker/checker separation for approvals, PO signatures, beneficiary changes,
   payment-run overrides, and ambiguous ERP dispatch resolution
-- Idempotency keys everywhere (agent retries safe)
+- Idempotency keys on retryable commands; durable claims for ambiguous external effects
 
 ### Configuration
 
@@ -303,7 +303,7 @@ import type { AppRouter } from "@workspace/api/src/generated/server"
 export const trpc = createTRPCReact<AppRouter>()
 ```
 
-All mutations use idempotency keys. Agent actions are auditable with `actorKind: 'agent'`.
+Retryable domain mutations use idempotency keys. External QBO and messaging effects use durable dispatch claims and evidence-based reconciliation instead of unsafe automatic retries. Credential rotation and OAuth administration remain deliberate non-replayable operations. Agent actions are auditable with `actorKind: 'agent'`.
 
 ---
 
