@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml)
 
-**Status:** Enterprise-ready (v0.5) | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
+**Status:** Unreleased production-hardening release candidate | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
 
 ---
 
@@ -10,9 +10,9 @@
 
 AIPMS is a **procurement management system where AI agents are the primary users**. Unlike traditional PMS tools that put humans in charge of every step, AIPMS flips the model:
 
-- **Agents handle routine procurement workflows** end-to-end (requisitions → POs → invoice matching → payment)
-- **Humans supervise, approve, and resolve exceptions** through a web cockpit
-- **Every action is attributable, auditable, and replayable**
+- **Agents prepare routine procurement workflows** from requisitions through sourcing, POs, receipts, and invoice matching
+- **Humans supervise and retain protected decisions** including approvals, quote awards, signatures, beneficiary verification, and payment execution
+- **Every action is attributable and auditable; external effects are durably recoverable without unsafe automatic replay**
 
 The system is designed for enterprise organizations that need:
 - Automated procurement of routine purchases within budget/policy guardrails
@@ -40,7 +40,7 @@ The system is designed for enterprise organizations that need:
               ┌──────▼──────┐
               │   NestJS    │
               │  Auth: M2M  │  ← Better Auth for humans
-              │  Bearer: agent │  ← Service tokens for agents
+              │  Bearer: agent │  ← Five-minute scoped tokens for agents
               └──────┬──────┘
                      │
               ┌──────▼──────┐
@@ -139,7 +139,7 @@ aipms/
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
 | `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 97 procedures across 21 routers
+**Total:** 103 procedures across 21 routers
 
 ---
 
@@ -279,6 +279,7 @@ Key environment variables:
 |----------|---------|
 | `DATABASE_URL` | Postgres connection |
 | `BETTER_AUTH_SECRET` | Auth signing key |
+| `AIPMS_TOKEN_ENCRYPTION_SECRET` | Independent AES-GCM envelope key for ERP credentials |
 | `AIPMS_SERVICE_TOKEN` | Bootstrap credential for the agent token exchange and service API |
 | `AIPMS_AGENT_SIGNING_SECRET` | Independent key for five-minute scoped agent bearers |
 | `OPERATIONS_MONITORING_TOKEN` | Dedicated read-only token for operational exception gauges |
@@ -366,7 +367,7 @@ pnpm db:studio     # Prisma Studio UI
 | 2 | ✓ | Requisition → PO workflow |
 | 3 | ✓ | Agent skills (intake drain, sourcing, ops; scoped M2M) |
 | 4 | ✓ | Invoicing & 3-way match (receipts, intake, matching) |
-| 5 | ✓* | Payment runs & vendor messaging relay (*ERP sync pending) |
+| 5 | ✓ | Payment runs, vendor messaging relay, and QBO ERP synchronization |
 | 6 | ✓ | Hardening (hash-chained audit, event DLQ, quotas) |
 | 7 | ◐ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, cryptographic PO signing; legal qualification is deployment-specific) |
 

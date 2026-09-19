@@ -56,8 +56,10 @@ describe('token encryption', () => {
 
   it('rejects tampered payloads', () => {
     const enc = encryptSecret('token')
-    const [iv, tag, data] = enc.split('.')
-    const tampered = `${iv}.${tag}.${data.slice(0, -2)}AA`
+    const parts = enc.split('.')
+    const data = parts.at(-1) ?? ''
+    parts[parts.length - 1] = `${data.slice(0, -2)}AA`
+    const tampered = parts.join('.')
     expect(() => decryptSecret(tampered)).toThrow()
   })
 })

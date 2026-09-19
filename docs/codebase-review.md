@@ -1,5 +1,12 @@
 # Codebase review — 2026-09-06
 
+> **Historical snapshot:** This review predates the authorization, automation,
+> maker/checker, recovery, deployment, and test hardening merged later in
+> September 2026. Many findings below are remediated and its test counts are no
+> longer current. Use the current CI run and the staging, monitoring, capacity,
+> and disaster-recovery runbooks for release decisions. The document is retained
+> as an audit record of the earlier assessment, not as current release status.
+
 AIPMS has a substantial procurement domain implementation, but the current code should not be treated as production-ready for procurement and payment operations. The main gaps are authorization, workflow invariants across multiple records, and reliable side effects. Passing lint and typechecks does not establish those properties.
 
 This review covers the architecture, API authentication and domain services, database schema, agent runtime and automation, web desks and shared UI, ERP/messaging integrations, deployment, and test configuration. It is a broad source review with selected execution checks, not an exhaustive proof of every path. No application source was changed. No live bank, mail, identity-provider, or ERP integration was exercised, and tax-law correctness was not assessed.

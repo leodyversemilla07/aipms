@@ -68,9 +68,10 @@ After the automated boundary check:
 ## Secret rotation check
 
 Rotate staging credentials one class at a time: monitoring token, agent service
-token, Better Auth secret according to its session invalidation policy, signing
-keys, IdP client secret/certificate, IMAP credential, QBO OAuth secret/tokens,
-and LLM key. For every rotation:
+token, agent bearer-signing key, Better Auth secret according to its session
+invalidation policy, ERP token-envelope key, PO signing keys, IdP client
+secret/certificate, IMAP credential, QBO OAuth secret/tokens, and LLM key. For
+every rotation:
 
 - Record owner, old/new key identifiers, start/end time, and expected impact.
 - Deploy the new secret without placing it in image layers, browser bundles,
@@ -79,6 +80,12 @@ and LLM key. For every rotation:
 - Confirm audit, readiness, automation leases, and recovery queues remain
   healthy.
 - Revoke the old credential at the provider after all replicas use the new one.
+
+For the ERP envelope key specifically, set the old value in
+`AIPMS_TOKEN_ENCRYPTION_PREVIOUS_SECRET`, deploy the new
+`AIPMS_TOKEN_ENCRYPTION_SECRET`, exercise the QBO connection so lazy
+re-encryption completes, and only then remove the previous key. Rotating
+`BETTER_AUTH_SECRET` no longer rotates or invalidates ERP token envelopes.
 
 A release is not production-ready when any real provider check is skipped,
 TLS/header validation fails, old credentials remain usable, recovery creates a

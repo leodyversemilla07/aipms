@@ -11,6 +11,7 @@ POSTGRES_PORT="${POSTGRES_PORT:-55432}"
 export API_PORT WEB_PORT POSTGRES_PORT
 export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-release-smoke-db-password}"
 export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-release-smoke-auth-secret-at-least-32-bytes}"
+export AIPMS_TOKEN_ENCRYPTION_SECRET="${AIPMS_TOKEN_ENCRYPTION_SECRET:-release-smoke-token-encryption-key-32-bytes}"
 export AIPMS_SERVICE_TOKEN="${AIPMS_SERVICE_TOKEN:-release-smoke-service-token}"
 export AIPMS_AGENT_SIGNING_SECRET="${AIPMS_AGENT_SIGNING_SECRET:-release-smoke-agent-signing-secret-32-bytes}"
 export AIPMS_AGENT_ID="${AIPMS_AGENT_ID:-release-smoke-agent-1}"
