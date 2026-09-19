@@ -12,6 +12,56 @@ test.afterAll(async () => {
   await db.vendor.deleteMany({ where: { id: { in: vendorIds } } })
 })
 
+test("finance records evidence before voiding a draft payment run", async ({
+  page,
+}) => {
+  const suffix = randomUUID().slice(0, 8)
+  const maker = await db.user.findUniqueOrThrow({
+    where: { email: "maker@demo.aipms" },
+  })
+  const runNumber = `RUN-VOID-${suffix}`
+  const reason = `Duplicate preparation evidence ${suffix}`
+  const run = await db.paymentRun.create({
+    data: {
+      runNumber,
+      status: "draft",
+      totalMinor: 0,
+      createdBy: maker.id,
+    },
+  })
+  runIds.push(run.id)
+
+  await page.goto("/finance")
+  const runRow = page.getByRole("listitem").filter({ hasText: runNumber })
+  await expect(runRow).toBeVisible()
+  await runRow.getByRole("button", { name: "Void run" }).click()
+  const dialog = page.getByRole("dialog", { name: `Void ${runNumber}?` })
+  await dialog.getByLabel("Reconciliation evidence and reason").fill(reason)
+  await dialog.getByRole("button", { name: "Confirm void" }).click()
+
+  await expect(
+    runRow.getByText("Voided", { exact: true }).first()
+  ).toBeVisible()
+  await expect(runRow.getByText(reason)).toBeVisible()
+  const stored = await db.paymentRun.findUniqueOrThrow({
+    where: { id: run.id },
+  })
+  expect(stored.status).toBe("voided")
+  expect(stored.voidReason).toBe(reason)
+  expect(stored.voidedBy).toBe(maker.id)
+  await expect
+    .poll(() =>
+      db.auditEntry.count({
+        where: {
+          actorId: maker.id,
+          action: "paymentRun.void",
+          entityId: run.id,
+        },
+      })
+    )
+    .toBe(1)
+})
+
 test("finance reconciles paid and dishonored payment lines", async ({
   page,
 }) => {
