@@ -592,7 +592,10 @@ const appRouter = t.router({
     }),
   sourcing: t.router({
     list: publicProcedure
-      .input(listInput)
+      .input(z.object({
+  requisitionId: z.string().min(1).optional(),
+  status: z.enum(['requested', 'received', 'accepted', 'rejected']).optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["list"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))

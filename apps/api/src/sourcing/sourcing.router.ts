@@ -52,7 +52,7 @@ const receiveInput = z.object({
 
 const compareInput = z.object({ requisitionId: z.string().min(1) })
 
-const listInput = z.object({
+const sourcingListInput = z.object({
   requisitionId: z.string().min(1).optional(),
   status: z.enum(['requested', 'received', 'accepted', 'rejected']).optional(),
 })
@@ -67,8 +67,8 @@ export class SourcingRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query({ input: listInput })
-  async list(@Input() input: z.infer<typeof listInput>) {
+  @Query({ input: sourcingListInput })
+  async list(@Input() input: z.infer<typeof sourcingListInput>) {
     return this.sourcing.list(input)
   }
 

@@ -6,6 +6,7 @@ import { MessagingQueue } from "@/components/messaging-queue"
 import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
+import { Sourcing } from "@/components/procurement/sourcing"
 import { SignInCard } from "@/components/sign-in"
 import { SignOutButton } from "@/components/sign-out-button"
 
@@ -41,6 +42,7 @@ function ProcurementBody() {
         </nav>
       </header>
 
+      <Sourcing />
       <IssuePo />
       <PoList />
       <Receipts />
