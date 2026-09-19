@@ -10,7 +10,10 @@ BEGIN
     RAISE EXCEPTION 'AuditEntry is append-only; UPDATE and DELETE are forbidden'
       USING ERRCODE = '55000';
   END IF;
-  RETURN OLD;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$;
 

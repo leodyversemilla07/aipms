@@ -36,7 +36,10 @@ describe('Audit chain', () => {
   })
 
   it('rejects update and delete outside explicit maintenance mode', async () => {
-    const row = await record('immutable.probe')
+    await record('immutable.probe')
+    const row = await db.auditEntry.findFirstOrThrow({
+      where: { action: 'immutable.probe' },
+    })
     await expect(
       db.auditEntry.update({
         where: { id: row.id },
