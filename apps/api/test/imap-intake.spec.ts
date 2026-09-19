@@ -67,6 +67,23 @@ describe('imap-message mapping (§8.2, pure)', () => {
     )
   })
 
+  it('projects bounded textual attachments without prompt-facing base64', () => {
+    const raw = buildRawPayload(
+      mail({
+        attachments: [
+          {
+            filename: 'invoice.json',
+            contentType: 'application/json',
+            content: Buffer.from('{"number":"INV-42","total":12500}'),
+          },
+        ],
+      }),
+    )
+    expect(raw.attachments[0].textContent).toContain('INV-42')
+    expect(raw.attachments[0].textTruncated).toBe(false)
+    expect(raw.attachments[0].contentBase64).toBeUndefined()
+  })
+
   it('caps inlined attachments at the byte limit but keeps their hash', () => {
     const big = Buffer.alloc(3_000_000, 7)
     const raw = buildRawPayload(

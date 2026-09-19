@@ -3,15 +3,15 @@ import { z } from "zod"
 import { agentAuthorizationToken, getApiConfig } from "../lib/trpc-client"
 
 /**
- * Drain the aipms intake queue: process up to `limit` pending documents
- * through the §3 classify→register pipeline. Calls the API's M2M REST
+ * Drain structured aipms intake: process up to `limit` pending documents
+ * through the deterministic classify→register pipeline. Calls the API's M2M REST
  * endpoint, authenticated with a short-lived scoped agent bearer.
  * Returns per-run counts including per-document failures.
  */
 export default defineTool({
   description:
-    "Run the aipms intake agent over up to `limit` pending (new) documents, " +
-    "classifying and registering each as an invoice. Returns how many were " +
+    "Run deterministic structured intake over up to `limit` pending documents. " +
+    "Unstructured/binary documents require get_intake_document plus OCR or human review. Returns how many were " +
     "processed and any failures. Requires configured aipms machine credentials.",
   inputSchema: z.object({
     limit: z.number().int().min(1).max(100).default(25),
