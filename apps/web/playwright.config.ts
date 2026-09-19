@@ -9,6 +9,7 @@ import { defineConfig, devices } from "@playwright/test"
  */
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "staging-workload.spec.ts",
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,

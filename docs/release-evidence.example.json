@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "sourceSha": "REPLACE_WITH_40_CHARACTER_COMMIT_SHA",
+  "deployedImages": {
+    "api": "REPLACE_WITH_EXACT_API_DIGEST_FROM_MANIFEST",
+    "web": "REPLACE_WITH_EXACT_WEB_DIGEST_FROM_MANIFEST",
+    "agent": "REPLACE_WITH_EXACT_AGENT_DIGEST_FROM_MANIFEST"
+  },
+  "validations": {
+    "deploymentPreflight": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "tlsAndSecurityBoundary": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "smtpDeliveryAndRecovery": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "imapIntake": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "idpAndScim": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "qboSandboxAndRecovery": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "llmOcr": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "paymentDestinationIsolation": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "browserCapacity": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "offHostBackupRestore": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "alertRouting": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "telemetryAggregation": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "backupSchedulingAndReplication": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    }
+  },
+  "rotations": {
+    "monitoring": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "agentBootstrap": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "agentSigning": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "erpEnvelope": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "betterAuth": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "poSigning": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "idp": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "imap": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "smtp": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "qbo": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    },
+    "llm": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": "",
+      "oldCredentialRejected": false,
+      "newCredentialAccepted": false
+    }
+  },
+  "reviews": {
+    "taxAndBir": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    },
+    "signatureAndLegal": {
+      "status": "pending",
+      "owner": "",
+      "performedAt": "",
+      "evidenceId": ""
+    }
+  }
+}

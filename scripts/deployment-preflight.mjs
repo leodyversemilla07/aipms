@@ -177,6 +177,17 @@ for (const name of [
   }
 }
 
+for (const name of [
+  "AIPMS_API_IMAGE_REF",
+  "AIPMS_WEB_IMAGE_REF",
+  "AIPMS_AGENT_IMAGE_REF",
+]) {
+  const image = required(name)
+  if (image && !/@sha256:[a-f0-9]{64}$/.test(image)) {
+    fail(name, "must pin an immutable sha256 image digest")
+  }
+}
+
 const llmKind = values.AIPMS_LLM_KIND?.trim() || "cloud"
 const llmEndpointRaw = values.AIPMS_LLM_ENDPOINT?.trim()
 const llmModel = values.AIPMS_LLM_MODEL?.trim()

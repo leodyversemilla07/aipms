@@ -14,6 +14,9 @@ AIPMS_TOKEN_ENCRYPTION_SECRET="enc_6TbQ2nV9xK4mR8pL1sH7wF3dJ5cY0eZa"
 AIPMS_SERVICE_TOKEN="as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG"
 AIPMS_AGENT_SIGNING_SECRET="ats_4NcR8mV2qP7xL1kD5sH9wF3bJ6tY0eZu"
 AIPMS_AGENT_ID="staging-procurement-agent-1"
+AIPMS_API_IMAGE_REF="ghcr.io/example/aipms-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+AIPMS_WEB_IMAGE_REF="ghcr.io/example/aipms-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+AIPMS_AGENT_IMAGE_REF="ghcr.io/example/aipms-agent@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 OPERATIONS_MONITORING_TOKEN="om_5KpVxQmT8YrN3Hs7Jc2Ld9WfBg6ZeRaU"
 APP_URL="https://aipms.example.com"
 AUTH_TRUSTED_ORIGINS="https://aipms.example.com"
@@ -54,6 +57,18 @@ if grep -q 'as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG' "$TEMP_DIR/shared.out"; then
   echo "deployment preflight leaked a credential" >&2
   exit 1
 fi
+
+# Mutable image tags must never pass a production deployment preflight.
+mv "$ENV_FILE.valid" "$ENV_FILE"
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i \
+  's|ghcr.io/example/aipms-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|ghcr.io/example/aipms-api:latest|' \
+  "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/image.out" 2>&1; then
+  echo "deployment preflight accepted a mutable image tag" >&2
+  exit 1
+fi
+grep -q 'immutable sha256 image digest' "$TEMP_DIR/image.out"
 
 # A valid file with broad filesystem permissions must still fail closed.
 mv "$ENV_FILE.valid" "$ENV_FILE"

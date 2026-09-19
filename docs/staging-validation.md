@@ -5,6 +5,27 @@ images per environment. Configure staging with independent secrets, test IdP and
 provider tenants, inert payment destinations, and production-equivalent TLS,
 reverse proxy, database, and container limits.
 
+## Publish and deploy the candidate
+
+Run **Publish Docker images** manually with the full commit SHA from `main`.
+The workflow verifies that commit is an ancestor of `origin/main`, repeats the
+release test suite, publishes multi-architecture images, emits SBOM/provenance,
+signs each digest, verifies the signatures, and uploads
+`image-manifest-<sha>/image-manifest.json`. Download that artifact and copy its
+three exact digest references into the restricted staging environment as
+`AIPMS_API_IMAGE_REF`, `AIPMS_WEB_IMAGE_REF`, and
+`AIPMS_AGENT_IMAGE_REF`.
+
+Deploy without permitting Compose to rebuild or silently substitute images:
+
+```bash
+docker compose --env-file /secure/path/staging.env pull api web agent
+docker compose --env-file /secure/path/staging.env up -d --no-build
+```
+
+Confirm the running container image IDs equal the manifest before testing. The
+same digest references—not a later rebuild—are the production promotion units.
+
 ## Configuration preflight
 
 Create the deployment environment file with mode `0600`, then validate it
@@ -91,3 +112,26 @@ A release is not production-ready when any real provider check is skipped,
 TLS/header validation fails, old credentials remain usable, recovery creates a
 duplicate side effect, or the documented RPO/RTO and capacity budgets are not
 met.
+
+## Fail-closed release evidence
+
+Copy `docs/release-evidence.example.json` to the restricted release evidence
+store (do not commit completed evidence when it contains internal ticket or
+provider identifiers). Record an owner, timestamp, and evidence/change-record
+identifier for every gate. `llmOcr` may be `human-review-only` only when the
+release explicitly accepts that product boundary; `signatureAndLegal` may be
+`integrity-only` only when no legally-qualified signature claim is made.
+
+Validate the completed record against the signed manifest:
+
+```bash
+pnpm release:gate -- \
+  /secure/evidence/release-evidence.json \
+  /secure/evidence/image-manifest.json
+```
+
+The command fails on mutable/mismatched images, missing SBOM/provenance/signature
+claims, stale or incomplete validation records, untested credential retirement,
+missing operational drills, or absent tax/legal review evidence. This validates
+the evidence record; it does not manufacture provider, operational, legal, or
+tax approval.

@@ -25,6 +25,27 @@ pnpm capacity:smoke
 Plain HTTP targets are refused. `CAPACITY_ALLOW_INSECURE=1` exists only for the
 isolated local production-smoke stack. Credentials in the URL are also refused.
 
+Run the separate read-only browser workload with a dedicated least-privilege
+staging identity. The wrapper fails on browser errors, unauthorized redirects,
+empty reports, or an exceeded journey-duration/error budget and can emit a
+mode-`0600` JSON evidence file:
+
+```bash
+STAGING_WEB_URL=https://aipms.staging.example.com \
+STAGING_WORKLOAD_EMAIL="$STAGING_READONLY_EMAIL" \
+STAGING_WORKLOAD_PASSWORD="$STAGING_READONLY_PASSWORD" \
+STAGING_WORKLOAD_JOURNEYS=100 \
+STAGING_WORKLOAD_WORKERS=10 \
+STAGING_WORKLOAD_MAX_P95_MS=5000 \
+STAGING_WORKLOAD_MAX_ERROR_RATE=0.001 \
+STAGING_WORKLOAD_EVIDENCE=/secure/evidence/browser-workload.json \
+pnpm staging:browser-workload
+```
+
+The reported latency is the complete authenticated multi-page browser journey,
+not a single API request. Run from the intended user region and monitor the API,
+PostgreSQL, reverse proxy, and IdP concurrently.
+
 ## Staging protocol
 
 1. Use production-equivalent container limits, PostgreSQL sizing, indexes, and

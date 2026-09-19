@@ -29,6 +29,7 @@ services:
       retries: 20
 
   api:
+    image: ${AIPMS_API_IMAGE_REF:-aipms-api:local}
     build:
       context: .
       target: api
@@ -100,6 +101,7 @@ services:
       start_period: 15s
 
   web:
+    image: ${AIPMS_WEB_IMAGE_REF:-aipms-web:local}
     build:
       context: .
       target: web
@@ -122,6 +124,7 @@ services:
       start_period: 20s
 
   agent:
+    image: ${AIPMS_AGENT_IMAGE_REF:-aipms-agent:local}
     build:
       context: .
       target: agent

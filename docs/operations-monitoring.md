@@ -41,6 +41,28 @@ identifiers:
 }
 ```
 
+## Schedulable fail-closed probe
+
+`scripts/operations-check.mjs` converts readiness and operational gauges into a
+single low-cardinality JSON result and a process exit status suitable for the
+platform scheduler. Route every non-zero exit and every missing scheduled run
+to the owned alert channel; do not configure the scheduler to invoke recovery.
+
+```bash
+OPERATIONS_API_URL=https://api.example.com \
+OPERATIONS_MONITORING_TOKEN="$OPERATIONS_MONITORING_TOKEN" \
+OPERATIONS_MAX_OBSERVATION_AGE_MS=120000 \
+pnpm operations:check
+```
+
+Thresholds default to zero for exceptions and 100 for active, non-stale relay
+claims. Override a threshold with names such as
+`OPERATIONS_MAX_FAILED_MESSAGES` or
+`OPERATIONS_MAX_AMBIGUOUS_ERP_DISPATCHES`. Keep the monitoring token in the
+scheduler's secret store, not its command line. Aggregate the JSON stdout in the
+central log/telemetry platform and alert if no result arrives at the expected
+interval.
+
 ## Minimum alerts
 
 | Signal | Suggested condition | Owner | First response |

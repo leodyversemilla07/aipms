@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full main-branch commit SHA to publish as a staging candidate
+        required: true
+        type: string
 
 concurrency:
   group: publish-${{ github.ref }}
@@ -35,9 +41,22 @@ jobs:
     env:
       DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
       BETTER_AUTH_SECRET: release-verification-only-secret
+      SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable source selection
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            git fetch origin main
+            git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          fi
 
       - uses: pnpm/action-setup@v5
 
@@ -59,6 +78,8 @@ jobs:
         run: |
           pnpm check
           ./scripts/test-deployment-preflight.sh
+          pnpm release:gate:test
+          pnpm operations:check:test
           pnpm typecheck
           pnpm --filter api test
           pnpm --filter agent test
@@ -89,10 +110,18 @@ jobs:
       API_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-api
       WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-web
       AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-agent
+      SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
+      PUBLISH_TAG: ${{ github.event_name == 'push' && github.ref_name || format('candidate-{0}', inputs.commit_sha) }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify build source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
 
       - name: Smoke production images and recovery procedures
         run: ./scripts/production-smoke.sh
@@ -120,12 +149,12 @@ jobs:
           target: api
           push: true
           tags: |
-            ${{ env.API_IMAGE }}:${{ github.ref_name }}
-            ${{ env.API_IMAGE }}:sha-${{ github.sha }}
+            ${{ env.API_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.API_IMAGE }}:sha-${{ env.SOURCE_SHA }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
           provenance: mode=max
           sbom: true
@@ -140,12 +169,12 @@ jobs:
           target: web
           push: true
           tags: |
-            ${{ env.WEB_IMAGE }}:${{ github.ref_name }}
-            ${{ env.WEB_IMAGE }}:sha-${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.WEB_IMAGE }}:sha-${{ env.SOURCE_SHA }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
           provenance: mode=max
           sbom: true
@@ -160,12 +189,12 @@ jobs:
           target: agent
           push: true
           tags: |
-            ${{ env.AGENT_IMAGE }}:${{ github.ref_name }}
-            ${{ env.AGENT_IMAGE }}:sha-${{ github.sha }}
+            ${{ env.AGENT_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.AGENT_IMAGE }}:sha-${{ env.SOURCE_SHA }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
           provenance: mode=max
           sbom: true
@@ -201,3 +230,28 @@ jobs:
               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
               "${image}"
           done
+
+      - name: Write immutable deployment manifest
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+        run: |
+          mkdir -p release-evidence
+          jq -n \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg version "$PUBLISH_TAG" \
+            --arg workflowRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg api "${API_IMAGE}@${API_DIGEST}" \
+            --arg web "${WEB_IMAGE}@${WEB_DIGEST}" \
+            --arg agent "${AGENT_IMAGE}@${AGENT_DIGEST}" \
+            '{sourceSha:$sourceSha,version:$version,workflowRun:$workflowRun,images:{api:$api,web:$web,agent:$agent},sbom:true,provenance:"mode=max",sigstore:"verified"}' \
+            > release-evidence/image-manifest.json
+
+      - name: Upload immutable deployment manifest
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-manifest-${{ env.SOURCE_SHA }}
+          path: release-evidence/image-manifest.json
+          if-no-files-found: error
+          retention-days: 90
