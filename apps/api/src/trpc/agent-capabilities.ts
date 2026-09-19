@@ -35,6 +35,14 @@ export const AGENT_CAPABILITIES: Record<string, string> = {
   'requisition.create': 'requisition.create',
   'requisition.submit': 'requisition.submit',
 
+  // Structured sourcing. Agents may open RFQs, record structured offers, and
+  // compute deterministic comparisons. Award remains a human procurement act.
+  'sourcing.list': 'sourcing.read',
+  'sourcing.detail': 'sourcing.read',
+  'sourcing.compare': 'sourcing.read',
+  'sourcing.request': 'sourcing.request',
+  'sourcing.receive': 'sourcing.receive',
+
   // Internal approval SLA automation. No public decision capability exists;
   // agents still cannot approve or reject on a human's behalf.
   'approval.escalateOverdue': 'approval.escalate',
@@ -112,6 +120,9 @@ export const DEFAULT_AGENT_SCOPES = [
   'requisition.read',
   'requisition.create',
   'requisition.submit',
+  'sourcing.read',
+  'sourcing.request',
+  'sourcing.receive',
   'approval.escalate',
   'budget.read',
   'po.read',

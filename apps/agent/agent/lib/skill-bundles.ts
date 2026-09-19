@@ -20,14 +20,15 @@ Discover suppliers and raise quote requests.
 ## Workflow
 
 1. **List vendors** (\`list_vendors\`); only approach vendors in good standing.
-2. **Request a quote** using an RFQ template through \`send_message\`.
-   Recipients must be verified contacts on the vendor master. Low-risk
-   templates auto-send; other content waits for human approval.
-3. Browse items with \`catalog_list\`, searching with q and paging with
-   page/pageSize. Returned monetary fields are integer minor units.
-4. \`request_quote\` sends an RFQ message to a verified recipient; custom
-   notes require review. It does not create a structured sourcing Quote.
-   Structured quote awards still require the human desk.
+2. Open durable quote records with \`open_rfq\` for an approved requisition.
+3. Send each invitation with \`request_quote\` through the controlled messaging
+   relay. Recipients must be verified vendor contacts; custom notes wait for
+   human approval. Opening an RFQ does not itself send a message.
+4. Record normalized offers with \`record_quote\`, then use \`compare_quotes\`
+   for deterministic policy ranking. Use \`list_quotes\` to resume an earlier run.
+5. Browse items with \`catalog_list\`, searching with q and paging with
+   page/pageSize. Monetary fields are integer minor units.
+6. Stop after comparison. A human procurement user must award the quote.
 
 ## Constraints
 
@@ -47,14 +48,17 @@ Requisition → PO → three-way match basics.
 ## Workflow
 
 1. Find existing requisitions with \`list_requisitions\` and
-   \`get_requisition\`. Requisition creation requires the human desk: no
-   creation tool is currently exposed. Every mutation carries an idempotency key.
-2. Once approved (policy gates decide routing), **issue a PO** against a
-   qualified vendor — check budget first with \`get_budget\`.
-3. **Record receipts** (\`record_receipt\`) against PO lines as goods
-   arrive; over-receipt is refused server-side. Recording a receipt
-   re-matches any invoices waiting for goods.
-4. Invoices register through intake; the engine runs the three-way match
+   \`get_requisition\`, or create a draft with \`create_requisition\`. Every
+   line uses integer minor units and one matching currency.
+2. Submit a draft with \`submit_requisition\`. Stop on NEED_APPROVAL or BLOCK;
+   only the assigned human approval route may decide it. Every mutation uses
+   the stable eve call identity as its default idempotency key.
+3. Once approved and any required sourcing award is complete, **issue a PO**
+   against a qualified vendor — check budget first with \`get_budget\`.
+4. **Record receipts** (\`record_receipt\`) against PO lines as goods arrive;
+   over-receipt is refused server-side. Recording a receipt re-matches any
+   invoices waiting for goods.
+5. Invoices register through intake; the engine runs the three-way match
    deterministically — never adjust match outcomes manually.
 
 ## Constraints

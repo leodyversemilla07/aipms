@@ -1,4 +1,3 @@
-import crypto from "node:crypto"
 import { defineTool } from "eve/tools"
 import { z } from "zod"
 import type { RelayPayload } from "../lib/relay-payload"
@@ -29,8 +28,9 @@ export default defineTool({
     note: z.string().max(500).optional(),
     idempotencyKey: z.string().optional(),
   }),
-  async execute(input) {
-    const idempotencyKey = input.idempotencyKey || crypto.randomUUID()
+  async execute(input, ctx) {
+    const idempotencyKey =
+      input.idempotencyKey ?? `eve:receipt.record:${ctx.callId}`
     return await trpcMutate("receipt", "record", {
       idempotencyKey,
       poId: input.poId,

@@ -82,7 +82,6 @@ export class SourcingRouter {
     @Input() input: z.infer<typeof requestInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    requireRole(ctx.user, ctx.actorKind, ['procurement'], 'sourcing.request')
     return this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
@@ -118,7 +117,6 @@ export class SourcingRouter {
     @Input() input: z.infer<typeof receiveInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    requireRole(ctx.user, ctx.actorKind, ['procurement'], 'sourcing.receive')
     return this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
