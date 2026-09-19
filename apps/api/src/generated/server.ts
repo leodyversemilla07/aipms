@@ -246,6 +246,9 @@ const appRouter = t.router({
     .optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["list"]>>),
+    detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["detail"]>>),
     ingest: publicProcedure
       .input(z.object({
   idempotencyKey: z.string().min(1),
@@ -266,14 +269,27 @@ const appRouter = t.router({
     classify: publicProcedure
       .input(z.object({
   id: z.string().min(1),
-  classified: z.unknown(),
+  idempotencyKey: z.string().min(1),
+  classified: z.object({
+    kind: z.string().optional(),
+    vendorId: z.string().min(1),
+    number: z.string().min(1),
+    poId: z.string().min(1).optional().nullable(),
+    currencyCode: z.string().optional(),
+    lines: z.array(z.object({
+      description: z.string().optional(),
+      amountMinor: z.number().int().nonnegative(),
+      class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
+      vatExempt: z.boolean().optional(),
+    })).min(1),
+  }),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["classify"]>>),
     drop: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["drop"]>>),
     requeue: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>),
     registerInvoice: publicProcedure
       .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))

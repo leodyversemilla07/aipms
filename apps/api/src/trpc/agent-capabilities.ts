@@ -69,6 +69,7 @@ export const AGENT_CAPABILITIES: Record<string, string> = {
   'receipt.detail': 'receipt.read',
   'receipt.record': 'receipt.record',
   'intake.list': 'intake.read',
+  'intake.detail': 'intake.read',
   'intake.ingest': 'intake.ingest',
   'intake.ingestStructured': 'intake.ingest',
   'intake.classify': 'intake.classify',

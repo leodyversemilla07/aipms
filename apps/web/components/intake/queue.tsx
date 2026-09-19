@@ -189,7 +189,11 @@ export function IntakeQueue() {
       setError("Classified payload must be valid JSON.")
       return
     }
-    await classify.mutateAsync({ id, classified: payload })
+    await classify.mutateAsync({
+      id,
+      classified: payload as never,
+      idempotencyKey: `web-intake-classify-${crypto.randomUUID()}`,
+    })
     refresh()
   }
 
@@ -344,7 +348,12 @@ export function IntakeQueue() {
                         message="Drop document?"
                         disabled={dropMut.isPending}
                         onConfirm={() =>
-                          dropMut.mutateAsync({ id: doc.id }).then(refresh)
+                          dropMut
+                            .mutateAsync({
+                              id: doc.id,
+                              idempotencyKey: `web-intake-drop-${crypto.randomUUID()}`,
+                            })
+                            .then(refresh)
                         }
                       >
                         Drop
@@ -366,7 +375,12 @@ export function IntakeQueue() {
                       variant="outline"
                       disabled={requeue.isPending}
                       onClick={() =>
-                        requeue.mutateAsync({ id: doc.id }).then(refresh)
+                        requeue
+                          .mutateAsync({
+                            id: doc.id,
+                            idempotencyKey: `web-intake-requeue-${crypto.randomUUID()}`,
+                          })
+                          .then(refresh)
                       }
                     >
                       Requeue

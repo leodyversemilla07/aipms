@@ -65,6 +65,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'invoice.register': ['finance'],
 
   'intake.list': ['finance'],
+  'intake.detail': ['finance'],
   'intake.ingest': ['finance'],
   'intake.ingestStructured': ['finance'],
   'intake.classify': ['finance'],

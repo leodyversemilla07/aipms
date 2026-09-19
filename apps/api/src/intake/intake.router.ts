@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -18,6 +17,7 @@ import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { IntakeService } from './intake.service'
+import { projectIntakeValueForAgent } from './intake-agent-projection'
 import { IntakeCommandService } from './intake-command.service'
 import { parseStructuredInvoice } from './structured-invoice'
 
@@ -31,7 +31,8 @@ const ingestInput = z.object({
 
 const classifyInput = z.object({
   id: z.string().min(1),
-  classified: z.unknown(),
+  idempotencyKey: z.string().min(1),
+  classified: classifiedInvoiceSchema,
 })
 
 const listInputWithStatus = listInput.extend({
@@ -48,8 +49,9 @@ const listInputWithStatus = listInput.extend({
 })
 
 const idInput = z.object({ id: z.string().min(1) })
+const commandInput = idInput.extend({ idempotencyKey: z.string().min(1) })
 
-const bridgeInput = idInput.extend({ idempotencyKey: z.string().min(1) })
+const bridgeInput = commandInput
 
 // §8.2 structured channels — machine formats parsed deterministically on
 // receive (no LLM); documents enter the queue pre-extracted.
@@ -76,6 +78,20 @@ export class IntakeRouter {
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
     return this.intake.list(input)
+  }
+
+  @Query({ input: idInput })
+  async detail(
+    @Input() input: z.infer<typeof idInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const document = await this.intake.detail(input.id)
+    if (ctx.actorKind !== 'agent') return document
+    return {
+      ...document,
+      raw: projectIntakeValueForAgent(document.raw),
+      classified: projectIntakeValueForAgent(document.classified),
+    }
   }
 
   @Mutation({ input: ingestInput })
@@ -170,66 +186,93 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof classifyInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.classify(input, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.classify',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-          after: doc,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.classify',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.classify(
+          { id: input.id, classified: input.classified },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.classify',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+            after: doc,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
-  @Mutation({ input: idInput })
+  @Mutation({ input: commandInput })
   async drop(
-    @Input() input: z.infer<typeof idInput>,
+    @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.drop(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.drop',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.drop',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.drop(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.drop',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
-  @Mutation({ input: idInput })
+  @Mutation({ input: commandInput })
   async requeue(
-    @Input() input: z.infer<typeof idInput>,
+    @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.requeue(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.requeue',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.requeue',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.requeue(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.requeue',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
   /**

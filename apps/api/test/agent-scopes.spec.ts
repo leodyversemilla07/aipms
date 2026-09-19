@@ -65,6 +65,7 @@ describe('Agent capability model', () => {
       const all = DEFAULT_AGENT_SCOPES
       for (const path of [
         'intake.list',
+        'intake.detail',
         'intake.ingest',
         'intake.classify',
         'intake.registerInvoice',

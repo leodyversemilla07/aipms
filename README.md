@@ -139,7 +139,7 @@ aipms/
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
 | `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 103 procedures across 21 routers
+**Total:** 104 procedures across 21 routers
 
 ---
 

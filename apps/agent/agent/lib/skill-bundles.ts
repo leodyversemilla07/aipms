@@ -58,8 +58,12 @@ Requisition → PO → three-way match basics.
 4. **Record receipts** (\`record_receipt\`) against PO lines as goods arrive;
    over-receipt is refused server-side. Recording a receipt re-matches any
    invoices waiting for goods.
-5. Invoices register through intake; the engine runs the three-way match
-   deterministically — never adjust match outcomes manually.
+5. For unstructured intake, use \`get_intake_document\` before
+   \`classify_document\`. The projection is server-redacted and omits binary
+   bodies; never reconstruct or request payment credentials. If usable invoice
+   content is unavailable, stop for OCR/human review rather than guessing.
+6. Register a validated classification with \`register_invoice\`; the engine
+   runs the three-way match deterministically. Never adjust match outcomes.
 
 ## Constraints
 

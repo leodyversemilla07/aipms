@@ -3,21 +3,37 @@ import { z } from "zod"
 import type { RelayPayload } from "../lib/relay-payload"
 import { trpcMutate } from "../lib/trpc-client"
 
+const invoicePayload = z.object({
+  kind: z.string().optional(),
+  vendorId: z.string().min(1),
+  number: z.string().min(1),
+  poId: z.string().min(1).optional().nullable(),
+  currencyCode: z.string().length(3).optional(),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().optional(),
+        amountMinor: z.number().int().nonnegative(),
+        class: z.enum(["goods", "services", "professional", "rental", "other"]),
+        vatExempt: z.boolean().optional(),
+      })
+    )
+    .min(1),
+})
+
 export default defineTool({
-  description: "Attaches classification to an intake document.",
+  description:
+    "Attaches a validated invoice classification to an intake document. Inspect the prompt-safe document first; monetary values are integer minor units and bank/payment data must never be copied into the classification.",
   inputSchema: z.object({
-    id: z.string(),
-    classified: z.object({
-      vendorHint: z.string().optional(),
-      documentType: z.string(),
-      amounts: z.record(z.string(), z.any()).optional(),
-      lineItems: z.array(z.any()).optional(),
-    }),
+    id: z.string().min(1),
+    classified: invoicePayload,
+    idempotencyKey: z.string().min(1).optional(),
   }),
-  async execute(input) {
+  async execute(input, ctx) {
     return await trpcMutate("intake", "classify", {
-      id: input.id,
-      classified: input.classified,
+      ...input,
+      idempotencyKey:
+        input.idempotencyKey ?? `eve:intake.classify:${ctx.callId}`,
     })
   },
 
