@@ -1,5 +1,4 @@
 import { ConflictException, Inject } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -58,6 +57,7 @@ const submitInput = z
 
 const decideInput = z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 })
 
@@ -170,27 +170,35 @@ export class MessagingRouter {
     )
     // Staged atomically (approval + outbox + audit), then released after
     // commit: the transport send must never precede its durable approval row.
-    await db.$transaction(async (tx) => {
-      const message = await this.messaging.approve(
-        {
-          id: input.id,
-          approverId: ctx.user.id,
-        },
-        tx,
-      )
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'messaging.approve',
-          entity: 'Message',
-          entityId: input.id,
-          after: message as object,
-        },
-        tx,
-      )
-      return { message }
-    })
+    await this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'messaging.approve',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const message = await this.messaging.approve(
+          {
+            id: input.id,
+            approverId: ctx.user.id,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'messaging.approve',
+            entity: 'Message',
+            entityId: input.id,
+            after: message as object,
+          },
+          tx,
+        )
+        return { message }
+      },
+    )
     return { message: await this.messaging.releaseApproved(input.id) }
   }
 
@@ -254,28 +262,36 @@ export class MessagingRouter {
     if (!input.reason) {
       throw new ConflictException('A rejection reason is required')
     }
-    return db.$transaction(async (tx) => {
-      const message = await this.messaging.reject(
-        {
-          id: input.id,
-          approverId: ctx.user.id,
-          reason: input.reason,
-        },
-        tx,
-      )
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'messaging.reject',
-          entity: 'Message',
-          entityId: input.id,
-          input: { reason: input.reason },
-          after: message as object,
-        },
-        tx,
-      )
-      return { message }
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'messaging.reject',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const message = await this.messaging.reject(
+          {
+            id: input.id,
+            approverId: ctx.user.id,
+            reason: input.reason,
+          },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'messaging.reject',
+            entity: 'Message',
+            entityId: input.id,
+            input: { reason: input.reason },
+            after: message as object,
+          },
+          tx,
+        )
+        return { message }
+      },
+    )
   }
 }

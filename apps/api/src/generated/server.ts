@@ -378,6 +378,7 @@ const appRouter = t.router({
     approve: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["approve"]>>),
@@ -392,6 +393,7 @@ const appRouter = t.router({
     reject: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["reject"]>>)
@@ -418,21 +420,23 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["create"]>>),
     approve: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["approve"]>>),
     execute: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["execute"]>>),
     reconcile: publicProcedure
       .input(z.object({
   runId: z.string().min(1),
   lineId: z.string().min(1),
   status: z.enum(['paid', 'dishonored', 'rejected']),
+  idempotencyKey: z.string().min(1),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["reconcile"]>>),
     voidRun: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().trim().min(1).max(500),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["voidRun"]>>)

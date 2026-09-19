@@ -99,13 +99,20 @@ export function MessagingQueue() {
               rejectPending={reject.isPending}
               onApprove={() =>
                 approve
-                  .mutateAsync({ id: m.id })
+                  .mutateAsync({
+                    id: m.id,
+                    idempotencyKey: `web-message-approve-${crypto.randomUUID()}`,
+                  })
                   .then(refresh)
                   .catch((e: Error) => setError(e.message))
               }
               onReject={(reason) =>
                 reject
-                  .mutateAsync({ id: m.id, reason })
+                  .mutateAsync({
+                    id: m.id,
+                    reason,
+                    idempotencyKey: `web-message-reject-${crypto.randomUUID()}`,
+                  })
                   .then(refresh)
                   .catch((e: Error) => setError(e.message))
               }

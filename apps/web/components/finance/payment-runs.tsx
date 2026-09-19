@@ -399,6 +399,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "paid",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -414,6 +415,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "dishonored",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -429,6 +431,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "rejected",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -446,7 +449,14 @@ export function PaymentRuns() {
                 <Button
                   size="sm"
                   disabled={approve.isPending}
-                  onClick={() => act(() => approve.mutateAsync({ id: run.id }))}
+                  onClick={() =>
+                    act(() =>
+                      approve.mutateAsync({
+                        id: run.id,
+                        idempotencyKey: `web-approve-${crypto.randomUUID()}`,
+                      })
+                    )
+                  }
                 >
                   Approve
                 </Button>
@@ -457,7 +467,14 @@ export function PaymentRuns() {
                 <Button
                   size="sm"
                   disabled={execute.isPending}
-                  onClick={() => act(() => execute.mutateAsync({ id: run.id }))}
+                  onClick={() =>
+                    act(() =>
+                      execute.mutateAsync({
+                        id: run.id,
+                        idempotencyKey: `web-execute-${crypto.randomUUID()}`,
+                      })
+                    )
+                  }
                 >
                   Execute
                 </Button>
