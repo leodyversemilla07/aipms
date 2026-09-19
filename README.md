@@ -242,7 +242,7 @@ Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply 
 ./scripts/production-smoke.sh
 ```
 
-The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits. See [`docs/capacity-testing.md`](docs/capacity-testing.md) for the production-safe probe and staging protocol.
+The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits. Tagged releases publish multi-architecture, immutable-digest images with SBOMs, build provenance, and keyless Sigstore signatures that are verified before the workflow completes. See [`docs/capacity-testing.md`](docs/capacity-testing.md) for the production-safe probe and staging protocol.
 
 ### Health and monitoring
 
@@ -265,7 +265,7 @@ AIPMS is designed for **enterprise-only** deployment:
 ### Security
 
 - Better Auth with session + bearer tokens
-- Service token auth for agent runtime
+- Short-lived scoped agent bearers issued through an authenticated bootstrap exchange
 - Audit trail for all actions
 - Maker/checker separation for approvals, PO signatures, beneficiary changes,
   payment-run overrides, and ambiguous ERP dispatch resolution

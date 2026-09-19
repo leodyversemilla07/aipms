@@ -113,6 +113,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push API image
+        id: build-api
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -132,6 +133,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api
 
       - name: Build and push Web image
+        id: build-web
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -151,6 +153,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
 
       - name: Build and push Agent image
+        id: build-agent
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -168,3 +171,33 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=agent
           cache-to: type=gha,mode=max,scope=agent
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign immutable image digests with GitHub OIDC
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+        run: |
+          cosign sign --yes "${API_IMAGE}@${API_DIGEST}"
+          cosign sign --yes "${WEB_IMAGE}@${WEB_DIGEST}"
+          cosign sign --yes "${AGENT_IMAGE}@${AGENT_DIGEST}"
+
+      - name: Verify published signatures
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish.yml@${{ github.ref }}
+        run: |
+          for image in \
+            "${API_IMAGE}@${API_DIGEST}" \
+            "${WEB_IMAGE}@${WEB_DIGEST}" \
+            "${AGENT_IMAGE}@${AGENT_DIGEST}"; do
+            cosign verify \
+              --certificate-identity "${CERTIFICATE_IDENTITY}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${image}"
+          done
