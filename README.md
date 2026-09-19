@@ -266,7 +266,7 @@ AIPMS is designed for **enterprise-only** deployment:
 
 - Better Auth with session + bearer tokens
 - Short-lived scoped agent bearers issued through an authenticated bootstrap exchange
-- Audit trail for all actions
+- Hash-chained audit trail with database-enforced append-only rows
 - Maker/checker separation for approvals, PO signatures, beneficiary changes,
   payment-run overrides, and ambiguous ERP dispatch resolution
 - Idempotency keys on retryable commands; durable claims for ambiguous external effects

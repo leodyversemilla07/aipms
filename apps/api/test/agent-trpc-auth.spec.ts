@@ -5,6 +5,7 @@ import request from 'supertest'
 import type { App } from 'supertest/types'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AppModule } from './../src/app.module'
+import { withAuditMaintenance } from './audit-test-utils'
 
 /**
  * @workspace agent M2M over tRPC — the eve runtime authenticates with
@@ -133,7 +134,9 @@ describe('Agent tRPC M2M (short-lived bearer)', () => {
     expect(audit?.actorId).toBe('agent-operator')
 
     await db.intakeDocument.deleteMany({ where: { id: doc.id } })
-    await db.auditEntry.deleteMany({ where: { entityId: doc.id } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { entityId: doc.id } }),
+    )
     await db.agentRun.deleteMany({
       where: { meta: { path: ['entityId'], equals: doc.id } },
     })
@@ -142,7 +145,9 @@ describe('Agent tRPC M2M (short-lived bearer)', () => {
   afterAll(async () => {
     delete process.env.AIPMS_SERVICE_TOKEN
     delete process.env.AIPMS_AGENT_SIGNING_SECRET
-    await db.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } }),
+    )
     await app?.close()
   })
 })

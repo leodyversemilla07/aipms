@@ -1,10 +1,10 @@
 import type { INestApplication } from '@nestjs/common'
 import { Test } from '@nestjs/testing'
-import { db } from '@workspace/db'
 import request from 'supertest'
 import type { App } from 'supertest/types'
 import { afterAll, describe, it } from 'vitest'
 import { AppModule } from './../src/app.module'
+import { withAuditMaintenance } from './audit-test-utils'
 
 /**
  * @workspace agent M2M — the token-guarded REST batch endpoint that the eve
@@ -70,7 +70,9 @@ describe('AgentController M2M (/api/service/agent/batch)', () => {
   afterAll(async () => {
     delete process.env.AIPMS_SERVICE_TOKEN
     delete process.env.AIPMS_AGENT_SIGNING_SECRET
-    await db.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } }),
+    )
     await app?.close()
   })
 })
