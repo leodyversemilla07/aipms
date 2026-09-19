@@ -489,7 +489,7 @@ const appRouter = t.router({
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["signature"]>>),
     sign: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["sign"]>>),
     issue: publicProcedure
       .input(z.object({
@@ -530,7 +530,7 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["record"]>>),
     cancel: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["cancel"]>>)
     }),
   requisition: t.router({
@@ -599,6 +599,7 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["detail"]>>),
     request: publicProcedure
       .input(z.object({
+  idempotencyKey: z.string().min(1),
   requisitionId: z.string().min(1),
   vendorIds: z.array(z.string().min(1)).min(1),
 }))
@@ -606,6 +607,7 @@ const appRouter = t.router({
     receive: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   totalMinor: z.number().int().positive(),
   currencyCode: z.string().min(3).max(3).optional(),
   leadTimeDays: z.number().int().positive().optional(),
@@ -628,7 +630,7 @@ const appRouter = t.router({
       .input(z.object({ requisitionId: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["compare"]>>),
     award: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1), idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["award"]>>)
     }),
   sso: t.router({

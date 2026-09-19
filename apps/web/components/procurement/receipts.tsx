@@ -151,7 +151,10 @@ export function Receipts() {
                     disabled={cancel.isPending}
                     onConfirm={() =>
                       cancel
-                        .mutateAsync({ id: r.id })
+                        .mutateAsync({
+                          id: r.id,
+                          idempotencyKey: `web-receipt-cancel-${crypto.randomUUID()}`,
+                        })
                         .then(refresh)
                         .catch((e: Error) => setError(e.message))
                     }

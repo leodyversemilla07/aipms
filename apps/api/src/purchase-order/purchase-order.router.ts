@@ -1,5 +1,4 @@
 import { Inject } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -33,7 +32,7 @@ const cancellationInput = idInput.extend({
   reason: z.string().min(1).max(500),
 })
 
-const signInput = idInput
+const signInput = idInput.extend({ idempotencyKey: z.string().min(1) })
 
 @Router({ alias: 'purchaseOrder' })
 @UseMiddlewares(AuthMiddleware)
@@ -73,21 +72,29 @@ export class PurchaseOrderRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     PoSigningService.assertHumanSigner(ctx)
-    return db.$transaction(async (tx) => {
-      const result = await this.signing.sign(input.id, ctx, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'purchaseOrder.sign',
-          entity: 'PurchaseOrder',
-          entityId: input.id,
-          after: result,
-        },
-        tx,
-      )
-      return result
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'purchaseOrder.sign',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const result = await this.signing.sign(input.id, ctx, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'purchaseOrder.sign',
+            entity: 'PurchaseOrder',
+            entityId: input.id,
+            after: result,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 
   @Mutation({ input: issueInput })

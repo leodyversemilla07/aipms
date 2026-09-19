@@ -196,7 +196,12 @@ function PoRowItem({
                   ? "Configure AIPMS_SIGNING_KEYS_DIR to enable signing"
                   : "Countersign with the instance certificate"
               }
-              onClick={() => sign.mutate({ id: po.id })}
+              onClick={() =>
+                sign.mutate({
+                  id: po.id,
+                  idempotencyKey: `web-po-sign-${crypto.randomUUID()}`,
+                })
+              }
             >
               Sign
             </Button>
