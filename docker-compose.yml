@@ -48,6 +48,8 @@ services:
       # Generate independent values with openssl rand -base64 32.
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
+      AIPMS_AGENT_SIGNING_SECRET: ${AIPMS_AGENT_SIGNING_SECRET:?Set AIPMS_AGENT_SIGNING_SECRET in .env}
+      AIPMS_AGENT_ID: ${AIPMS_AGENT_ID:?Set a unique AIPMS_AGENT_ID in .env}
       OPERATIONS_MONITORING_TOKEN: ${OPERATIONS_MONITORING_TOKEN:?Set OPERATIONS_MONITORING_TOKEN in .env}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
@@ -128,6 +130,8 @@ services:
     environment:
       AIPMS_API_URL: http://api:3001
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
+      AIPMS_AGENT_ID: ${AIPMS_AGENT_ID:?Set a unique AIPMS_AGENT_ID in .env}
+      AIPMS_AGENT_TOKEN_EXCHANGE: "true"
       # Separate inbound operator credential; unset means production access denied.
       AIPMS_AGENT_ACCESS_TOKEN: ${AIPMS_AGENT_ACCESS_TOKEN:-}
       # LLM provider gate: "cloud" (BYO OpenAI-compatible keys) or "offline"

@@ -134,6 +134,7 @@ for (const [name, value] of [
   ["POSTGRES_PASSWORD", secret("POSTGRES_PASSWORD")],
   ["BETTER_AUTH_SECRET", secret("BETTER_AUTH_SECRET")],
   ["AIPMS_SERVICE_TOKEN", secret("AIPMS_SERVICE_TOKEN")],
+  ["AIPMS_AGENT_SIGNING_SECRET", secret("AIPMS_AGENT_SIGNING_SECRET")],
   ["OPERATIONS_MONITORING_TOKEN", secret("OPERATIONS_MONITORING_TOKEN")],
   ["AIPMS_AGENT_ACCESS_TOKEN", secret("AIPMS_AGENT_ACCESS_TOKEN", 32, true)],
   [
@@ -147,6 +148,14 @@ for (const [name, value] of [
   const prior = secrets.get(value)
   if (prior) fail(name, `must be independent from ${prior}`)
   else secrets.set(value, name)
+}
+
+const agentId = required("AIPMS_AGENT_ID")
+if (agentId && !/^[a-zA-Z0-9:_-]{1,128}$/.test(agentId)) {
+  fail("AIPMS_AGENT_ID", "contains invalid characters")
+}
+if (["agent", "agent-operator", "demo"].includes(agentId)) {
+  fail("AIPMS_AGENT_ID", "must identify this deployed agent uniquely")
 }
 
 if (![undefined, "", "0", "false"].includes(values.AUTH_SEED_DEMO)) {
@@ -286,6 +295,7 @@ if (errors.length === 0) {
     "secure-env-file",
     "https-origins",
     "independent-secrets",
+    "distinct-agent-identity",
     "non-demo-identity",
     "loopback-bindings",
     "llm-provider-gate",
@@ -297,7 +307,7 @@ if (errors.length === 0) {
 }
 if (!values.AIPMS_SIGNING_KEYS_DIR) {
   warnings.push(
-    "Qualified PO signing is disabled because AIPMS_SIGNING_KEYS_DIR is unset"
+    "Cryptographic PO signing is disabled because AIPMS_SIGNING_KEYS_DIR is unset"
   )
 }
 if (!values.QBO_CLIENT_ID) warnings.push("QBO integration is disabled")

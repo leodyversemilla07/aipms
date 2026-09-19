@@ -8,17 +8,19 @@ import { AppModule } from './../src/app.module'
 
 /**
  * @workspace agent M2M over tRPC — the eve runtime authenticates with
- * `Authorization: Bearer <AIPMS_SERVICE_TOKEN>` (no browser cookie). The
- * context resolves a synthetic agent principal, so agents can call every
+ * a bootstrap exchange and short-lived scoped bearer (no browser cookie).
+ * The context resolves a synthetic agent principal, so agents can call every
  * AuthMiddleware-guarded procedure and their actions are audited with
  * actorKind 'agent'.
  */
-describe('Agent tRPC M2M (bearer service token)', () => {
+describe('Agent tRPC M2M (short-lived bearer)', () => {
   const token = 'demo-service-token-for-trpc'
+  const signingSecret = 'test-agent-signing-secret-at-least-32-bytes-long'
   let app: INestApplication<App>
 
   async function boot() {
     process.env.AIPMS_SERVICE_TOKEN = token
+    process.env.AIPMS_AGENT_SIGNING_SECRET = signingSecret
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     }).compile()
@@ -26,7 +28,7 @@ describe('Agent tRPC M2M (bearer service token)', () => {
     await app.init()
   }
 
-  it('serves a guarded query with a valid service token', async () => {
+  it('keeps direct bootstrap authentication available outside production', async () => {
     await boot()
     const input = encodeURIComponent(
       JSON.stringify({ types: ['requisition.approved'], limit: 1 }),
@@ -37,6 +39,44 @@ describe('Agent tRPC M2M (bearer service token)', () => {
     expect(res.status).toBe(200)
     const data = res.body.result?.data?.json ?? res.body.result?.data
     expect(Array.isArray(data)).toBe(true)
+  })
+
+  it('exchanges the bootstrap token for a scoped access token', async () => {
+    await boot()
+    const exchange = await request(app.getHttpServer())
+      .post('/api/service/agent/token')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ runId: 'run-auth-test' })
+    expect(exchange.status).toBe(201)
+    expect(exchange.body.accessToken).toEqual(expect.any(String))
+    expect(exchange.body.accessToken).not.toBe(token)
+    expect(exchange.body.expiresIn).toBe(300)
+
+    const input = encodeURIComponent(
+      JSON.stringify({ types: ['requisition.approved'], limit: 1 }),
+    )
+    const res = await request(app.getHttpServer())
+      .get(`/api/trpc/events.poll?input=${input}`)
+      .set('Authorization', `Bearer ${exchange.body.accessToken}`)
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects direct bootstrap authentication in production', async () => {
+    await boot()
+    const previous = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const input = encodeURIComponent(
+        JSON.stringify({ types: ['requisition.approved'], limit: 1 }),
+      )
+      const res = await request(app.getHttpServer())
+        .get(`/api/trpc/events.poll?input=${input}`)
+        .set('Authorization', `Bearer ${token}`)
+      expect(res.status).toBe(401)
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = previous
+    }
   })
 
   it('rejects a request without a token', async () => {
@@ -101,6 +141,8 @@ describe('Agent tRPC M2M (bearer service token)', () => {
 
   afterAll(async () => {
     delete process.env.AIPMS_SERVICE_TOKEN
+    delete process.env.AIPMS_AGENT_SIGNING_SECRET
+    await db.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } })
     await app?.close()
   })
 })

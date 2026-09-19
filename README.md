@@ -279,7 +279,8 @@ Key environment variables:
 |----------|---------|
 | `DATABASE_URL` | Postgres connection |
 | `BETTER_AUTH_SECRET` | Auth signing key |
-| `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
+| `AIPMS_SERVICE_TOKEN` | Bootstrap credential for the agent token exchange and service API |
+| `AIPMS_AGENT_SIGNING_SECRET` | Independent key for five-minute scoped agent bearers |
 | `OPERATIONS_MONITORING_TOKEN` | Dedicated read-only token for operational exception gauges |
 | `AIPMS_SMTP_HOST` / `AIPMS_SMTP_FROM` | TLS SMTP relay used for real vendor-message delivery |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
@@ -316,16 +317,18 @@ The eve agent calls tRPC procedures directly:
 - `agent.process({ id, idempotencyKey })` — Classify & register an invoice
 - `agent.batch({ limit })` — Drain pending intake documents
 
-### Service Token Auth
+### Agent machine authentication
 
-The agent authenticates with a bearer token:
+The production agent exchanges its bootstrap secret for a scoped bearer that
+expires after five minutes. Generate independent bootstrap and signing secrets:
+
 ```bash
-# Generate
-openssl rand -base64 32
-
-# Set in .env
-AIPMS_SERVICE_TOKEN="your-token-here"
+AIPMS_SERVICE_TOKEN="$(openssl rand -base64 32)"
+AIPMS_AGENT_SIGNING_SECRET="$(openssl rand -base64 32)"
+AIPMS_AGENT_ID="procurement-agent-prod-1"
 ```
+
+Static bootstrap credentials are not accepted by production tRPC endpoints.
 
 ---
 
@@ -365,7 +368,7 @@ pnpm db:studio     # Prisma Studio UI
 | 4 | ✓ | Invoicing & 3-way match (receipts, intake, matching) |
 | 5 | ✓* | Payment runs & vendor messaging relay (*ERP sync pending) |
 | 6 | ✓ | Hardening (hash-chained audit, event DLQ, quotas) |
-| 7 | ✓ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, qualified signing) |
+| 7 | ◐ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, cryptographic PO signing; legal qualification is deployment-specific) |
 
 ---
 
