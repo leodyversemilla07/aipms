@@ -29,8 +29,8 @@ import { paginate } from '../trpc/list-input'
  *    threads replay for procurement and audit;
  *  - blocks outbound traffic to blacklisted vendors outright.
  *
- * The transport is a pluggable seam (org SMTP / transactional email API in a
- * real deployment); the default logs the dispatch and is honest about it.
+ * The transport is a pluggable seam. Production selects the TLS SMTP relay
+ * and fails closed when it is unconfigured; stdout simulation is test/dev only.
  */
 
 /** §8.3 low-risk / transactional templates eligible for auto-send. */
@@ -151,26 +151,43 @@ type MessageDeliveryRecoveryUpdate = Prisma.MessageUpdateManyMutationInput & {
   deliveryResolvedAt: Date
 }
 
-/** Delivery seam: swap for org SMTP / transactional API per deployment. */
+export interface MessageTransportResult {
+  /** Provider receipt or RFC Message-ID retained for reconciliation. */
+  providerMessageId: string | null
+}
+
+/** Delivery seam: org SMTP today; other transactional APIs can implement it. */
 export interface MessageTransport {
-  send(message: { to: string; subject: string; body: string }): Promise<void>
+  send(message: {
+    id: string
+    to: string
+    subject: string
+    body: string
+  }): Promise<MessageTransportResult>
 }
 
 type MessageListRow = Prisma.MessageGetPayload<object>
 
-/** Default transport: structured stdout log (no external egress). */
+/** Explicit non-production transport: structured stdout, no external egress. */
 @Injectable()
 export class LoggingTransport implements MessageTransport {
-  async send(message: { to: string; subject: string; body: string }) {
+  async send(message: {
+    id: string
+    to: string
+    subject: string
+    body: string
+  }): Promise<MessageTransportResult> {
     console.log(
       JSON.stringify({
         channel: 'messaging-relay',
-        event: 'dispatch',
+        event: 'simulated-dispatch',
+        messageId: message.id,
         to: message.to,
         subject: message.subject,
         bytes: message.body.length,
       }),
     )
+    return { providerMessageId: `log:${message.id}` }
   }
 }
 
@@ -568,11 +585,37 @@ export class MessagingService {
     if (claimed.count !== 1) return this.detail(message.id)
 
     try {
-      await this.transport.send({
+      const delivery = await this.transport.send({
+        id: message.id,
         to: message.recipient,
         subject: message.subject,
         body: message.body,
       })
+      await db.$transaction(async (tx) => {
+        const updated = await tx.message.updateMany({
+          where: { id: message.id, status: 'sending' },
+          data: {
+            status: 'sent',
+            sentAt: new Date(),
+            transportMessageId: delivery.providerMessageId,
+          } as Prisma.MessageUpdateManyMutationInput,
+        })
+        if (updated.count === 1) {
+          await this.events.emit(
+            {
+              type: 'message.sent',
+              entityType: 'Message',
+              entityId: message.id,
+              payload: {
+                recipient: message.recipient,
+                transportMessageId: delivery.providerMessageId,
+              },
+            },
+            tx,
+          )
+        }
+      })
+      return this.detail(message.id)
     } catch (error) {
       await db.message.updateMany({
         where: { id: message.id, status: 'sending' },
@@ -583,25 +626,5 @@ export class MessagingService {
       })
       return this.detail(message.id)
     }
-
-    await db.$transaction(async (tx) => {
-      const updated = await tx.message.updateMany({
-        where: { id: message.id, status: 'sending' },
-        data: { status: 'sent', sentAt: new Date() },
-      })
-      if (updated.count === 1) {
-        await this.events.emit(
-          {
-            type: 'message.sent',
-            entityType: 'Message',
-            entityId: message.id,
-            payload: { recipient: message.recipient, tier: message.tier },
-          },
-          tx,
-        )
-      }
-    })
-
-    return this.detail(message.id)
   }
 }

@@ -281,6 +281,7 @@ Key environment variables:
 | `BETTER_AUTH_SECRET` | Auth signing key |
 | `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
 | `OPERATIONS_MONITORING_TOKEN` | Dedicated read-only token for operational exception gauges |
+| `AIPMS_SMTP_HOST` / `AIPMS_SMTP_FROM` | TLS SMTP relay used for real vendor-message delivery |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
 | `AGENT_AUTORUN` | Enable the unattended intake drain loop |
 | `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes |

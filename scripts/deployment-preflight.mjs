@@ -136,6 +136,12 @@ for (const [name, value] of [
   ["AIPMS_SERVICE_TOKEN", secret("AIPMS_SERVICE_TOKEN")],
   ["OPERATIONS_MONITORING_TOKEN", secret("OPERATIONS_MONITORING_TOKEN")],
   ["AIPMS_AGENT_ACCESS_TOKEN", secret("AIPMS_AGENT_ACCESS_TOKEN", 32, true)],
+  [
+    "AIPMS_SMTP_PASSWORD",
+    values.AIPMS_SMTP_USER
+      ? secret("AIPMS_SMTP_PASSWORD", 12)
+      : secret("AIPMS_SMTP_PASSWORD", 12, true),
+  ],
 ]) {
   if (!value) continue
   const prior = secrets.get(value)
@@ -222,6 +228,38 @@ if (llmKind === "cloud") {
   fail("AIPMS_LLM_KIND", 'must be "cloud" or "offline"')
 }
 
+const messageTransport = values.AIPMS_MESSAGING_TRANSPORT?.trim() || "smtp"
+if (messageTransport !== "smtp") {
+  fail(
+    "AIPMS_MESSAGING_TRANSPORT",
+    'production deployments must use the "smtp" transport'
+  )
+}
+required("AIPMS_SMTP_HOST")
+const smtpFrom = required("AIPMS_SMTP_FROM")
+if (smtpFrom && !/@[^>\s]+>?$/.test(smtpFrom)) {
+  fail("AIPMS_SMTP_FROM", "must contain an email address")
+}
+const smtpPort = Number(values.AIPMS_SMTP_PORT ?? 587)
+if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65_535) {
+  fail("AIPMS_SMTP_PORT", "must be an integer from 1 to 65535")
+}
+if (
+  values.AIPMS_SMTP_SECURE &&
+  !["true", "false"].includes(values.AIPMS_SMTP_SECURE)
+) {
+  fail("AIPMS_SMTP_SECURE", 'must be "true" or "false"')
+}
+if (Boolean(values.AIPMS_SMTP_USER) !== Boolean(values.AIPMS_SMTP_PASSWORD)) {
+  fail("AIPMS_SMTP_USER/AIPMS_SMTP_PASSWORD", "must be configured together")
+}
+if (
+  values.AIPMS_SMTP_MESSAGE_DOMAIN &&
+  !/^[a-z0-9.-]+$/i.test(values.AIPMS_SMTP_MESSAGE_DOMAIN)
+) {
+  fail("AIPMS_SMTP_MESSAGE_DOMAIN", "must be a DNS name")
+}
+
 for (const group of [
   ["AIPMS_IMAP_HOST", "AIPMS_IMAP_USER", "AIPMS_IMAP_PASSWORD"],
   ["AIPMS_PAYMENT_DEBTOR_NAME", "AIPMS_PAYMENT_DEBTOR_ACCOUNT"],
@@ -251,6 +289,7 @@ if (errors.length === 0) {
     "non-demo-identity",
     "loopback-bindings",
     "llm-provider-gate",
+    "smtp-transport",
     "integration-pairs",
   ]) {
     pass(check)

@@ -769,6 +769,8 @@ model Message {
   deliveryResolutionEvidence String?
   deliveryResolvedBy         String?
   deliveryResolvedAt         DateTime?
+  // Provider receipt / RFC Message-ID returned after accepted delivery.
+  transportMessageId String?
   sentAt         DateTime?
   threadId       String?
   createdAt      DateTime      @default(now())

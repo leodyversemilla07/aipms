@@ -28,12 +28,18 @@ class SpyTransport extends LoggingTransport {
   sent: { to: string; subject: string }[] = []
   failNext = false
 
-  async send(message: { to: string; subject: string; body: string }) {
+  async send(message: {
+    id: string
+    to: string
+    subject: string
+    body: string
+  }) {
     if (this.failNext) {
       this.failNext = false
       throw new Error('smtp unavailable')
     }
     this.sent.push({ to: message.to, subject: message.subject })
+    return { providerMessageId: `test:${message.id}` }
   }
 }
 
@@ -228,8 +234,10 @@ describe('MessagingService (§8.3 relay)', () => {
 
     const released = (await svc.releaseApproved(queued.id)) as {
       status: string
+      transportMessageId: string | null
     }
     expect(released.status).toBe('sent')
+    expect(released.transportMessageId).toBe(`test:${queued.id}`)
     expect(transport.sent.length).toBe(before + 1)
   })
 

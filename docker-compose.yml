@@ -71,6 +71,16 @@ services:
       AIPMS_IMAP_TLS: ${AIPMS_IMAP_TLS:-true}
       AIPMS_IMAP_MAILBOX: ${AIPMS_IMAP_MAILBOX:-INBOX}
       AIPMS_IMAP_INTERVAL_MS: ${AIPMS_IMAP_INTERVAL_MS:-60000}
+      # §8.3 outbound relay. Production never uses the simulated log transport;
+      # missing/invalid SMTP configuration fails each dispatch closed.
+      AIPMS_MESSAGING_TRANSPORT: ${AIPMS_MESSAGING_TRANSPORT:-smtp}
+      AIPMS_SMTP_HOST: ${AIPMS_SMTP_HOST:-}
+      AIPMS_SMTP_PORT: ${AIPMS_SMTP_PORT:-587}
+      AIPMS_SMTP_SECURE: ${AIPMS_SMTP_SECURE:-false}
+      AIPMS_SMTP_USER: ${AIPMS_SMTP_USER:-}
+      AIPMS_SMTP_PASSWORD: ${AIPMS_SMTP_PASSWORD:-}
+      AIPMS_SMTP_FROM: ${AIPMS_SMTP_FROM:-}
+      AIPMS_SMTP_MESSAGE_DOMAIN: ${AIPMS_SMTP_MESSAGE_DOMAIN:-}
       # §8.6 pain.001 debtor (paying org) — set both to enable the ISO 20022 rail
       AIPMS_PAYMENT_DEBTOR_NAME: ${AIPMS_PAYMENT_DEBTOR_NAME:-}
       AIPMS_PAYMENT_DEBTOR_ACCOUNT: ${AIPMS_PAYMENT_DEBTOR_ACCOUNT:-}

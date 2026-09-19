@@ -19,6 +19,12 @@ AIPMS_LLM_KIND="offline"
 AIPMS_LLM_ENDPOINT="http://llm:11434/v1"
 AIPMS_LLM_MODEL="llama3.2:3b"
 AIPMS_LLM_ALLOWED_HOSTS="llm"
+AIPMS_MESSAGING_TRANSPORT="smtp"
+AIPMS_SMTP_HOST="smtp.example.com"
+AIPMS_SMTP_PORT="587"
+AIPMS_SMTP_FROM="Procurement <procurement@example.com>"
+AIPMS_SMTP_USER="relay-user"
+AIPMS_SMTP_PASSWORD="smtp_3YpL8VxN6Hs2Jc7BdEz4UaG"
 EOF
   chmod 600 "$ENV_FILE"
 }
