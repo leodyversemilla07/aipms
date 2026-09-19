@@ -549,8 +549,8 @@ model ErpJournalExport {
 }
 
 // OAuth connection to an ERP instance (§8.5 v1 anchor: QuickBooks Online).
-// One row per provider+realm; tokens are encrypted at rest with the
-// instance key (AES-256-GCM over a key derived from BETTER_AUTH_SECRET).
+// One row per provider+realm; tokens use versioned AES-256-GCM envelopes
+// under the independently rotatable AIPMS_TOKEN_ENCRYPTION_SECRET.
 // The settings JSON carries the aipms→ERP chart-of-accounts map and a
 // cached account list for the mapping UI.
 model ErpConnection {

@@ -123,19 +123,19 @@ export function ErpSync() {
             <span className="text-muted-foreground">
               un-exported:{" "}
               <span className="font-mono">
-                {report.data.missingExports.length}
+                {report.data.missingExportCount}
               </span>
             </span>
             <span className="text-muted-foreground">
               awaiting ERP ack:{" "}
               <span className="font-mono">
-                {report.data.awaitingAcknowledgement.length}
+                {report.data.awaitingAcknowledgementCount}
               </span>
             </span>
             <span className="text-muted-foreground">
               QBO review:{" "}
               <span className="font-mono">
-                {report.data.ambiguousDispatches.length}
+                {report.data.ambiguousDispatchCount}
               </span>
             </span>
             <span className="text-muted-foreground">

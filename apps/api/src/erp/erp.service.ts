@@ -63,10 +63,14 @@ export class ErpService {
     // join invoices and vendor master data manually.
     const lines = await db.paymentRunLine.findMany({ where: { runId } })
     const invoiceIds = [...new Set(lines.map((l) => l.invoiceId))]
-    const [invoices, vendors] = await Promise.all([
-      db.invoice.findMany({ where: { id: { in: invoiceIds } } }),
-      db.vendor.findMany({ select: { id: true, name: true, taxId: true } }),
-    ])
+    const invoices = await db.invoice.findMany({
+      where: { id: { in: invoiceIds } },
+    })
+    const vendorIds = [...new Set(invoices.map((invoice) => invoice.vendorId))]
+    const vendors = await db.vendor.findMany({
+      where: { id: { in: vendorIds } },
+      select: { id: true, name: true, taxId: true },
+    })
     const invoiceById = new Map(invoices.map((i) => [i.id, i] as const))
     const vendorById = new Map(vendors.map((v) => [v.id, v] as const))
 
@@ -479,57 +483,88 @@ export class ErpService {
    * silently.
    */
   async reconcileReport() {
-    const [executedRuns, exports, unacked] = await Promise.all([
-      db.paymentRun.findMany({
+    type MissingExportRow = {
+      runId: string
+      runNumber: string
+      totalMinor: number
+      currencyCode: string
+      totalCount: bigint
+    }
+    const [
+      executedRuns,
+      exportCount,
+      postedAggregate,
+      missingExports,
+      unacked,
+    ] = await Promise.all([
+      db.paymentRun.count({
         where: { status: { in: ['executed', 'reconciled'] } },
-        select: {
-          id: true,
-          runNumber: true,
-          totalMinor: true,
-          currencyCode: true,
-        },
       }),
-      db.erpJournalExport.findMany(),
-      db.erpJournalExport.findMany({ where: { status: 'exported' } }),
+      db.erpJournalExport.count(),
+      db.erpJournalExport.aggregate({
+        _sum: { totalMinor: true },
+        where: { status: 'posted' },
+      }),
+      db.$queryRaw<MissingExportRow[]>(Prisma.sql`
+          select pr.id as "runId", pr."runNumber", pr."totalMinor",
+                 pr."currencyCode", count(*) over()::bigint as "totalCount"
+          from "paymentRun" pr
+          left join "erpJournalExport" e on e."runId" = pr.id
+          where pr.status in ('executed', 'reconciled') and e.id is null
+          order by pr."executedAt" desc nulls last, pr.id
+          limit 500
+        `),
+      db.erpJournalExport.findMany({
+        where: { status: 'exported' },
+        orderBy: [
+          { dispatchClaimId: { sort: 'asc', nulls: 'last' } },
+          { exportedAt: 'desc' },
+        ],
+        take: 500,
+      }),
     ])
 
-    const exportedByRun = new Map(exports.map((e) => [e.runId, e] as const))
-    const notExported = executedRuns.filter((r) => !exportedByRun.has(r.id))
-
-    const postedTotal = exports
-      .filter((e) => e.status === 'posted')
-      .reduce((s, e) => s + e.totalMinor, 0)
+    const [unackedCount, ambiguousDispatchCount] = await Promise.all([
+      db.erpJournalExport.count({ where: { status: 'exported' } }),
+      db.erpJournalExport.count({
+        where: { status: 'exported', dispatchClaimId: { not: null } },
+      }),
+    ])
+    const missingExportCount = Number(missingExports[0]?.totalCount ?? 0)
 
     return {
-      executedRuns: executedRuns.length,
-      exports: exports.length,
-      /** Executed runs with no journal export — publishing debt. */
-      missingExports: notExported.map((r) => ({
-        runId: r.id,
-        runNumber: r.runNumber,
-        totalMinor: r.totalMinor,
-        currencyCode: r.currencyCode,
+      executedRuns,
+      exports: exportCount,
+      missingExportCount,
+      /** Executed runs with no journal export — capped review sample. */
+      missingExports: missingExports.map((row) => ({
+        runId: row.runId,
+        runNumber: row.runNumber,
+        totalMinor: row.totalMinor,
+        currencyCode: row.currencyCode,
       })),
-      /** Exports consumed but not yet acknowledged by the ERP. */
-      awaitingAcknowledgement: unacked.map((e) => ({
-        exportId: e.id,
-        runNumber: e.runNumber,
-        totalMinor: e.totalMinor,
-        dispatchClaimId: e.dispatchClaimId,
-        dispatchStartedAt: e.dispatchStartedAt,
-        dispatchFailure: e.dispatchFailure,
+      awaitingAcknowledgementCount: unackedCount,
+      /** Exports consumed but not yet acknowledged — capped review sample. */
+      awaitingAcknowledgement: unacked.map((row) => ({
+        exportId: row.id,
+        runNumber: row.runNumber,
+        totalMinor: row.totalMinor,
+        dispatchClaimId: row.dispatchClaimId,
+        dispatchStartedAt: row.dispatchStartedAt,
+        dispatchFailure: row.dispatchFailure,
       })),
+      ambiguousDispatchCount,
       /** Claimed QBO posts need completion or explicit human resolution. */
       ambiguousDispatches: unacked
-        .filter((e) => e.dispatchClaimId != null)
-        .map((e) => ({
-          exportId: e.id,
-          runNumber: e.runNumber,
-          dispatchStartedAt: e.dispatchStartedAt,
-          dispatchFailure: e.dispatchFailure,
+        .filter((row) => row.dispatchClaimId != null)
+        .map((row) => ({
+          exportId: row.id,
+          runNumber: row.runNumber,
+          dispatchStartedAt: row.dispatchStartedAt,
+          dispatchFailure: row.dispatchFailure,
         })),
-      postedTotalMinor: postedTotal,
-      clean: notExported.length === 0 && unacked.length === 0,
+      postedTotalMinor: postedAggregate._sum.totalMinor ?? 0,
+      clean: missingExportCount === 0 && unackedCount === 0,
     }
   }
 }
