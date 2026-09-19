@@ -141,6 +141,6 @@ wait_for_url "Web after restore" "http://localhost:${WEB_PORT}/"
 
 # Confirm all expected production artifacts were built, even though the agent
 # is not started during the HTTP smoke test (it requires a real provider).
-docker image inspect "${PROJECT_NAME}-agent" >/dev/null
+docker image inspect "${AIPMS_AGENT_IMAGE_REF:-aipms-agent:local}" >/dev/null
 
 printf 'Production image smoke test passed.\n'
