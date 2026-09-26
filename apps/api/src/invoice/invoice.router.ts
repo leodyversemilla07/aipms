@@ -16,7 +16,7 @@ import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { InvoiceService } from './invoice.service'
 
-const invoiceLineInput = z.object({
+export const invoiceLineInput = z.object({
   description: z.string().optional(),
   amountMinor: nonnegativeMinorUnits,
   class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
@@ -55,7 +55,7 @@ export class InvoiceRouter {
 
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.invoice.list(input.status ? { status: input.status } : {})
+    return this.invoice.list(input)
   }
 
   @Query({ input: idInput })

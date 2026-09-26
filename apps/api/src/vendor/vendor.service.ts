@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common'
 import { db, Prisma, type VendorStatus } from '@workspace/db'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
@@ -21,9 +26,46 @@ export interface UpdateVendor {
   blacklistReason?: string | null
 }
 
+/**
+ * Safe vendor DTO shared by every browser-facing vendor operation. Beneficiary
+ * account numbers are intentionally absent; payment services read them through
+ * their internal database boundary and the UI only receives verification state.
+ */
+export const vendorViewSelect = {
+  id: true,
+  name: true,
+  status: true,
+  email: true,
+  taxId: true,
+  paymentTermsDays: true,
+  ratingScore: true,
+  qualifiedEntityClass: true,
+  blacklistReason: true,
+  contactChannels: true,
+  bankAccountVerifiedAt: true,
+  bankAccountChangedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.VendorSelect
+
+export type VendorView = Prisma.VendorGetPayload<{
+  select: typeof vendorViewSelect
+}>
+
+function normalizeBankAccount(value: unknown) {
+  const account = value as Record<string, unknown>
+  return {
+    bank: String(account.bank ?? '').trim(),
+    accountNumber: String(
+      account.accountNumber ?? account.accountNo ?? '',
+    ).trim(),
+    holder: String(account.holder ?? '').trim(),
+  }
+}
+
 @Injectable()
 export class VendorService {
-  list(input: ListInput): Promise<ListResult<Prisma.VendorGetPayload<object>>> {
+  list(input: ListInput): Promise<ListResult<VendorView>> {
     const { skip, take } = paginate(input)
     const where: Prisma.VendorWhereInput = input.q
       ? {
@@ -45,44 +87,93 @@ export class VendorService {
     )[input.sort] ?? { createdAt: input.dir }
 
     return Promise.all([
-      db.vendor.findMany({ where: where, skip, take, orderBy }),
+      db.vendor.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        select: vendorViewSelect,
+      }),
       db.vendor.count({ where }),
     ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
   async detail(id: string) {
-    const vendor = await db.vendor.findUnique({ where: { id } })
+    const vendor = await db.vendor.findUnique({
+      where: { id },
+      select: vendorViewSelect,
+    })
     if (!vendor) throw new NotFoundException(`Vendor ${id} not found`)
     return vendor
   }
 
   /**
-   * §8.6 beneficiary bank-account control. Recording an account marks it
-   * verified; a later change (new account payload) clears that stamp so the
-   * payment service refuses to plan it until it is re-verified.
+   * §8.6 beneficiary maker/checker control. The first finance principal
+   * submits an account and makes it non-payable. A different finance principal
+   * must submit the identical normalized account to verify it.
    */
   async verifyBankAccount(
     vendorId: string,
     bankAccount: unknown,
-    tx: Prisma.TransactionClient = db,
+    actorId: string,
+    outerTx?: Prisma.TransactionClient,
   ) {
-    const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
-    if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
-    const prev = vendor.bankAccount as Record<string, unknown> | null
-    const next = bankAccount as Record<string, unknown>
-    // A *change* only when a prior account existed and differs; a fresh,
-    // never-before-recorded account is itself the verification, not a change.
-    const changed =
-      prev != null && JSON.stringify(prev) !== JSON.stringify(next)
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
+      if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
 
-    return tx.vendor.update({
-      where: { id: vendorId },
-      data: {
-        bankAccount: next as Prisma.InputJsonValue,
-        bankAccountVerifiedAt: new Date(),
-        bankAccountChangedAt: changed ? new Date() : null,
-      },
-    })
+      const next = normalizeBankAccount(bankAccount)
+      if (!next.bank || !next.accountNumber || !next.holder) {
+        throw new BadRequestException(
+          'Bank, account number, and holder are required',
+        )
+      }
+      const previous = vendor.bankAccount
+        ? normalizeBankAccount(vendor.bankAccount)
+        : null
+      const sameAccount =
+        previous !== null && JSON.stringify(previous) === JSON.stringify(next)
+
+      if (vendor.bankAccountChangedAt && sameAccount) {
+        if (vendor.bankAccountSubmittedBy === actorId) {
+          throw new ForbiddenException(
+            'Beneficiary verification requires a different finance user',
+          )
+        }
+        return tx.vendor.update({
+          where: { id: vendorId },
+          data: {
+            bankAccountVerifiedAt: new Date(),
+            bankAccountVerifiedBy: actorId,
+            bankAccountChangedAt: null,
+            bankAccountSubmittedBy: null,
+          },
+          select: vendorViewSelect,
+        })
+      }
+
+      if (sameAccount && vendor.bankAccountVerifiedAt) {
+        return tx.vendor.findUniqueOrThrow({
+          where: { id: vendorId },
+          select: vendorViewSelect,
+        })
+      }
+
+      return tx.vendor.update({
+        where: { id: vendorId },
+        data: {
+          bankAccount: next as Prisma.InputJsonValue,
+          bankAccountVerifiedAt: null,
+          bankAccountVerifiedBy: null,
+          bankAccountChangedAt: new Date(),
+          bankAccountSubmittedBy: actorId,
+        },
+        select: vendorViewSelect,
+      })
+    }
+
+    return outerTx ? run(outerTx) : db.$transaction(run)
   }
 
   create(input: CreateVendor, tx: Prisma.TransactionClient = db) {
@@ -95,6 +186,7 @@ export class VendorService {
         ratingScore: input.ratingScore ?? null,
         status: input.status ?? 'prospective',
       },
+      select: vendorViewSelect,
     })
   }
 
@@ -122,6 +214,7 @@ export class VendorService {
           blacklistReason: input.blacklistReason,
         }),
       },
+      select: vendorViewSelect,
     })
   }
 }

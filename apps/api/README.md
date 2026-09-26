@@ -103,8 +103,9 @@ Feature modules under `src/<feature>/`, all behind `AuthMiddleware`:
 - **Maker/checker**: approver must differ from the creator (separation of
   duties, §16.4).
 - **§8.6 beneficiary control**: a run refuses invoices whose vendor lacks a
-  verified bank account; a bank-account change clears the stamp and forces
-  re-verification (`vendor.verifyBankAccount`).
+  verified bank account. Adding or changing an account makes it non-payable;
+  a different finance user must independently submit the same normalized
+  details to verify it (`vendor.verifyBankAccount`).
 - Reconciliation flips paid invoices to `paid`; the run reaches `reconciled`
   only when every line settles.
 
@@ -117,7 +118,8 @@ Cross-cutting invariants (§9):
   `AuditEntry` (actor, action, entity, content-hashed input, before/after).
   No update/delete path is exposed for `AuditEntry`.
 - **Money** — stored as `*Minor` integers + `*CurrencyCode` (PHP default),
-  per §8.4; no floats in the domain.
+  per §8.4; no floats in the domain. Requisitions, budgets, quotes, and POs
+  must use one matching currency because implicit FX is never permitted.
 
 ## Tests
 

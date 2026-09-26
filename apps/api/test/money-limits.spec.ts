@@ -4,10 +4,23 @@ import { invoicePayloadSchema } from '../src/agent/invoice-payload'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { RequisitionService } from '../src/requisition/requisition.service'
 import {
+  assertSingleCurrency,
   DATABASE_INT_MAX,
   nonnegativeMinorUnits,
+  normalizeCurrencyCode,
   positiveDatabaseInt,
 } from '../src/shared/money/minor-units'
+
+describe('currency boundaries', () => {
+  it('normalizes codes and refuses mixed-currency workflows', () => {
+    expect(normalizeCurrencyCode(' php ')).toBe('PHP')
+    expect(assertSingleCurrency(['php', 'PHP'], 'Lines')).toBe('PHP')
+    expect(() => assertSingleCurrency(['PHP', 'USD'], 'Lines')).toThrow(
+      /one currency/,
+    )
+    expect(() => normalizeCurrencyCode('US')).toThrow(/three-letter/)
+  })
+})
 
 describe('signed 32-bit database limits', () => {
   it('accepts the boundary and rejects larger money and quantity inputs', () => {

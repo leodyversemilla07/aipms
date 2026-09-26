@@ -112,11 +112,17 @@ async function makeMatchedInvoice(vendorId: string, tag: string) {
 describe('Payment run concurrency (§8.6)', () => {
   it('only one concurrent create can claim an invoice', async () => {
     const vendor = await makeVendor('CLAIM')
-    await vendorService.verifyBankAccount(vendor.id, {
+    const account = {
       bank: 'BPI',
       holder: 'Race Co',
       accountNo: 'RACE1',
-    })
+    }
+    await vendorService.verifyBankAccount(vendor.id, account, `${actor}-maker`)
+    await vendorService.verifyBankAccount(
+      vendor.id,
+      account,
+      `${actor}-checker`,
+    )
     const invoice = await makeMatchedInvoice(vendor.id, 'claim')
 
     const results = await Promise.allSettled([
@@ -138,11 +144,17 @@ describe('Payment run concurrency (§8.6)', () => {
 
   it('parallel creates on disjoint invoices get distinct run numbers', async () => {
     const vendor = await makeVendor('DISTINCT')
-    await vendorService.verifyBankAccount(vendor.id, {
+    const account = {
       bank: 'BPI',
       holder: 'Race Co',
       accountNo: 'RACE2',
-    })
+    }
+    await vendorService.verifyBankAccount(vendor.id, account, `${actor}-maker`)
+    await vendorService.verifyBankAccount(
+      vendor.id,
+      account,
+      `${actor}-checker`,
+    )
     const invoices = await Promise.all(
       ['d1', 'd2', 'd3', 'd4', 'd5'].map((tag) =>
         makeMatchedInvoice(vendor.id, tag),

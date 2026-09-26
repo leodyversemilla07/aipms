@@ -49,8 +49,7 @@ export function InvoiceList() {
     )
   }
 
-  // Prisma payload rows recurse deeply; narrow to the fields rendered here.
-  const rows = (invoices.data ?? []) as unknown as Array<{
+  type InvoiceRow = {
     id: string
     number: string
     status: string
@@ -58,7 +57,8 @@ export function InvoiceList() {
     amountMinor: number
     vatMinor: number
     ewtMinor: number
-  }>
+  }
+  const rows = (invoices.data ?? []) as InvoiceRow[]
 
   return (
     <section className="flex flex-col gap-3">

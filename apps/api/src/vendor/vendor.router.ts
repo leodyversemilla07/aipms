@@ -15,15 +15,26 @@ import { requireHumanRole, requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
-import { VendorService } from './vendor.service'
+import { VendorService, vendorViewSelect } from './vendor.service'
 
 const idInput = z.object({ id: z.string().min(1) })
 
 const vendorStatus = z.enum(['prospective', 'active', 'watch', 'blacklisted'])
 
+const bankAccountInput = z
+  .object({
+    bank: z.string().min(1).max(120),
+    accountNumber: z.string().min(1).max(80).optional(),
+    accountNo: z.string().min(1).max(80).optional(),
+    holder: z.string().min(1).max(200),
+  })
+  .refine((value) => value.accountNumber || value.accountNo, {
+    message: 'accountNumber is required',
+  })
+
 const verifyBankAccountInput = z.object({
   id: z.string().min(1),
-  bankAccount: z.any(),
+  bankAccount: bankAccountInput,
 })
 
 const createVendorInput = z.object({
@@ -131,7 +142,10 @@ export class VendorRouter {
       },
       async (tx) => {
         const { id, idempotencyKey: _key, ...rest } = input
-        const before = await tx.vendor.findUnique({ where: { id } })
+        const before = await tx.vendor.findUnique({
+          where: { id },
+          select: vendorViewSelect,
+        })
         if (!before) throw new NotFoundException(`Vendor ${id} not found`)
         const vendor = await this.vendor.update(id, rest, tx)
         await this.audit.record(
@@ -168,6 +182,7 @@ export class VendorRouter {
       const vendor = await this.vendor.verifyBankAccount(
         input.id,
         input.bankAccount,
+        ctx.user.id,
         tx,
       )
       await this.audit.record(

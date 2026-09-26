@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   ConflictException,
   Injectable,
@@ -27,6 +28,8 @@ import {
  * Ingest: vendor master registrations arrive from the ERP (the author of
  * record for master data) and are upserted into the local cache by taxId.
  */
+type ErpExportListRow = Prisma.ErpJournalExportGetPayload<object>
+
 @Injectable()
 export class ErpService {
   constructor(private readonly events: EventEmitterService) {}
@@ -60,10 +63,14 @@ export class ErpService {
     // join invoices and vendor master data manually.
     const lines = await db.paymentRunLine.findMany({ where: { runId } })
     const invoiceIds = [...new Set(lines.map((l) => l.invoiceId))]
-    const [invoices, vendors] = await Promise.all([
-      db.invoice.findMany({ where: { id: { in: invoiceIds } } }),
-      db.vendor.findMany({ select: { id: true, name: true, taxId: true } }),
-    ])
+    const invoices = await db.invoice.findMany({
+      where: { id: { in: invoiceIds } },
+    })
+    const vendorIds = [...new Set(invoices.map((invoice) => invoice.vendorId))]
+    const vendors = await db.vendor.findMany({
+      where: { id: { in: vendorIds } },
+      select: { id: true, name: true, taxId: true },
+    })
     const invoiceById = new Map(invoices.map((i) => [i.id, i] as const))
     const vendorById = new Map(vendors.map((v) => [v.id, v] as const))
 
@@ -171,7 +178,7 @@ export class ErpService {
 
   list(
     input: Partial<ListInput> & { status?: string } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<ErpExportListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
@@ -221,19 +228,20 @@ export class ErpService {
   }
 
   /**
-   * Pre-dispatch gate for pushing an export to QuickBooks: the export must
-   * still be unsettled, verified BEFORE any external POST. Repeating a
-   * posted/rejected push is refused here — never after a duplicate journal
-   * hits the provider. (Residual: a crash between the provider accepting the
-   * journal and the acknowledgement write leaves an ambiguous outcome; the
-   * provider offers no idempotency key, so that retry needs human review of
-   * the QBO journal list. Concurrent pushes serialize on the advisory lock;
-   * only the winner proceeds while the export is still exported.)
+   * Durably claim an export before the non-transactional QuickBooks POST.
+   * Claims are never automatically reclaimed: a crash or transport error may
+   * mean QBO accepted the journal, so finance must review and acknowledge the
+   * outcome instead of risking a duplicate.
    */
   async prepareQboPush(
     exportId: string,
+    claimedBy: string,
     outerTx?: Prisma.TransactionClient,
-  ): Promise<{ export: object; json: string }> {
+  ) {
+    // Verify the frozen artifact before taking a claim. Once claimed, every
+    // failure is treated as potentially externally visible.
+    const { json } = await this.manifest(exportId)
+    const claimId = randomUUID()
     const run = async (tx: Prisma.TransactionClient) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`qbo-push:${exportId}`}))`
       const row = await tx.erpJournalExport.findUnique({
@@ -245,11 +253,78 @@ export class ErpService {
           `Export for ${row.runNumber} is already ${row.status} — refusing a second push`,
         )
       }
-      return row
+      if (row.dispatchClaimId) {
+        throw new ConflictException(
+          row.dispatchFailure
+            ? `Export for ${row.runNumber} has an ambiguous QBO dispatch — review it before acknowledging`
+            : `Export for ${row.runNumber} is already being pushed to QBO`,
+        )
+      }
+      return tx.erpJournalExport.update({
+        where: { id: exportId },
+        data: {
+          dispatchClaimId: claimId,
+          dispatchClaimedBy: claimedBy,
+          dispatchStartedAt: new Date(),
+          dispatchFailure: null,
+        },
+      })
     }
     const row = outerTx ? await run(outerTx) : await db.$transaction(run)
-    const { json } = await this.manifest(exportId)
-    return { export: row, json }
+    return { export: row, json, claimId }
+  }
+
+  /** Retain the claim and mark an external outcome as ambiguous. */
+  async markQboPushFailed(
+    exportId: string,
+    claimId: string,
+    reason: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const changed = await tx.erpJournalExport.updateMany({
+      where: { id: exportId, status: 'exported', dispatchClaimId: claimId },
+      data: { dispatchFailure: reason.slice(0, 500) },
+    })
+    if (changed.count !== 1) {
+      throw new ConflictException('QBO dispatch claim is no longer current')
+    }
+    return tx.erpJournalExport.findUniqueOrThrow({ where: { id: exportId } })
+  }
+
+  /** Settle exactly the claim that performed the successful external POST. */
+  async completeQboPush(
+    exportId: string,
+    claimId: string,
+    externalRef: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const row = await tx.erpJournalExport.findUnique({
+      where: { id: exportId },
+    })
+    if (!row) throw new NotFoundException(`Export ${exportId} not found`)
+    const changed = await tx.erpJournalExport.updateMany({
+      where: { id: exportId, status: 'exported', dispatchClaimId: claimId },
+      data: {
+        status: 'posted',
+        externalRef,
+        rejectedReason: null,
+        acknowledgedAt: new Date(),
+        dispatchFailure: null,
+      },
+    })
+    if (changed.count !== 1) {
+      throw new ConflictException('QBO dispatch claim is no longer current')
+    }
+    await this.events.emit(
+      {
+        type: 'erp.posted',
+        entityType: 'PaymentRun',
+        entityId: row.runId,
+        payload: { runNumber: row.runNumber, externalRef },
+      },
+      tx,
+    )
+    return tx.erpJournalExport.findUniqueOrThrow({ where: { id: exportId } })
   }
 
   /**
@@ -263,7 +338,9 @@ export class ErpService {
       status: 'posted' | 'rejected'
       externalRef?: string | null
       rejectedReason?: string | null
+      resolveDispatchClaim?: boolean
     },
+    acknowledgedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
     const row = await tx.erpJournalExport.findUnique({
@@ -273,6 +350,30 @@ export class ErpService {
     if (row.status !== 'exported') {
       throw new ConflictException(
         `Export for ${row.runNumber} is already ${row.status}`,
+      )
+    }
+    if (row.dispatchClaimId && !input.resolveDispatchClaim) {
+      throw new ConflictException(
+        `Export for ${row.runNumber} has a QBO dispatch claim; explicit manual resolution is required`,
+      )
+    }
+    if (
+      row.dispatchClaimId &&
+      input.resolveDispatchClaim &&
+      row.dispatchClaimedBy === acknowledgedBy
+    ) {
+      throw new ConflictException(
+        'QBO dispatch maker and manual-resolution checker must differ',
+      )
+    }
+    if (
+      row.dispatchClaimId &&
+      input.resolveDispatchClaim &&
+      input.status === 'posted' &&
+      !input.externalRef
+    ) {
+      throw new ConflictException(
+        'Manual QBO posted resolution requires the reviewed external reference',
       )
     }
     if (input.status === 'rejected' && !input.rejectedReason) {
@@ -288,6 +389,12 @@ export class ErpService {
         rejectedReason:
           input.status === 'rejected' ? (input.rejectedReason ?? null) : null,
         acknowledgedAt: new Date(),
+        ...(row.dispatchClaimId && input.resolveDispatchClaim
+          ? {
+              dispatchResolvedBy: acknowledgedBy,
+              dispatchResolvedAt: new Date(),
+            }
+          : {}),
       },
     })
     if (changed.count !== 1) {
@@ -376,47 +483,88 @@ export class ErpService {
    * silently.
    */
   async reconcileReport() {
-    const [executedRuns, exports, unacked] = await Promise.all([
-      db.paymentRun.findMany({
+    type MissingExportRow = {
+      runId: string
+      runNumber: string
+      totalMinor: number
+      currencyCode: string
+      totalCount: bigint
+    }
+    const [
+      executedRuns,
+      exportCount,
+      postedAggregate,
+      missingExports,
+      unacked,
+    ] = await Promise.all([
+      db.paymentRun.count({
         where: { status: { in: ['executed', 'reconciled'] } },
-        select: {
-          id: true,
-          runNumber: true,
-          totalMinor: true,
-          currencyCode: true,
-        },
       }),
-      db.erpJournalExport.findMany(),
-      db.erpJournalExport.findMany({ where: { status: 'exported' } }),
+      db.erpJournalExport.count(),
+      db.erpJournalExport.aggregate({
+        _sum: { totalMinor: true },
+        where: { status: 'posted' },
+      }),
+      db.$queryRaw<MissingExportRow[]>(Prisma.sql`
+          select pr.id as "runId", pr."runNumber", pr."totalMinor",
+                 pr."currencyCode", count(*) over()::bigint as "totalCount"
+          from "paymentRun" pr
+          left join "erpJournalExport" e on e."runId" = pr.id
+          where pr.status in ('executed', 'reconciled') and e.id is null
+          order by pr."executedAt" desc nulls last, pr.id
+          limit 500
+        `),
+      db.erpJournalExport.findMany({
+        where: { status: 'exported' },
+        orderBy: [
+          { dispatchClaimId: { sort: 'asc', nulls: 'last' } },
+          { exportedAt: 'desc' },
+        ],
+        take: 500,
+      }),
     ])
 
-    const exportedByRun = new Map(exports.map((e) => [e.runId, e] as const))
-    const notExported = executedRuns.filter((r) => !exportedByRun.has(r.id))
-
-    const postedTotal = exports
-      .filter((e) => e.status === 'posted')
-      .reduce((s, e) => s + e.totalMinor, 0)
+    const [unackedCount, ambiguousDispatchCount] = await Promise.all([
+      db.erpJournalExport.count({ where: { status: 'exported' } }),
+      db.erpJournalExport.count({
+        where: { status: 'exported', dispatchClaimId: { not: null } },
+      }),
+    ])
+    const missingExportCount = Number(missingExports[0]?.totalCount ?? 0)
 
     return {
-      executedRuns: executedRuns.length,
-      exports: exports.length,
-      /** Executed runs with no journal export — publishing debt. */
-      missingExports: notExported.map((r) => ({
-        runId: r.id,
-        runNumber: r.runNumber,
-        totalMinor: r.totalMinor,
-        currencyCode: r.currencyCode,
+      executedRuns,
+      exports: exportCount,
+      missingExportCount,
+      /** Executed runs with no journal export — capped review sample. */
+      missingExports: missingExports.map((row) => ({
+        runId: row.runId,
+        runNumber: row.runNumber,
+        totalMinor: row.totalMinor,
+        currencyCode: row.currencyCode,
       })),
-      /** Exports consumed but not yet acknowledged by the ERP. */
-      awaitingAcknowledgement: unacked.map((e) => ({
-        exportId: e.id,
-        runNumber: e.runNumber,
-        totalMinor: e.totalMinor,
+      awaitingAcknowledgementCount: unackedCount,
+      /** Exports consumed but not yet acknowledged — capped review sample. */
+      awaitingAcknowledgement: unacked.map((row) => ({
+        exportId: row.id,
+        runNumber: row.runNumber,
+        totalMinor: row.totalMinor,
+        dispatchClaimId: row.dispatchClaimId,
+        dispatchStartedAt: row.dispatchStartedAt,
+        dispatchFailure: row.dispatchFailure,
       })),
-      postedTotalMinor: postedTotal,
-      clean:
-        notExported.length === 0 &&
-        unacked.every((e) => e.status === 'exported' && unacked.length === 0),
+      ambiguousDispatchCount,
+      /** Claimed QBO posts need completion or explicit human resolution. */
+      ambiguousDispatches: unacked
+        .filter((row) => row.dispatchClaimId != null)
+        .map((row) => ({
+          exportId: row.id,
+          runNumber: row.runNumber,
+          dispatchStartedAt: row.dispatchStartedAt,
+          dispatchFailure: row.dispatchFailure,
+        })),
+      postedTotalMinor: postedAggregate._sum.totalMinor ?? 0,
+      clean: missingExportCount === 0 && unackedCount === 0,
     }
   }
 }

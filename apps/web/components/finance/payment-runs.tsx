@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@workspace/ui/components/dialog"
+import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
@@ -26,6 +27,7 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
+import { Textarea } from "@workspace/ui/components/textarea"
 import {
   Tooltip,
   TooltipContent,
@@ -50,27 +52,29 @@ export function PaymentRuns() {
   const matched = useQuery(
     trpc.invoice.list.queryOptions({ status: "matched" })
   )
-  // Prisma payload rows recurse deeply; narrow to the fields rendered here.
-  const runRows = (runs.data ?? []) as unknown as Array<{
+  type PaymentRunRow = {
     id: string
     runNumber: string
     status: string
     totalMinor: number
+    voidReason: string | null
     lines: Array<{
       id: string
       invoiceId: string
       netMinor: number
       status: string
     }>
-  }>
-  const matchedRows = (matched.data ?? []) as unknown as Array<{
+  }
+  type InvoiceRow = {
     id: string
     number: string
     status: string
     amountMinor: number
     vatMinor: number
     ewtMinor: number
-  }>
+  }
+  const runRows = (runs.data ?? []) as PaymentRunRow[]
+  const matchedRows = (matched.data ?? []) as InvoiceRow[]
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -80,6 +84,7 @@ export function PaymentRuns() {
   const approve = useMutation(trpc.paymentRun.approve.mutationOptions())
   const execute = useMutation(trpc.paymentRun.execute.mutationOptions())
   const reconcile = useMutation(trpc.paymentRun.reconcile.mutationOptions())
+  const voidRun = useMutation(trpc.paymentRun.voidRun.mutationOptions())
   const exportRun = useMutation(trpc.erp.exportRun.mutationOptions())
 
   /** §8.6 hand-off: fetch the deterministic PESONet batch and save the CSV.
@@ -183,6 +188,7 @@ export function PaymentRuns() {
       await action()
       refresh()
       if (hint) setNotice(hint)
+      return true
     } catch (e) {
       const message = (e as Error).message
       if (message.includes("Maker and checker")) {
@@ -192,6 +198,7 @@ export function PaymentRuns() {
       } else {
         setError(`Action failed: ${message}`)
       }
+      return false
     }
   }
 
@@ -361,7 +368,7 @@ export function PaymentRuns() {
                   <TableBody>
                     {run.lines.map((line) => (
                       <TableRow key={line.id}>
-                        <TableCell>{line.invoiceId.slice(0, 8)}</TableCell>
+                        <TableCell>{line.invoiceId.slice(-8)}</TableCell>
                         <TableCell>
                           {LINE_STATUS[line.status] ?? line.status}
                         </TableCell>
@@ -376,6 +383,13 @@ export function PaymentRuns() {
               </DialogContent>
             </Dialog>
 
+            {run.status === "voided" && run.voidReason ? (
+              <Alert>
+                <AlertTitle>Voided</AlertTitle>
+                <AlertDescription>{run.voidReason}</AlertDescription>
+              </Alert>
+            ) : null}
+
             <ul className="flex flex-col gap-1">
               {run.lines.map((line) => (
                 <li
@@ -383,7 +397,7 @@ export function PaymentRuns() {
                   className="flex items-center justify-between rounded-md bg-muted/40 px-2 py-1 text-xs"
                 >
                   <span className="text-muted-foreground">
-                    {line.invoiceId.slice(0, 8)} ·{" "}
+                    {line.invoiceId.slice(-8)} ·{" "}
                     {LINE_STATUS[line.status] ?? line.status}
                   </span>
                   <span className="font-mono">{minorToPhp(line.netMinor)}</span>
@@ -398,6 +412,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "paid",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -413,6 +428,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "dishonored",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -428,6 +444,7 @@ export function PaymentRuns() {
                               runId: run.id,
                               lineId: line.id,
                               status: "rejected",
+                              idempotencyKey: `web-reconcile-${crypto.randomUUID()}`,
                             })
                           )
                         }
@@ -445,7 +462,14 @@ export function PaymentRuns() {
                 <Button
                   size="sm"
                   disabled={approve.isPending}
-                  onClick={() => act(() => approve.mutateAsync({ id: run.id }))}
+                  onClick={() =>
+                    act(() =>
+                      approve.mutateAsync({
+                        id: run.id,
+                        idempotencyKey: `web-approve-${crypto.randomUUID()}`,
+                      })
+                    )
+                  }
                 >
                   Approve
                 </Button>
@@ -456,15 +480,104 @@ export function PaymentRuns() {
                 <Button
                   size="sm"
                   disabled={execute.isPending}
-                  onClick={() => act(() => execute.mutateAsync({ id: run.id }))}
+                  onClick={() =>
+                    act(() =>
+                      execute.mutateAsync({
+                        id: run.id,
+                        idempotencyKey: `web-execute-${crypto.randomUUID()}`,
+                      })
+                    )
+                  }
                 >
                   Execute
                 </Button>
               </div>
             ) : null}
+            {run.status === "draft" || run.status === "approved" ? (
+              <VoidRunButton
+                runNumber={run.runNumber}
+                pending={voidRun.isPending}
+                onVoid={(reason) =>
+                  act(
+                    () =>
+                      voidRun.mutateAsync({
+                        id: run.id,
+                        reason,
+                        idempotencyKey: `web-void-${crypto.randomUUID()}`,
+                      }),
+                    `${run.runNumber} voided with recorded evidence.`
+                  )
+                }
+              />
+            ) : null}
           </li>
         ))}
       </ul>
     </section>
+  )
+}
+
+function VoidRunButton({
+  runNumber,
+  pending,
+  onVoid,
+}: {
+  runNumber: string
+  pending: boolean
+  onVoid: (reason: string) => Promise<boolean>
+}) {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState("")
+
+  async function submit() {
+    const accepted = await onVoid(reason.trim())
+    if (!accepted) return
+    setReason("")
+    setOpen(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <Button size="sm" variant="outline" disabled={pending}>
+            Void run
+          </Button>
+        }
+      />
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Void {runNumber}?</DialogTitle>
+          <DialogDescription>
+            This releases its invoice claims. An approved run can only be voided
+            by a principal other than its maker.
+          </DialogDescription>
+        </DialogHeader>
+        <FieldGroup>
+          <Field data-invalid={open && reason.trim().length === 0}>
+            <FieldLabel htmlFor={`void-reason-${runNumber}`}>
+              Reconciliation evidence and reason
+            </FieldLabel>
+            <Textarea
+              id={`void-reason-${runNumber}`}
+              value={reason}
+              maxLength={500}
+              aria-invalid={reason.trim().length === 0}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Provider rejection, duplicate run, or correction evidence…"
+            />
+          </Field>
+        </FieldGroup>
+        <DialogFooter>
+          <Button
+            variant="destructive"
+            disabled={pending || reason.trim().length === 0}
+            onClick={() => void submit()}
+          >
+            Confirm void
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

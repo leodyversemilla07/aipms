@@ -19,8 +19,8 @@ type MessageRow = {
   status: string
   agentId: string | null
   rejectedReason: string | null
-  sentAt: string | null
-  createdAt: string
+  sentAt: string | Date | null
+  createdAt: string | Date
 }
 
 const STATUS_FILTERS = ["queued", "approved", "sent", "rejected", "failed"]
@@ -46,7 +46,7 @@ export function MessagingQueue() {
       status: (status || undefined) as never,
     })
   )
-  const rows = (messages.data?.rows ?? []) as unknown as MessageRow[]
+  const rows = (messages.data?.rows ?? []) as MessageRow[]
 
   const approve = useMutation(trpc.messaging.approve.mutationOptions())
   const reject = useMutation(trpc.messaging.reject.mutationOptions())
@@ -99,13 +99,20 @@ export function MessagingQueue() {
               rejectPending={reject.isPending}
               onApprove={() =>
                 approve
-                  .mutateAsync({ id: m.id })
+                  .mutateAsync({
+                    id: m.id,
+                    idempotencyKey: `web-message-approve-${crypto.randomUUID()}`,
+                  })
                   .then(refresh)
                   .catch((e: Error) => setError(e.message))
               }
               onReject={(reason) =>
                 reject
-                  .mutateAsync({ id: m.id, reason })
+                  .mutateAsync({
+                    id: m.id,
+                    reason,
+                    idempotencyKey: `web-message-reject-${crypto.randomUUID()}`,
+                  })
                   .then(refresh)
                   .catch((e: Error) => setError(e.message))
               }

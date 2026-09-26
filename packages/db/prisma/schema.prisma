@@ -29,6 +29,10 @@ model User {
 
   sessions Session[]
   accounts Account[]
+  scimIdentityTombstones ScimIdentityTombstone[]
+  scimSubject            ScimSubject?
+  scimUsers              ScimUser[]
+  scimProjectionGrants   ScimProjectionGrant[]
 
   @@unique([email])
   @@map("user")
@@ -180,11 +184,14 @@ model Vendor {
   qualifiedEntityClass    EntityClass? // how this vendor is typically sourced
   blacklistReason         String?
   contactChannels         Json? // verified addresses/emails (§8.3 outbox)
-  // §8.6 beneficiary bank control: a run will not plan an invoice whose
-  // vendor has not been verified after the last bank-account change.
-  bankAccount          Json?
-  bankAccountVerifiedAt DateTime?
-  bankAccountChangedAt  DateTime?
+  // §8.6 beneficiary maker/checker control: changedAt/submittedBy marks a
+  // non-payable submission until a different finance principal records the
+  // verifiedAt/verifiedBy pair.
+  bankAccount            Json?
+  bankAccountVerifiedAt  DateTime?
+  bankAccountVerifiedBy  String?
+  bankAccountChangedAt   DateTime?
+  bankAccountSubmittedBy String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
@@ -306,14 +313,14 @@ model DomainEvent {
   lastError         String?
   deadLetteredAt    DateTime? // null = still retryable
   deadLetterReason  String?
-  processingAt      DateTime? // exclusive relay lease; stale leases are reclaimable
-  processingBy      String?
+  dispatchClaimId   String?   // relay lease owner; prevents multi-node delivery races
+  dispatchClaimedAt DateTime? // stale claims are recoverable after the lease window
   createdAt         DateTime  @default(now())
 
   @@map("domainEvent")
   @@index([publishedAt])
+  @@index([dispatchClaimedAt])
   @@index([deadLetteredAt])
-  @@index([processingAt])
   @@index([type])
   @@index([createdAt])
 }
@@ -404,6 +411,8 @@ model PurchaseOrder {
   id            String   @id @default(cuid())
   poNumber      String   @unique
   requisitionId String?
+  awardedQuoteId String?  @unique
+  awardedQuote   Quote?   @relation(fields: [awardedQuoteId], references: [id], onDelete: Restrict)
   vendorId      String
   status        PoStatus @default(draft)
   currencyCode  String   @default("PHP")
@@ -438,7 +447,7 @@ model PurchaseOrderLine {
   @@index([poId])
 }
 
-// §16.3/§16.4 — qualified electronic signature on a PO (human + certificate;
+// §16.3/§16.4 — detached ECDSA integrity signature on a PO (human + key;
 // agents prepare documents but never countersign). Detached signature over
 // the canonical PO snapshot; append-only so re-signing preserves history.
 model PoSignature {
@@ -468,7 +477,8 @@ model Approval {
   route         Json           // ordered assignees/roles
   citations     Json           @default("[]") // policy citations
   status        ApprovalStatus @default(pending)
-  decidedBy     String?
+  requestedBy   String         // maker that opened the human gate
+  decidedBy     String?        // checker; must differ from requestedBy
   decidedAt     DateTime?
   evidence      String?
   // §10.3 SLA escalation — set once by the escalator when a pending
@@ -524,9 +534,15 @@ model ErpJournalExport {
   currencyCode   String    @default("PHP")
   status         String    @default("exported") // exported | posted | rejected
   externalRef    String?
-  rejectedReason String?
-  acknowledgedAt DateTime?
-  exportedBy     String
+  rejectedReason   String?
+  acknowledgedAt  DateTime?
+  dispatchClaimId  String?   @unique
+  dispatchClaimedBy String?
+  dispatchStartedAt DateTime?
+  dispatchFailure  String?
+  dispatchResolvedBy String?
+  dispatchResolvedAt DateTime?
+  exportedBy       String
   exportedAt     DateTime  @default(now())
 
   @@map("erpJournalExport")
@@ -534,8 +550,8 @@ model ErpJournalExport {
 }
 
 // OAuth connection to an ERP instance (§8.5 v1 anchor: QuickBooks Online).
-// One row per provider+realm; tokens are encrypted at rest with the
-// instance key (AES-256-GCM over a key derived from BETTER_AUTH_SECRET).
+// One row per provider+realm; tokens use versioned AES-256-GCM envelopes
+// under the independently rotatable AIPMS_TOKEN_ENCRYPTION_SECRET.
 // The settings JSON carries the aipms→ERP chart-of-accounts map and a
 // cached account list for the mapping UI.
 model ErpConnection {
@@ -586,6 +602,9 @@ model PaymentRun {
   approvedAt   DateTime?
   executedBy   String?
   executedAt   DateTime?
+  voidedBy     String?
+  voidedAt     DateTime?
+  voidReason   String?
   reconciledAt DateTime?
   lines        PaymentRunLine[]
   createdAt    DateTime       @default(now())
@@ -745,6 +764,14 @@ model Message {
   rejectedReason String?
   failedReason   String?
   dispatchStartedAt DateTime?
+  // Operator recovery for ambiguous transport failures. confirmed_sent closes
+  // the row; confirmed_not_sent authorizes exactly one fresh dispatch claim.
+  deliveryResolution         String?
+  deliveryResolutionEvidence String?
+  deliveryResolvedBy         String?
+  deliveryResolvedAt         DateTime?
+  // Provider receipt / RFC Message-ID returned after accepted delivery.
+  transportMessageId String?
   sentAt         DateTime?
   threadId       String?
   createdAt      DateTime      @default(now())
@@ -786,6 +813,7 @@ model Quote {
   payload       Json? // full offer as received (tamper-evident context for award)
   awardedAt     DateTime?
   rejectedReason String?
+  purchaseOrder PurchaseOrder?
   requestedBy   String
   createdBy     String
   createdAt     DateTime    @default(now())
@@ -814,8 +842,9 @@ model SsoProvider {
   @@map("ssoProvider")
 }
 
-// SCIM provisioning connection (IdP → aipms user sync). The scimToken is the
-// bearer credential the IdP presents to /api/auth/scim/v2/*.
+// SCIM provisioning connection (IdP → aipms user sync). scimToken stores a
+// one-way digest plus display suffix of the bearer credential presented to
+// /api/auth/scim/v2/*; legacy clear-text values upgrade on first use.
 model ScimProvider {
   id             String  @id
   providerId     String  @unique
@@ -823,4 +852,147 @@ model ScimProvider {
   organizationId String?
 
   @@map("scimProvider")
+}
+
+// Better Auth SCIM 1.7 keeps provisioned identities isolated by connection
+// rather than treating them as unscoped authentication accounts.
+model ScimConnectionBinding {
+  id                              String    @id
+  connectionId                    String
+  connectionKey                   String    @unique
+  provisioningDomainId            String
+  createdAt                       DateTime
+  decommissionedAt                DateTime?
+  decommissionStatus              String    @default("active")
+  decommissionCursorUserId        String?
+  decommissionReconciledUserCount Int       @default(0)
+  decommissionBatchCount          Int       @default(0)
+  decommissionRevision            Int       @default(0)
+  decommissionCompletedAt         DateTime?
+  decommissionLeaseId             String?
+  decommissionLeaseExpiresAt      DateTime?
+
+  @@index([connectionId])
+  @@map("scimConnectionBinding")
+}
+
+model ScimIdentityTombstone {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  externalId           String
+  externalIdKey        String   @unique
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile              String
+  deletedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scimIdentityTombstone")
+}
+
+model ScimSubject {
+  id              String   @id
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profileSourceId String?
+  revision        Int
+  createdAt       DateTime
+  updatedAt       DateTime
+
+  @@index([profileSourceId])
+  @@map("scimSubject")
+}
+
+model ScimUser {
+  id                   String                @id
+  connectionId         String
+  provisioningDomainId String
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionUserKey    String                @unique
+  userName             String
+  userNameKey          String                @unique
+  primaryEmail         String
+  workEmailValueIndex  String
+  emailValueIndex      String
+  displayName          String
+  formattedName        String
+  givenName            String?
+  familyName           String?
+  serializedEmails     String
+  serializedAttributes String?
+  externalId           String?
+  externalIdKey        String?               @unique
+  active               Boolean
+  orderKey             String                @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  projectionGrants     ScimProjectionGrant[]
+  groupMembers         ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([userId])
+  @@map("scimUser")
+}
+
+model ScimProjectionGrant {
+  id                   String   @id
+  connectionId         String
+  provisioningDomainId String
+  scimUserId           String
+  scimUser             ScimUser @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKind           String
+  sourceId             String
+  sourceValue          String?
+  role                 String
+  grantKey             String   @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@index([scimUserId])
+  @@index([userId])
+  @@map("scimProjectionGrant")
+}
+
+model ScimGroup {
+  id                   String            @id
+  connectionId         String
+  provisioningDomainId String
+  revision             Int               @default(0)
+  displayName          String
+  displayNameKey       String            @unique
+  externalId           String?
+  externalIdKey        String?           @unique
+  orderKey             String            @unique
+  createdAt            DateTime
+  updatedAt            DateTime
+  members              ScimGroupMember[]
+
+  @@index([connectionId])
+  @@index([provisioningDomainId])
+  @@map("scimGroup")
+}
+
+model ScimGroupMember {
+  id            String    @id
+  connectionId  String
+  groupId       String
+  group         ScimGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  scimUserId    String
+  scimUser      ScimUser  @relation(fields: [scimUserId], references: [id], onDelete: Cascade)
+  membershipKey String    @unique
+  createdAt     DateTime
+
+  @@index([connectionId])
+  @@index([groupId])
+  @@index([scimUserId])
+  @@map("scimGroupMember")
 }

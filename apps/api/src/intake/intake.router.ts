@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -10,7 +9,7 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
-import { invoicePayloadSchema as classifiedInvoiceSchema } from '../agent/invoice-payload'
+import { invoicePayloadSchema } from '../agent/invoice-payload'
 import { InvoiceService } from '../invoice/invoice.service'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
@@ -18,6 +17,8 @@ import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { IntakeService } from './intake.service'
+import { projectIntakeValueForAgent } from './intake-agent-projection'
+import { IntakeCommandService } from './intake-command.service'
 import { parseStructuredInvoice } from './structured-invoice'
 
 const ingestInput = z.object({
@@ -30,7 +31,8 @@ const ingestInput = z.object({
 
 const classifyInput = z.object({
   id: z.string().min(1),
-  classified: z.unknown(),
+  idempotencyKey: z.string().min(1),
+  classified: invoicePayloadSchema,
 })
 
 const listInputWithStatus = listInput.extend({
@@ -47,8 +49,9 @@ const listInputWithStatus = listInput.extend({
 })
 
 const idInput = z.object({ id: z.string().min(1) })
+const commandInput = idInput.extend({ idempotencyKey: z.string().min(1) })
 
-const bridgeInput = idInput.extend({ idempotencyKey: z.string().min(1) })
+const bridgeInput = commandInput
 
 // §8.2 structured channels — machine formats parsed deterministically on
 // receive (no LLM); documents enter the queue pre-extracted.
@@ -64,6 +67,8 @@ const ingestStructuredInput = z.object({
 export class IntakeRouter {
   constructor(
     @Inject(IntakeService) private readonly intake: IntakeService,
+    @Inject(IntakeCommandService)
+    private readonly commands: IntakeCommandService,
     @Inject(InvoiceService) private readonly invoice: InvoiceService,
     @Inject(IdempotencyService)
     private readonly idempotency: IdempotencyService,
@@ -72,7 +77,21 @@ export class IntakeRouter {
 
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.intake.list(input.status ? { status: input.status } : {})
+    return this.intake.list(input)
+  }
+
+  @Query({ input: idInput })
+  async detail(
+    @Input() input: z.infer<typeof idInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const document = await this.intake.detail(input.id)
+    if (ctx.actorKind !== 'agent') return document
+    return {
+      ...document,
+      raw: projectIntakeValueForAgent(document.raw),
+      classified: projectIntakeValueForAgent(document.classified),
+    }
   }
 
   @Mutation({ input: ingestInput })
@@ -88,19 +107,24 @@ export class IntakeRouter {
         input,
       },
       async (tx) => {
-        const doc = await this.intake.ingest(input, tx)
-        await this.audit.record(
+        const { idempotencyKey, ...ingestInput } = input
+        const rawScopes = (ctx.user as { scopes?: unknown }).scopes
+        return this.commands.ingest(
+          ingestInput,
           {
-            actorId: ctx.user.id,
-            actorKind: ctx.actorKind,
-            action: 'intake.ingest',
-            entity: 'IntakeDocument',
-            entityId: doc.id,
-            input,
+            id: ctx.user.id,
+            kind: ctx.actorKind,
+            role: ctx.user.role,
+            scopes: Array.isArray(rawScopes)
+              ? rawScopes.filter(
+                  (scope): scope is string => typeof scope === 'string',
+                )
+              : undefined,
+            source: 'trpc',
+            idempotencyKey,
           },
           tx,
         )
-        return doc
       },
     )
   }
@@ -162,66 +186,93 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof classifyInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.classify(input, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.classify',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-          after: doc,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.classify',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.classify(
+          { id: input.id, classified: input.classified },
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.classify',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+            after: doc,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
-  @Mutation({ input: idInput })
+  @Mutation({ input: commandInput })
   async drop(
-    @Input() input: z.infer<typeof idInput>,
+    @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.drop(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.drop',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.drop',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.drop(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.drop',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
-  @Mutation({ input: idInput })
+  @Mutation({ input: commandInput })
   async requeue(
-    @Input() input: z.infer<typeof idInput>,
+    @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const doc = await this.intake.requeue(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'intake.requeue',
-          entity: 'IntakeDocument',
-          entityId: doc.id,
-          input,
-        },
-        tx,
-      )
-      return doc
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'intake.requeue',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const doc = await this.intake.requeue(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'intake.requeue',
+            entity: 'IntakeDocument',
+            entityId: doc.id,
+            input,
+          },
+          tx,
+        )
+        return doc
+      },
+    )
   }
 
   /**
@@ -252,7 +303,7 @@ export class IntakeRouter {
             'Dropped document cannot bridge to an invoice',
           )
         }
-        const parsed = classifiedInvoiceSchema.safeParse(doc.classified)
+        const parsed = invoicePayloadSchema.safeParse(doc.classified)
         if (!parsed.success) {
           throw new ConflictException(
             `Classified payload is not an invoice: ${parsed.error.message}`,

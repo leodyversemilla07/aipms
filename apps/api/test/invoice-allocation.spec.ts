@@ -285,7 +285,12 @@ describe('Receipt cancellation and invoice eligibility', () => {
     // Once the run is voided the correction can proceed.
     await db.paymentRun.update({
       where: { id: run.id },
-      data: { status: 'voided' },
+      data: {
+        status: 'voided',
+        voidedBy: actorId,
+        voidedAt: new Date(),
+        voidReason: 'Release claim for receipt correction',
+      },
     })
     await receipts.cancel(receiptId)
     expect(

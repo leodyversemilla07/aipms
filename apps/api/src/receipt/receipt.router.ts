@@ -1,5 +1,4 @@
 import { Inject } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -43,6 +42,7 @@ const listInputWithFilters = listInput.extend({
 })
 
 const idInput = z.object({ id: z.string().min(1) })
+const cancelInput = idInput.extend({ idempotencyKey: z.string().min(1) })
 
 @Router({ alias: 'receipt' })
 @UseMiddlewares(AuthMiddleware)
@@ -104,24 +104,32 @@ export class ReceiptRouter {
     )
   }
 
-  @Mutation({ input: idInput })
+  @Mutation({ input: cancelInput })
   async cancel(
-    @Input() input: z.infer<typeof idInput>,
+    @Input() input: z.infer<typeof cancelInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return db.$transaction(async (tx) => {
-      const receipt = await this.receipts.cancel(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'receipt.cancel',
-          entity: 'Receipt',
-          entityId: input.id,
-        },
-        tx,
-      )
-      return receipt
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'receipt.cancel',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const receipt = await this.receipts.cancel(input.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'receipt.cancel',
+            entity: 'Receipt',
+            entityId: input.id,
+          },
+          tx,
+        )
+        return receipt
+      },
+    )
   }
 }

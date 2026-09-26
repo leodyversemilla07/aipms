@@ -3,6 +3,7 @@ import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { IdempotencyService } from '../src/shared/idempotency/idempotency.service'
+import { withAuditMaintenance } from './audit-test-utils'
 
 const service = new IdempotencyService()
 const audit = new AuditService()
@@ -16,7 +17,9 @@ const scope = (key: string) => ({
 afterAll(async () => {
   // This spec shares the database with seed-dependent suites that assume
   // findFirst() returns demo data: remove everything this file created.
-  await db.auditEntry.deleteMany({ where: { actorId: prefix } })
+  await withAuditMaintenance((tx) =>
+    tx.auditEntry.deleteMany({ where: { actorId: prefix } }),
+  )
   await db.budget.deleteMany({ where: { costCenter: prefix } })
   await db.$disconnect()
 })

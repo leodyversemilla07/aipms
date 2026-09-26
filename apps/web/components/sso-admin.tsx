@@ -17,11 +17,7 @@ type ProviderRow = {
   type: string
   createdBy: string
 }
-
-type ScimRow = {
-  providerId: string
-  maskedToken: string
-}
+type ScimRow = { providerId: string; maskedToken: string }
 
 /**
  * §16.2 — the instance's identity configuration. Admins register the org's
@@ -29,8 +25,13 @@ type ScimRow = {
  * users. Server-side this is human-admin-only; every change is audited.
  */
 export function SsoAdmin() {
+  const trpc = useTRPC()
   const { data: session } = authClient.useSession()
-  const user = session?.user as { role?: string } | undefined
+  const me = useQuery({
+    ...trpc.users.me.queryOptions(),
+    enabled: Boolean(session),
+  })
+  const user = session?.user
 
   return (
     <div
@@ -67,7 +68,7 @@ export function SsoAdmin() {
       ) : null}
 
       {user ? (
-        user.role === "admin" ? (
+        me.data?.role === "admin" ? (
           <SsoAdminBody />
         ) : (
           <p className="rounded-md border bg-card px-4 py-3 text-muted-foreground text-sm">
@@ -148,8 +149,8 @@ function SsoAdminBody() {
     })
   )
 
-  const rows = (providers.data ?? []) as unknown as ProviderRow[]
-  const scimRows = (scim.data ?? []) as unknown as ScimRow[]
+  const rows = (providers.data ?? []) as ProviderRow[]
+  const scimRows = (scim.data ?? []) as ScimRow[]
 
   return (
     <div className="flex flex-col gap-6">

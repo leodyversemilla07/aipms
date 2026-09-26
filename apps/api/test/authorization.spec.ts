@@ -9,7 +9,11 @@ import { PurchaseOrderService } from '../src/purchase-order/purchase-order.servi
 import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
-import { requireRole } from '../src/trpc/authorize'
+import {
+  assertHumanProcedureRole,
+  HUMAN_PROCEDURE_ROLES,
+  requireRole,
+} from '../src/trpc/authorize'
 
 /**
  * @workspace authorization — §10 roles and approval-route enforcement.
@@ -30,6 +34,7 @@ const created: Record<string, string[]> = {
 
 const users = {
   finance: `authz-finance-${suffix}`,
+  financeChecker: `authz-finance-checker-${suffix}`,
   procurement: `authz-procurement-${suffix}`,
   plain: `authz-plain-${suffix}`,
   admin: `authz-admin-${suffix}`,
@@ -55,6 +60,12 @@ beforeAll(async () => {
         id: users.finance,
         name: 'A Finance',
         email: `${users.finance}@test.aipms`,
+        role: 'finance',
+      },
+      {
+        id: users.financeChecker,
+        name: 'A Finance Checker',
+        email: `${users.financeChecker}@test.aipms`,
         role: 'finance',
       },
       {
@@ -118,9 +129,13 @@ async function makeBudget(limitMinor: number) {
   return budget
 }
 
-async function makeRequisition(budgetId: string, totalMinor: number) {
+async function makeRequisition(
+  budgetId: string,
+  totalMinor: number,
+  requestedBy = users.plain,
+) {
   const req = await requisitionService.create({
-    requestedBy: users.plain,
+    requestedBy,
     costCenter: `CC-AUTHZ-${suffix}`,
     budgetId,
     lines: [
@@ -162,6 +177,54 @@ describe('Approval route enforcement (§10)', () => {
       'ok',
     )
     expect(decided.outcome).toBe('APPROVED')
+  })
+
+  it('prevents a routed requester from approving their own gate', async () => {
+    await makePolicy('Threshold Maker Checker', {
+      autoApproveUpTo: 0,
+      budgetRequired: true,
+      approvalChain: ['finance'],
+    })
+    const budget = await makeBudget(100_000_000)
+    const req = await makeRequisition(budget.id, 250_000, users.finance)
+    await requisitionService.submit(req.id)
+    const gate = (await approvalService.pendingList()).find(
+      (row) => row.requisitionId === req.id,
+    )
+    if (!gate) throw new Error('expected maker/checker approval')
+    created.approval.push(gate.id)
+    expect(gate.requestedBy).toBe(users.finance)
+
+    await expect(
+      approvalService.decide(gate.id, 'approve', users.finance, 'self'),
+    ).rejects.toThrow(/maker and checker/i)
+    const decided = await approvalService.decide(
+      gate.id,
+      'approve',
+      users.financeChecker,
+      'independent review',
+    )
+    expect(decided.outcome).toBe('APPROVED')
+  })
+
+  it('requires explicit evidence for approval overrides', async () => {
+    await makePolicy('Threshold Override Evidence', {
+      autoApproveUpTo: 0,
+      budgetRequired: true,
+      approvalChain: ['finance'],
+    })
+    const budget = await makeBudget(100_000_000)
+    const req = await makeRequisition(budget.id, 250_000)
+    await requisitionService.submit(req.id)
+    const gate = (await approvalService.pendingList()).find(
+      (row) => row.requisitionId === req.id,
+    )
+    if (!gate) throw new Error('expected override approval')
+    created.approval.push(gate.id)
+
+    await expect(
+      approvalService.decide(gate.id, 'override', users.finance, '   '),
+    ).rejects.toThrow(/evidence reason/i)
   })
 
   it('vendor gates route to procurement: finance cannot decide them', async () => {
@@ -254,6 +317,75 @@ describe('Approval route enforcement (§10)', () => {
     await expect(
       approvalService.decide(gate.id, 'approve', 'agent-operator', 'nope'),
     ).rejects.toThrow(ForbiddenException)
+  })
+})
+
+describe('requester row-level boundary (§10)', () => {
+  it('limits ordinary requesters to their own requisitions', async () => {
+    const budget = await makeBudget(100_000_000)
+    const own = await makeRequisition(budget.id, 10_000)
+    const other = await requisitionService.create({
+      requestedBy: users.finance,
+      costCenter: `CC-AUTHZ-${suffix}`,
+      budgetId: budget.id,
+      lines: [
+        { description: 'Other requester', quantity: 1, unitPriceMinor: 1 },
+      ],
+    })
+    created.requisition.push(other.id)
+
+    const page = await requisitionService.list({
+      page: 1,
+      pageSize: 100,
+      requestedBy: users.plain,
+    })
+    expect(page.rows.map((row) => row.id)).toContain(own.id)
+    expect(page.rows.map((row) => row.id)).not.toContain(other.id)
+    await expect(
+      requisitionService.detail(other.id, users.plain),
+    ).rejects.toThrow()
+    await expect(
+      requisitionService.submit(other.id, undefined, users.plain),
+    ).rejects.toThrow()
+  })
+})
+
+describe('central human procedure policy (§10)', () => {
+  it('covers the complete current tRPC surface', () => {
+    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(104)
+  })
+
+  it('grants procurement and finance capabilities without conflating them', () => {
+    expect(() =>
+      assertHumanProcedureRole('vendor.create', 'procurement'),
+    ).not.toThrow()
+    expect(() =>
+      assertHumanProcedureRole('paymentRun.approve', 'finance'),
+    ).not.toThrow()
+    expect(() => assertHumanProcedureRole('vendor.create', 'finance')).toThrow(
+      TRPCError,
+    )
+    expect(() =>
+      assertHumanProcedureRole('paymentRun.approve', 'procurement'),
+    ).toThrow(TRPCError)
+  })
+
+  it('limits ordinary users and denies unclassified procedures by default', () => {
+    expect(() =>
+      assertHumanProcedureRole('requisition.create', 'user'),
+    ).not.toThrow()
+    expect(() => assertHumanProcedureRole('invoice.list', 'user')).toThrow(
+      TRPCError,
+    )
+    expect(() =>
+      assertHumanProcedureRole('newRouter.unreviewed', 'admin'),
+    ).toThrow(TRPCError)
+  })
+
+  it('lets admins use every classified procedure', () => {
+    for (const path of Object.keys(HUMAN_PROCEDURE_ROLES)) {
+      expect(() => assertHumanProcedureRole(path, 'admin')).not.toThrow()
+    }
   })
 })
 

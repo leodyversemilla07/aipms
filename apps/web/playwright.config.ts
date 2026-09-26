@@ -9,6 +9,7 @@ import { defineConfig, devices } from "@playwright/test"
  */
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "staging-workload.spec.ts",
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,
@@ -40,7 +41,7 @@ export default defineConfig({
       // the API, which never settles on a fresh checkout).
       command: "node --import @swc-node/register/esm-register src/main.ts",
       cwd: "../api",
-      url: "http://127.0.0.1:3001/",
+      url: "http://localhost:3001/",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: "pipe",

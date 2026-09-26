@@ -72,21 +72,35 @@ export class AnalyticsService {
     const months = Math.min(Math.max(Math.trunc(monthsIn) || 3, 1), 12)
     const since = this.since(months)
 
-    const [gateRows, decided, exceptions, budgets, runCounts, bySkill] =
+    const [gateRows, latencyRows, exceptions, budgets, runCounts, bySkill] =
       await Promise.all([
         db.approval.groupBy({
           by: ['kind', 'status'],
           where: { createdAt: { gte: since } },
           _count: { _all: true },
         }),
-        db.approval.findMany({
-          where: {
-            createdAt: { gte: since },
-            status: { in: ['approved', 'rejected', 'overridden'] },
-            decidedAt: { not: null },
-          },
-          select: { createdAt: true, decidedAt: true },
-        }),
+        // Compute percentiles in PostgreSQL rather than loading every approval
+        // duration into API memory (the dashboard window may contain millions).
+        db.$queryRaw<
+          {
+            count: bigint
+            medianMinutes: number | null
+            p90Minutes: number | null
+          }[]
+        >(Prisma.sql`
+          select count(*)::bigint as count,
+                 percentile_cont(0.5) within group (
+                   order by extract(epoch from ("decidedAt" - "createdAt")) / 60
+                 )::float8 as "medianMinutes",
+                 percentile_cont(0.9) within group (
+                   order by extract(epoch from ("decidedAt" - "createdAt")) / 60
+                 )::float8 as "p90Minutes"
+          from approval
+          where "createdAt" >= ${since}
+            and status in ('approved', 'rejected', 'overridden')
+            and "decidedAt" is not null
+            and "decidedAt" >= "createdAt"
+        `),
         // Monthly exception volume across the whole window (raw SQL for the
         // date truncation; Postgres-only by datasource contract).
         db.$queryRaw<{ month: string; count: bigint }[]>(
@@ -101,10 +115,13 @@ export class AnalyticsService {
           `,
         ),
         db.budget.findMany({
+          where: { updatedAt: { gte: since } },
           orderBy: [{ costCenter: 'asc' }, { period: 'desc' }],
+          take: 1_000,
         }),
         db.agentRun.groupBy({
           by: ['status'],
+          where: { startedAt: { gte: since } },
           _count: { _all: true },
         }),
         db.$queryRaw<SkillStat[]>(
@@ -114,6 +131,7 @@ export class AnalyticsService {
                    sum(case when status = 'succeeded' then 1 else 0 end)::int as succeeded,
                    sum(case when status = 'failed' then 1 else 0 end)::int as failed
             from "agentRun", unnest(skills) as s
+            where "startedAt" >= ${since}
             group by s
             order by total desc
           `,
@@ -134,24 +152,7 @@ export class AnalyticsService {
       })
     }
 
-    // Decision latency: minutes from creation to decision.
-    const latencies = decided
-      .map((a) =>
-        a.decidedAt && a.createdAt
-          ? (a.decidedAt.getTime() - a.createdAt.getTime()) / 60_000
-          : null,
-      )
-      .filter((n): n is number => n !== null && n >= 0)
-      .sort((a, b) => a - b)
-    const pick = (p: number) => {
-      if (latencies.length === 0) return null
-      const idx = Math.min(
-        latencies.length - 1,
-        Math.floor(p * latencies.length),
-      )
-      const value = latencies[idx]
-      return value === undefined ? null : Math.round(value)
-    }
+    const latency = latencyRows[0]
 
     const runStatus = new Map(
       runCounts.map((r) => [r.status, r._count._all] as const),
@@ -167,9 +168,13 @@ export class AnalyticsService {
         byKind,
       },
       sla: {
-        decidedCount: latencies.length,
-        medianMinutes: pick(0.5),
-        p90Minutes: pick(0.9),
+        decidedCount: Number(latency?.count ?? 0),
+        medianMinutes:
+          latency?.medianMinutes == null
+            ? null
+            : Math.round(latency.medianMinutes),
+        p90Minutes:
+          latency?.p90Minutes == null ? null : Math.round(latency.p90Minutes),
       },
       exceptionVolume: exceptions.map((r) => ({
         month: r.month,

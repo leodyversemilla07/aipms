@@ -14,7 +14,7 @@ async function trpcGet(
   path: string,
   input: unknown
 ): Promise<Record<string, unknown>> {
-  const res = await request.get(`http://127.0.0.1:3001/api/trpc/${path}`, {
+  const res = await request.get(`http://localhost:3001/api/trpc/${path}`, {
     params: { input: JSON.stringify({ json: input }) },
   })
   expect(res.ok(), `tRPC ${path} failed`).toBeTruthy()
@@ -38,7 +38,7 @@ test("gated message queues, approves, and lands in sent", async ({ page }) => {
   const vendorId = vendors?.[0]?.id
   if (!vendorId) throw new Error("seeded vendor missing")
 
-  await page.request.post("http://127.0.0.1:3000/api/trpc/messaging.submit", {
+  await page.request.post("http://localhost:3000/api/trpc/messaging.submit", {
     data: {
       idempotencyKey: `e2e-msg-${suffix}`,
       vendorId,

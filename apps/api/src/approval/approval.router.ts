@@ -16,12 +16,22 @@ import { ApprovalService } from './approval.service'
 
 const idInput = z.object({ id: z.string().min(1) })
 
-const decideInput = z.object({
-  id: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  verdict: z.enum(['approve', 'reject', 'override']),
-  evidence: z.string().max(1000).optional(),
-})
+const decideInput = z
+  .object({
+    id: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    verdict: z.enum(['approve', 'reject', 'override']),
+    evidence: z.string().max(1000).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.verdict === 'override' && !input.evidence?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['evidence'],
+        message: 'Override evidence is required',
+      })
+    }
+  })
 
 @Router({ alias: 'approval' })
 @UseMiddlewares(AuthMiddleware)

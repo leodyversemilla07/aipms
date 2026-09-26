@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml/badge.svg)](https://github.com/leodyversemilla07/aipms/actions/workflows/ci.yml)
 
-**Status:** Enterprise-ready (v0.5) | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
+**Status:** Unreleased production-hardening release candidate | **Deployment:** Single-tenant, self-hostable | **Runtime:** NestJS + tRPC + Next.js + eve
 
 ---
 
@@ -10,9 +10,9 @@
 
 AIPMS is a **procurement management system where AI agents are the primary users**. Unlike traditional PMS tools that put humans in charge of every step, AIPMS flips the model:
 
-- **Agents handle routine procurement workflows** end-to-end (requisitions → POs → invoice matching → payment)
-- **Humans supervise, approve, and resolve exceptions** through a web cockpit
-- **Every action is attributable, auditable, and replayable**
+- **Agents prepare routine procurement workflows** from requisitions through sourcing, POs, receipts, and invoice matching
+- **Humans supervise and retain protected decisions** including approvals, quote awards, signatures, beneficiary verification, and payment execution
+- **Every action is attributable and auditable; external effects are durably recoverable without unsafe automatic replay**
 
 The system is designed for enterprise organizations that need:
 - Automated procurement of routine purchases within budget/policy guardrails
@@ -40,7 +40,7 @@ The system is designed for enterprise organizations that need:
               ┌──────▼──────┐
               │   NestJS    │
               │  Auth: M2M  │  ← Better Auth for humans
-              │  Bearer: agent │  ← Service tokens for agents
+              │  Bearer: agent │  ← Five-minute scoped tokens for agents
               └──────┬──────┘
                      │
               ┌──────▼──────┐
@@ -139,7 +139,7 @@ aipms/
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
 | `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 97 procedures across 21 routers
+**Total:** 104 procedures across 21 routers
 
 ---
 
@@ -160,7 +160,7 @@ aipms/
 
 ### Prerequisites
 - Node.js 24.x
-- pnpm 10.33.4+
+- pnpm 11.23.0+
 - Docker (for PostgreSQL)
 
 ### Install Dependencies
@@ -170,6 +170,7 @@ pnpm install
 
 ### Setup Database
 ```bash
+# First copy .env.example to .env and fill the required Compose values.
 # Start PostgreSQL
 docker compose up -d postgres
 
@@ -210,17 +211,47 @@ AUTH_SEED_DEMO=1
 
 ## Enterprise Deployment
 
+Compose binds PostgreSQL, API, and web host ports to `127.0.0.1` by default. Put a TLS-terminating reverse proxy with request-size, timeout, and rate limits in front of the web service; browser API/auth traffic is proxied internally by Next.js. Change `WEB_BIND_ADDRESS` or `API_BIND_ADDRESS` only for an intentional firewalled network path—never to bypass TLS or authentication.
+
+Validate a restricted deployment environment file before starting containers:
+
+```bash
+pnpm deployment:preflight -- /secure/path/production.env
+```
+
 ### Backup & restore (§16.2.1)
 
 ```bash
 # One-off or cron-scheduled logical dump (keeps last 14 by default)
 ./scripts/backup.sh /var/backups/aipms        # AIPMS_BACKUP_KEEP=30 to override
 
-# Rollback: stop writers, load a dump, restart on the previous image tag
+# Alertable freshness and integrity check
+./scripts/backup-health.sh /var/backups/aipms
+
+# Rollback: stop writers, validate, load a dump, then migrate and restart
 ./scripts/restore.sh backups/aipms-20260825-020000.sql.gz
 ```
 
-Restore verifies the archive integrity before touching the database and stops web/agent during the window; the api re-runs `prisma migrate deploy` on boot, so restoring an older schema version is safe.
+Backups are published atomically with a SHA-256 sidecar. Restore verifies the checksum and loads the full SQL stream into a disposable validation database before touching the target. It then stops every application writer, terminates stale target sessions, restores in one database transaction, validates the migration ledger, and force-recreates the API so `prisma migrate deploy` runs before dependants restart. A failed target restore rolls back and leaves writers stopped for investigation. See [`docs/disaster-recovery.md`](docs/disaster-recovery.md) for monitoring and the staging drill procedure.
+
+### Production image smoke test
+
+Build all deployment targets, start an isolated PostgreSQL/API/web stack, apply migrations, verify the production health surfaces, run a read-only concurrency regression, and prove a backup/restore round trip with a disposable data probe:
+
+```bash
+./scripts/production-smoke.sh
+```
+
+The script uses dedicated default host ports (`3100`, `3101`, and `55432`) and removes its containers and volume when it exits. Tagged releases publish multi-architecture, immutable-digest images with SBOMs, build provenance, and keyless Sigstore signatures that are verified before the workflow completes. See [`docs/capacity-testing.md`](docs/capacity-testing.md) for the production-safe probe and staging protocol.
+
+### Health and monitoring
+
+- `GET /health/live` confirms that the API process is running without touching dependencies.
+- `GET /health/ready` verifies PostgreSQL connectivity and returns HTTP 503 while the instance must be removed from load-balancer rotation.
+- `GET /health/operations` returns authenticated, low-cardinality exception counters for dead letters, stale claims/runs, failed messaging, and ambiguous ERP dispatches. Supply `Authorization: Bearer $OPERATIONS_MONITORING_TOKEN`.
+- `GET /health` remains a compatibility alias for readiness.
+
+See [`docs/operations-monitoring.md`](docs/operations-monitoring.md) for alert thresholds and response ownership, and [`docs/staging-validation.md`](docs/staging-validation.md) for TLS, security-header, identity, integration, and secret-rotation release checks.
 
 ### Single-tenant, Self-hostable
 
@@ -234,9 +265,11 @@ AIPMS is designed for **enterprise-only** deployment:
 ### Security
 
 - Better Auth with session + bearer tokens
-- Service token auth for agent runtime
-- Audit trail for all actions
-- Idempotency keys everywhere (agent retries safe)
+- Short-lived scoped agent bearers issued through an authenticated bootstrap exchange
+- Hash-chained audit trail with database-enforced append-only rows
+- Maker/checker separation for approvals, PO signatures, beneficiary changes,
+  payment-run overrides, and ambiguous ERP dispatch resolution
+- Idempotency keys on retryable commands; durable claims for ambiguous external effects
 
 ### Configuration
 
@@ -246,9 +279,17 @@ Key environment variables:
 |----------|---------|
 | `DATABASE_URL` | Postgres connection |
 | `BETTER_AUTH_SECRET` | Auth signing key |
-| `AIPMS_SERVICE_TOKEN` | M2M token for agent API |
+| `AIPMS_TOKEN_ENCRYPTION_SECRET` | Independent AES-GCM envelope key for ERP credentials |
+| `AIPMS_SERVICE_TOKEN` | Bootstrap credential for the agent token exchange and service API |
+| `AIPMS_AGENT_SIGNING_SECRET` | Independent key for five-minute scoped agent bearers |
+| `OPERATIONS_MONITORING_TOKEN` | Dedicated read-only token for operational exception gauges |
+| `AIPMS_SMTP_HOST` / `AIPMS_SMTP_FROM` | TLS SMTP relay used for real vendor-message delivery |
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
-| `AGENT_AUTORUN` | Enable agent drain loop |
+| `AGENT_AUTORUN` | Enable the unattended intake drain loop |
+| `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes |
+| `AIPMS_AGENT_SCOPES` | Replace the default automation capability grants |
+| `AUTOMATION_LEASE_TIMEOUT_MS` | Cross-replica scheduler lease timeout |
+| `EVENT_RELAY_CLAIM_TTL_MS` | Recovery window for abandoned outbox claims |
 
 ---
 
@@ -263,7 +304,7 @@ import type { AppRouter } from "@workspace/api/src/generated/server"
 export const trpc = createTRPCReact<AppRouter>()
 ```
 
-All mutations use idempotency keys. Agent actions are auditable with `actorKind: 'agent'`.
+Retryable domain mutations use idempotency keys. External QBO and messaging effects use durable dispatch claims and evidence-based reconciliation instead of unsafe automatic retries. Credential rotation and OAuth administration remain deliberate non-replayable operations. Agent actions are auditable with `actorKind: 'agent'`.
 
 ---
 
@@ -273,20 +314,25 @@ The agent (`apps/agent`) runs on the eve framework. See `apps/agent/AGENTS.md` f
 
 ### Tool Surface
 
-The eve agent calls tRPC procedures directly:
-- `agent.process({ id, idempotencyKey })` — Classify & register an invoice
-- `agent.batch({ limit })` — Drain pending intake documents
+The eve agent uses a default-deny tRPC tool surface. Intake tools include:
+- `list_intake` and `get_intake_document` — inspect bounded, prompt-safe projections; payment credentials and binary bodies are omitted server-side
+- `classify_document` and `register_invoice` — persist a validated invoice payload and run deterministic tax/matching logic
+- `agent.process({ id, idempotencyKey })` and `agent.batch({ limit })` — process deterministic structured intake only
 
-### Service Token Auth
+Text, JSON, XML, and CSV email attachments receive bounded UTF-8 projections. PDF/image invoices require the configured OCR integration or human review; agents must not infer missing content.
 
-The agent authenticates with a bearer token:
+### Agent machine authentication
+
+The production agent exchanges its bootstrap secret for a scoped bearer that
+expires after five minutes. Generate independent bootstrap and signing secrets:
+
 ```bash
-# Generate
-openssl rand -base64 32
-
-# Set in .env
-AIPMS_SERVICE_TOKEN="your-token-here"
+AIPMS_SERVICE_TOKEN="$(openssl rand -base64 32)"
+AIPMS_AGENT_SIGNING_SECRET="$(openssl rand -base64 32)"
+AIPMS_AGENT_ID="procurement-agent-prod-1"
 ```
+
+Static bootstrap credentials are not accepted by production tRPC endpoints.
 
 ---
 
@@ -324,9 +370,9 @@ pnpm db:studio     # Prisma Studio UI
 | 2 | ✓ | Requisition → PO workflow |
 | 3 | ✓ | Agent skills (intake drain, sourcing, ops; scoped M2M) |
 | 4 | ✓ | Invoicing & 3-way match (receipts, intake, matching) |
-| 5 | ✓* | Payment runs & vendor messaging relay (*ERP sync pending) |
+| 5 | ✓ | Payment runs, vendor messaging relay, and QBO ERP synchronization |
 | 6 | ✓ | Hardening (hash-chained audit, event DLQ, quotas) |
-| 7 | ✓ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, qualified signing) |
+| 7 | ◐ | Enterprise packaging (Docker Compose, offline LLM, SSO/SCIM, cryptographic PO signing; legal qualification is deployment-specific) |
 
 ---
 

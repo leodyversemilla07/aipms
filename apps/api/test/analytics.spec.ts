@@ -35,6 +35,7 @@ describe('AnalyticsService (§14)', () => {
         route: [],
         createdAt: new Date(now - 10 * 60_000),
         decidedAt: new Date(now - 5 * 60_000),
+        requestedBy: 'u2',
         decidedBy: 'u1',
       },
       // decided slowly (100 min)
@@ -45,6 +46,7 @@ describe('AnalyticsService (§14)', () => {
         route: [],
         createdAt: new Date(now - 200 * 60_000),
         decidedAt: new Date(now - 100 * 60_000),
+        requestedBy: 'u1',
         decidedBy: 'u2',
       },
     ]

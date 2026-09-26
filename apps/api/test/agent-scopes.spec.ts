@@ -53,6 +53,7 @@ describe('Agent capability model', () => {
         'sso.registerProvider',
         'sso.generateScimToken',
         'approval.decide',
+        'sourcing.award',
         'purchaseOrder.sign',
         'nonsense.router.procedure',
       ]) {
@@ -64,12 +65,17 @@ describe('Agent capability model', () => {
       const all = DEFAULT_AGENT_SCOPES
       for (const path of [
         'intake.list',
+        'intake.detail',
         'intake.ingest',
         'intake.classify',
         'intake.registerInvoice',
         'invoice.compute',
         'requisition.create',
         'requisition.submit',
+        'sourcing.request',
+        'sourcing.receive',
+        'sourcing.compare',
+        'approval.escalateOverdue',
         'purchaseOrder.issue',
         'purchaseOrder.confirm',
         'events.poll',

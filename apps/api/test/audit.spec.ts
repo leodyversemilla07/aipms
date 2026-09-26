@@ -1,6 +1,7 @@
 import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
+import { withAuditMaintenance } from './audit-test-utils'
 
 /**
  * @workspace audit service — append-only trail + content hash (§9).
@@ -10,7 +11,9 @@ const suffix = Math.random().toString(36).slice(2, 8)
 const auditIds: string[] = []
 
 afterAll(async () => {
-  await db.auditEntry.deleteMany({ where: { id: { in: auditIds } } })
+  await withAuditMaintenance((tx) =>
+    tx.auditEntry.deleteMany({ where: { id: { in: auditIds } } }),
+  )
   await db.$disconnect()
 })
 

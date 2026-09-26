@@ -2,7 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
-import { useState } from "react"
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@workspace/ui/components/native-select"
+import { useEffect, useState } from "react"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -18,6 +22,11 @@ type ReqRow = {
     lineTotalMinor: number
   }>
 }
+type VendorRow = { id: string; name: string }
+type QuoteRow = {
+  vendorId: string
+  status: "requested" | "received" | "accepted" | "rejected"
+}
 
 function rowTotal(req: ReqRow): number {
   return req.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0)
@@ -28,7 +37,7 @@ function RequisitionCard({
   vendorRows,
 }: {
   req: ReqRow
-  vendorRows: Array<{ id: string; name: string }>
+  vendorRows: VendorRow[]
 }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
@@ -38,6 +47,16 @@ function RequisitionCard({
   const [error, setError] = useState<string | null>(null)
 
   const issue = useMutation(trpc.purchaseOrder.issue.mutationOptions())
+  const quotes = useQuery(
+    trpc.sourcing.list.queryOptions({ requisitionId: req.id })
+  )
+  const acceptedQuote = ((quotes.data ?? []) as QuoteRow[]).find(
+    (quote) => quote.status === "accepted"
+  )
+
+  useEffect(() => {
+    if (acceptedQuote) setVendorId(acceptedQuote.vendorId)
+  }, [acceptedQuote])
 
   async function doIssue() {
     setNotice(null)
@@ -77,18 +96,18 @@ function RequisitionCard({
       </p>
 
       <div className="flex items-center gap-2">
-        <select
+        <NativeSelect
           value={vendorId}
-          onChange={(e) => setVendorId(e.target.value)}
-          className="h-9 flex-1 rounded-md border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+          disabled={Boolean(acceptedQuote)}
+          onChange={(event) => setVendorId(event.target.value)}
         >
-          <option value="">Vendor…</option>
-          {vendorRows.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
+          <NativeSelectOption value="">Vendor…</NativeSelectOption>
+          {vendorRows.map((vendor) => (
+            <NativeSelectOption key={vendor.id} value={vendor.id}>
+              {vendor.name}
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         <Button
           size="sm"
           disabled={!vendorId || issue.isPending}
@@ -97,6 +116,12 @@ function RequisitionCard({
           {issue.isPending ? "Issuing…" : "Issue PO"}
         </Button>
       </div>
+
+      {acceptedQuote ? (
+        <p className="text-muted-foreground text-xs">
+          Vendor locked to the accepted sourcing award.
+        </p>
+      ) : null}
 
       {notice ? (
         <p className="rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-600 text-xs">
@@ -125,11 +150,8 @@ export function IssuePo() {
   const vendors = useQuery(
     trpc.vendor.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (requisitions.data?.rows ?? []) as unknown as ReqRow[]
-  const vendorRows = (vendors.data?.rows ?? []) as unknown as Array<{
-    id: string
-    name: string
-  }>
+  const rows = (requisitions.data?.rows ?? []) as ReqRow[]
+  const vendorRows = (vendors.data?.rows ?? []) as VendorRow[]
   const approved = rows.filter((r) => r.status === "approved")
 
   return (

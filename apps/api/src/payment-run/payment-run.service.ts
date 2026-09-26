@@ -12,6 +12,7 @@ import {
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { assertDatabaseInt } from '../shared/money/minor-units'
+import { type ListInput, paginate } from '../trpc/list-input'
 import { type BuiltBatch, buildPaymentBatch } from './batch'
 import {
   freezeBeneficiary,
@@ -79,7 +80,9 @@ export class PaymentRunService {
       (vendor) =>
         vendor.bankAccount == null ||
         vendor.bankAccountVerifiedAt == null ||
-        vendor.bankAccountChangedAt != null,
+        vendor.bankAccountVerifiedBy == null ||
+        vendor.bankAccountChangedAt != null ||
+        vendor.bankAccountSubmittedBy != null,
     )
     if (unverified.length > 0) {
       throw new BadRequestException(
@@ -399,10 +402,7 @@ export class PaymentRunService {
         )
       }
       if (status === 'paid') {
-        await tx.invoice.update({
-          where: { id: line.invoiceId },
-          data: { status: 'paid' },
-        })
+        await this.settlePaidInvoice(line.invoiceId, tx)
       }
       const remaining = await tx.paymentRunLine.count({
         where: { runId, status: 'planned' },
@@ -423,24 +423,99 @@ export class PaymentRunService {
     return db.$transaction(runTx)
   }
 
-  async voidRun(runId: string, tx: Prisma.TransactionClient = db) {
+  /**
+   * Move a paid invoice from committed budget to actual spend exactly once.
+   * The caller already won the payment-line planned → terminal transition;
+   * this method locks the invoice and its budget path before updating totals.
+   */
+  private async settlePaidInvoice(
+    invoiceId: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    await tx.$queryRaw`
+      SELECT id FROM "invoice" WHERE id = ${invoiceId} FOR UPDATE
+    `
+    const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } })
+    if (!invoice) throw new NotFoundException(`Invoice ${invoiceId} not found`)
+    if (invoice.status === 'paid') return
+
+    await tx.invoice.update({
+      where: { id: invoice.id },
+      data: { status: 'paid' },
+    })
+
+    if (!invoice.poId) return
+    const po = await tx.purchaseOrder.findUnique({
+      where: { id: invoice.poId },
+      select: { requisitionId: true },
+    })
+    if (!po?.requisitionId) return
+    const req = await tx.requisition.findUnique({
+      where: { id: po.requisitionId },
+      select: { budgetId: true },
+    })
+    if (!req?.budgetId) return
+
+    await tx.$queryRaw`
+      SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
+    `
+    const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
+    if (!budget) return
+    await tx.budget.update({
+      where: { id: budget.id },
+      data: {
+        committedMinor: Math.max(
+          0,
+          budget.committedMinor - invoice.amountMinor,
+        ),
+        spentMinor: { increment: invoice.amountMinor },
+      },
+    })
+  }
+
+  async voidRun(
+    runId: string,
+    voidedBy: string,
+    reason: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    if (!reason.trim()) {
+      throw new BadRequestException('A payment-run void reason is required')
+    }
     const run = await tx.paymentRun.findUnique({ where: { id: runId } })
     if (!run) throw new NotFoundException(`Payment run ${runId} not found`)
     if (run.status !== 'draft' && run.status !== 'approved') {
       throw new ConflictException(`Run ${run.runNumber} is ${run.status}`)
     }
+    if (run.status === 'approved' && run.createdBy === voidedBy) {
+      throw new BadRequestException(
+        'The payment-run maker cannot override an approved run',
+      )
+    }
     const changed = await tx.paymentRun.updateMany({
       where: { id: runId, status: { in: ['draft', 'approved'] } },
-      data: { status: 'voided' },
+      data: {
+        status: 'voided',
+        voidedBy,
+        voidedAt: new Date(),
+        voidReason: reason.trim(),
+      },
     })
     if (changed.count !== 1)
       throw new ConflictException('Payment run changed; reload before voiding')
     return tx.paymentRun.findUniqueOrThrow({ where: { id: runId } })
   }
 
-  list(where: { status?: PaymentRunStatus } = {}) {
+  list(input: Partial<ListInput> & { status?: PaymentRunStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where = input.status ? { status: input.status } : {}
     return db.paymentRun.findMany({
       where,
+      skip,
+      take,
       orderBy: { createdAt: 'desc' },
       include: { lines: true },
     })

@@ -3,19 +3,128 @@ name: Publish Docker images
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full main-branch commit SHA to publish as a staging candidate
+        required: true
+        type: string
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-push:
+  verify-release:
+    name: Verify release source
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aipms
+          POSTGRES_PASSWORD: aipms
+          POSTGRES_DB: aipms
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aipms -d aipms"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
+      BETTER_AUTH_SECRET: release-verification-only-secret
+      SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable source selection
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            git fetch origin main
+            git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          fi
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare release database
+        run: |
+          pnpm db:generate
+          pnpm db:deploy
+          pnpm db:seed
+
+      - name: Verify source
+        run: |
+          pnpm check
+          ./scripts/test-deployment-preflight.sh
+          pnpm release:gate:test
+          pnpm operations:check:test
+          pnpm typecheck
+          pnpm --filter api test
+          pnpm --filter agent test
+          pnpm --filter tax test
+          pnpm audit --prod
+
+  build-and-push:
+    name: Build, attest, and publish
+    needs: verify-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      COMPOSE_PROJECT_NAME: aipms-release-${{ github.run_id }}
+      API_PORT: "3101"
+      WEB_PORT: "3100"
+      POSTGRES_PORT: "55432"
+      POSTGRES_PASSWORD: release-smoke-db-password
+      BETTER_AUTH_SECRET: release-smoke-auth-secret-at-least-32-bytes
+      AIPMS_SERVICE_TOKEN: release-smoke-service-token
+      APP_URL: http://localhost:3100
+      AUTH_TRUSTED_ORIGINS: http://localhost:3100
+      REGISTRY: ghcr.io
+      API_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-api
+      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-web
+      AGENT_IMAGE: ghcr.io/${{ github.repository_owner }}/aipms-agent
+      SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
+      PUBLISH_TAG: ${{ github.event_name == 'push' && github.ref_name || format('candidate-{0}', inputs.commit_sha) }}
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify build source
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+      - name: Smoke production images and recovery procedures
+        run: ./scripts/production-smoke.sh
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -28,36 +137,121 @@ jobs:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build and push API image
-      - name: Build & push API image
-        uses: docker/build-push-action@v5
+      - name: Build and push API image
+        id: build-api
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: api
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-api:${{ github.ref_name }}
+          tags: |
+            ${{ env.API_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.API_IMAGE }}:sha-${{ env.SOURCE_SHA }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
-      # Build and push Web image
-      - name: Build & push Web image
-        uses: docker/build-push-action@v5
+      - name: Build and push Web image
+        id: build-web
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: web
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-web:${{ github.ref_name }}
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.WEB_IMAGE }}:sha-${{ env.SOURCE_SHA }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
-      # Build and push Agent image
-      - name: Build & push Agent image
-        uses: docker/build-push-action@v5
+      - name: Build and push Agent image
+        id: build-agent
+        uses: docker/build-push-action@v6
         with:
           context: .
           target: agent
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/aipms-agent:${{ github.ref_name }}
+          tags: |
+            ${{ env.AGENT_IMAGE }}:${{ env.PUBLISH_TAG }}
+            ${{ env.AGENT_IMAGE }}:sha-${{ env.SOURCE_SHA }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
+            org.opencontainers.image.version=${{ env.SOURCE_SHA }}
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=agent
+          cache-to: type=gha,mode=max,scope=agent
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Sign immutable image digests with GitHub OIDC
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+        run: |
+          cosign sign --yes "${API_IMAGE}@${API_DIGEST}"
+          cosign sign --yes "${WEB_IMAGE}@${WEB_DIGEST}"
+          cosign sign --yes "${AGENT_IMAGE}@${AGENT_DIGEST}"
+
+      - name: Verify published signatures
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/publish.yml@${{ github.ref }}
+        run: |
+          for image in \
+            "${API_IMAGE}@${API_DIGEST}" \
+            "${WEB_IMAGE}@${WEB_DIGEST}" \
+            "${AGENT_IMAGE}@${AGENT_DIGEST}"; do
+            cosign verify \
+              --certificate-identity "${CERTIFICATE_IDENTITY}" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "${image}"
+          done
+
+      - name: Write immutable deployment manifest
+        env:
+          API_DIGEST: ${{ steps.build-api.outputs.digest }}
+          WEB_DIGEST: ${{ steps.build-web.outputs.digest }}
+          AGENT_DIGEST: ${{ steps.build-agent.outputs.digest }}
+        run: |
+          mkdir -p release-evidence
+          jq -n \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg version "$PUBLISH_TAG" \
+            --arg workflowRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg api "${API_IMAGE}@${API_DIGEST}" \
+            --arg web "${WEB_IMAGE}@${WEB_DIGEST}" \
+            --arg agent "${AGENT_IMAGE}@${AGENT_DIGEST}" \
+            '{sourceSha:$sourceSha,version:$version,workflowRun:$workflowRun,images:{api:$api,web:$web,agent:$agent},sbom:true,provenance:"mode=max",sigstore:"verified"}' \
+            > release-evidence/image-manifest.json
+
+      - name: Upload immutable deployment manifest
+        uses: actions/upload-artifact@v6
+        with:
+          name: image-manifest-${{ env.SOURCE_SHA }}
+          path: release-evidence/image-manifest.json
+          if-no-files-found: error
+          retention-days: 90

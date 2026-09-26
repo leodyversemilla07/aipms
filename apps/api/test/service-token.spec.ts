@@ -4,6 +4,7 @@ import request from 'supertest'
 import type { App } from 'supertest/types'
 import { afterAll, describe, it } from 'vitest'
 import { AppModule } from './../src/app.module'
+import { withAuditMaintenance } from './audit-test-utils'
 
 /**
  * @workspace agent M2M — the token-guarded REST batch endpoint that the eve
@@ -11,10 +12,12 @@ import { AppModule } from './../src/app.module'
  */
 describe('AgentController M2M (/api/service/agent/batch)', () => {
   const token = 'demo-service-token-for-tests'
+  const signingSecret = 'service-test-signing-secret-at-least-32-bytes'
   let app: INestApplication<App>
 
   async function boot() {
     process.env.AIPMS_SERVICE_TOKEN = token
+    process.env.AIPMS_AGENT_SIGNING_SECRET = signingSecret
     const moduleFixture = await Test.createTestingModule({
       imports: [AppModule],
     }).compile()
@@ -22,11 +25,15 @@ describe('AgentController M2M (/api/service/agent/batch)', () => {
     await app.init()
   }
 
-  it('runs a batch with a valid service token', async () => {
+  it('runs a batch with a short-lived scoped token', async () => {
     await boot()
+    const exchange = await request(app.getHttpServer())
+      .post('/api/service/agent/token')
+      .set('Authorization', `Bearer ${token}`)
+      .send({})
     const res = await request(app.getHttpServer())
       .post('/api/service/agent/batch')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${exchange.body.accessToken}`)
       .send({ limit: 5 })
     expect(res.status).toBe(201)
     expect(typeof res.body.documents).toBe('number')
@@ -42,6 +49,15 @@ describe('AgentController M2M (/api/service/agent/batch)', () => {
     expect(res.status).toBe(401)
   })
 
+  it('rejects the bootstrap token on the mutation endpoint', async () => {
+    await boot()
+    const res = await request(app.getHttpServer())
+      .post('/api/service/agent/batch')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ limit: 5 })
+    expect(res.status).toBe(401)
+  })
+
   it('rejects a wrong token', async () => {
     await boot()
     const res = await request(app.getHttpServer())
@@ -53,6 +69,10 @@ describe('AgentController M2M (/api/service/agent/batch)', () => {
 
   afterAll(async () => {
     delete process.env.AIPMS_SERVICE_TOKEN
+    delete process.env.AIPMS_AGENT_SIGNING_SECRET
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { action: 'agent.token.issue' } }),
+    )
     await app?.close()
   })
 })

@@ -24,6 +24,7 @@ import {
   FileClockIcon,
   InboxIcon,
   LayoutDashboardIcon,
+  RotateCcwIcon,
   WalletIcon,
 } from "lucide-react"
 import Link from "next/link"
@@ -38,6 +39,7 @@ const pageSections: Record<string, string> = {
   "/intake": "Intake",
   "/audit": "Audit",
   "/master-data": "Master data",
+  "/operations": "Recovery",
   "/sso": "Identity",
 }
 
@@ -48,6 +50,7 @@ const desks = [
   { title: "Intake", href: "/intake", icon: InboxIcon },
   { title: "Audit", href: "/audit", icon: FileClockIcon },
   { title: "Master data", href: "/master-data", icon: DatabaseIcon },
+  { title: "Recovery", href: "/operations", icon: RotateCcwIcon },
 ] as const
 
 function AppSidebar({ email }: { email: string }) {

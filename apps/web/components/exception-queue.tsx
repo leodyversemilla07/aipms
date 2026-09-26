@@ -40,13 +40,14 @@ const KIND_LABEL: Record<string, string> = {
   poCancellation: "PO cancellation",
 }
 
-type QueueApprovalRow = {
+/** Normalize JSON citations before rendering them. */
+type ApprovalOutput = {
   id: string
   kind: string
   gateOutcome: string
   evidence: string | null
-  citations?: string[] | null
-  createdAt: string
+  citations: unknown
+  createdAt: string | Date
   requisition: {
     lines: Array<{
       description: string
@@ -54,6 +55,18 @@ type QueueApprovalRow = {
       unitPriceMinor: number
     }>
   } | null
+}
+type QueueApprovalRow = Omit<ApprovalOutput, "citations"> & {
+  citations: string[]
+}
+
+function normalizeApproval(row: ApprovalOutput): QueueApprovalRow {
+  return {
+    ...row,
+    citations: Array.isArray(row.citations)
+      ? row.citations.filter((c): c is string => typeof c === "string")
+      : [],
+  }
 }
 
 function lineSummary(
@@ -83,7 +96,8 @@ export function ExceptionQueue() {
       },
     })
   )
-  const rows = (pending.data ?? []) as unknown as QueueApprovalRow[]
+  const pendingRows = pending.data as ApprovalOutput[] | undefined
+  const rows: QueueApprovalRow[] = (pendingRows ?? []).map(normalizeApproval)
 
   function submit(verdict: "approve" | "reject") {
     if (!review || decide.isPending) return

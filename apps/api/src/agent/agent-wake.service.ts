@@ -1,9 +1,8 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
-import { PurchaseOrderService } from '../purchase-order/purchase-order.service'
 import { EventRelayService } from '../shared/events/event-relay.service'
-import { AgentService } from './agent.service'
+import { AgentCommandService } from './agent-command.service'
 
 /** Shape the relay hands to handlers (§13 outbox rows). */
 interface RelayedEvent {
@@ -26,21 +25,23 @@ const asJson = (value: unknown): Prisma.InputJsonObject =>
   value as Prisma.InputJsonObject
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
- * for events that require automated handling. This is a thin orchestrator
+ * for events that require automated handling. Disabled by default; enable
+ * with AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1. This is a thin orchestrator
  * stub; real skill routing will be expanded in Phase 3+.
  */
 @Injectable()
 export class AgentWakeService implements OnModuleInit {
   constructor(
     private readonly relay: EventRelayService,
-    private readonly agent: AgentService,
-    private readonly po: PurchaseOrderService,
+    private readonly commands: AgentCommandService,
   ) {}
 
   onModuleInit() {
-    if (process.env.AGENT_EVENT_WAKE !== '1') {
+    const enabled =
+      process.env.AGENT_AUTORUN === '1' || process.env.AIPMS_AGENT_WAKE === '1'
+    if (!enabled) {
       console.log(
-        '[agent-wake] disabled (set AGENT_EVENT_WAKE=1 to enable event-driven automation)',
+        '[agent-wake] disabled (set AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1 to enable unattended event handling)',
       )
       return
     }
@@ -120,12 +121,21 @@ export class AgentWakeService implements OnModuleInit {
         })
         return
       }
-      // Policy-driven vendor selection: preferredVendor policy takes precedence
+      // A sourcing award is authoritative. Unsourced requisitions fall back
+      // to preferred-vendor policy, then the active vendor pool.
       let vendor: Vendor | null = null
+      const awardedQuote = await db.quote.findFirst({
+        where: { requisitionId: requisition.id, status: 'accepted' },
+      })
+      if (awardedQuote) {
+        vendor = await db.vendor.findUnique({
+          where: { id: awardedQuote.vendorId },
+        })
+      }
       const prefPolicy = await db.policy.findFirst({
         where: { kind: 'preferredVendor', enabled: true },
       })
-      if (prefPolicy?.config) {
+      if (!vendor && prefPolicy?.config) {
         const cfg = prefPolicy.config as PreferredVendorConfig
         const vendorId = cfg.vendorId ?? cfg.vendor_id
         if (vendorId) {
@@ -137,9 +147,15 @@ export class AgentWakeService implements OnModuleInit {
         vendor = await db.vendor.findFirst({ where: { status: 'active' } })
       }
       if (!vendor) throw new Error('No active vendor found')
-      const result = await this.po.issue(
+      const result = await this.commands.issuePurchaseOrder(
         { requisitionId: requisition.id, vendorId: vendor.id, terms: {} },
-        'agent-operator',
+        {
+          id: 'agent:operator',
+          kind: 'agent',
+          runId: run.id,
+          idempotencyKey: `event:${event.id}`,
+          source: 'event-wake',
+        },
       )
       const poNumber =
         'outcome' in result && result.outcome === 'ISSUED'
@@ -153,7 +169,14 @@ export class AgentWakeService implements OnModuleInit {
           finishedAt: new Date(),
           meta: {
             ...(run.meta as Prisma.InputJsonObject),
-            result: asJson(result),
+            result:
+              result.outcome === 'ISSUED'
+                ? {
+                    outcome: result.outcome,
+                    purchaseOrderId: result.purchaseOrder.id,
+                    poNumber: result.purchaseOrder.poNumber,
+                  }
+                : result,
           },
         },
       })
@@ -170,6 +193,7 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      // Propagate failures to the outbox relay so retry/dead-letter semantics remain intact.
       throw err
     }
   }
@@ -184,7 +208,13 @@ export class AgentWakeService implements OnModuleInit {
     const run = started.run
     try {
       if (event.type === 'intake.received') {
-        const result = await this.agent.classifyAndRegister(event.entityId)
+        const result = await this.commands.processDocument(event.entityId, {
+          id: 'agent:operator',
+          kind: 'agent',
+          runId: run.id,
+          idempotencyKey: `event:${event.id}`,
+          source: 'event-wake',
+        })
         console.log(
           `[agent-wake] run ${run.id} processed intake ${event.entityId}`,
         )
@@ -195,7 +225,11 @@ export class AgentWakeService implements OnModuleInit {
             finishedAt: new Date(),
             meta: {
               ...(run.meta as Prisma.InputJsonObject),
-              result: asJson(result),
+              result: {
+                docStatus: result.doc.status,
+                invoiceId: (result.invoice as { id?: string }).id,
+                matchOutcome: result.match?.outcome,
+              },
             },
           },
         })
@@ -218,6 +252,7 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      // Propagate failures to the outbox relay so retry/dead-letter semantics remain intact.
       throw err
     }
   }

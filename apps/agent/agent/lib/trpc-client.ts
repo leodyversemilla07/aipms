@@ -15,12 +15,60 @@ export function getApiConfig() {
   return { apiUrl, token }
 }
 
+let cachedAccess: { token: string; expiresAt: number } | null = null
+
+export async function agentAuthorizationToken() {
+  const configured = process.env.AIPMS_AGENT_BEARER_TOKEN
+  if (configured) return configured
+
+  const { apiUrl, token: bootstrapToken } = getApiConfig()
+  const exchange =
+    process.env.NODE_ENV === "production" ||
+    process.env.AIPMS_AGENT_TOKEN_EXCHANGE === "true"
+  if (!exchange) return bootstrapToken
+
+  const now = Date.now()
+  if (cachedAccess && cachedAccess.expiresAt - 30_000 > now) {
+    return cachedAccess.token
+  }
+  const res = await fetch(`${apiUrl}/api/service/agent/token`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${bootstrapToken}`,
+    },
+    body: JSON.stringify({
+      runId: process.env.AIPMS_AGENT_RUN_ID || undefined,
+    }),
+  })
+  if (!res.ok) {
+    throw new Error(`Agent token exchange failed (${res.status})`)
+  }
+  const body = (await res.json()) as {
+    accessToken?: unknown
+    expiresAt?: unknown
+  }
+  if (
+    typeof body.accessToken !== "string" ||
+    typeof body.expiresAt !== "string" ||
+    !Number.isFinite(Date.parse(body.expiresAt))
+  ) {
+    throw new Error("Agent token exchange returned an invalid response")
+  }
+  cachedAccess = {
+    token: body.accessToken,
+    expiresAt: Date.parse(body.expiresAt),
+  }
+  return cachedAccess.token
+}
+
 export async function trpcQuery<T = unknown>(
   router: string,
   procedure: string,
   input: Record<string, unknown>
 ): Promise<T> {
-  const { apiUrl, token } = getApiConfig()
+  const { apiUrl } = getApiConfig()
+  const token = await agentAuthorizationToken()
   const url = new URL(`${apiUrl}/api/trpc/${router}.${procedure}`)
   url.searchParams.set("input", JSON.stringify(input))
   const res = await fetch(url.toString(), {
@@ -43,7 +91,8 @@ export async function trpcMutate<T = unknown>(
   procedure: string,
   input: Record<string, unknown>
 ): Promise<T> {
-  const { apiUrl, token } = getApiConfig()
+  const { apiUrl } = getApiConfig()
+  const token = await agentAuthorizationToken()
   const res = await fetch(`${apiUrl}/api/trpc/${router}.${procedure}`, {
     method: "POST",
     headers: {

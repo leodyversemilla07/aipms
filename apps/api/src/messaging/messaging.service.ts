@@ -29,8 +29,8 @@ import { paginate } from '../trpc/list-input'
  *    threads replay for procurement and audit;
  *  - blocks outbound traffic to blacklisted vendors outright.
  *
- * The transport is a pluggable seam (org SMTP / transactional email API in a
- * real deployment); the default logs the dispatch and is honest about it.
+ * The transport is a pluggable seam. Production selects the TLS SMTP relay
+ * and fails closed when it is unconfigured; stdout simulation is test/dev only.
  */
 
 /** §8.3 low-risk / transactional templates eligible for auto-send. */
@@ -135,24 +135,59 @@ export interface DecideMessageInput {
   reason?: string | null
 }
 
-/** Delivery seam: swap for org SMTP / transactional API per deployment. */
-export interface MessageTransport {
-  send(message: { to: string; subject: string; body: string }): Promise<void>
+export type DeliveryResolution = 'confirmed_sent' | 'confirmed_not_sent'
+
+export interface ResolveFailedMessageInput {
+  id: string
+  resolverId: string
+  outcome: DeliveryResolution
+  evidence: string
 }
 
-/** Default transport: structured stdout log (no external egress). */
+type MessageDeliveryRecoveryUpdate = Prisma.MessageUpdateManyMutationInput & {
+  deliveryResolution: DeliveryResolution
+  deliveryResolutionEvidence: string
+  deliveryResolvedBy: string
+  deliveryResolvedAt: Date
+}
+
+export interface MessageTransportResult {
+  /** Provider receipt or RFC Message-ID retained for reconciliation. */
+  providerMessageId: string | null
+}
+
+/** Delivery seam: org SMTP today; other transactional APIs can implement it. */
+export interface MessageTransport {
+  send(message: {
+    id: string
+    to: string
+    subject: string
+    body: string
+  }): Promise<MessageTransportResult>
+}
+
+type MessageListRow = Prisma.MessageGetPayload<object>
+
+/** Explicit non-production transport: structured stdout, no external egress. */
 @Injectable()
 export class LoggingTransport implements MessageTransport {
-  async send(message: { to: string; subject: string; body: string }) {
+  async send(message: {
+    id: string
+    to: string
+    subject: string
+    body: string
+  }): Promise<MessageTransportResult> {
     console.log(
       JSON.stringify({
         channel: 'messaging-relay',
-        event: 'dispatch',
+        event: 'simulated-dispatch',
+        messageId: message.id,
         to: message.to,
         subject: message.subject,
         bytes: message.body.length,
       }),
     )
+    return { providerMessageId: `log:${message.id}` }
   }
 }
 
@@ -185,7 +220,7 @@ export class MessagingService {
       status?: MessageStatus
       tier?: MessageTier
     } = {},
-  ): Promise<ListResult<object>> {
+  ): Promise<ListResult<MessageListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
@@ -430,6 +465,96 @@ export class MessagingService {
     return updated
   }
 
+  /**
+   * Record an operator-confirmed delivery outcome for an ambiguous transport
+   * failure. A gated message's approver cannot also resolve its delivery.
+   * `confirmed_not_sent` merely stages a new dispatch state; the caller must
+   * release it after this transaction commits.
+   */
+  async resolveFailedDelivery(
+    input: ResolveFailedMessageInput,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<object> {
+    await tx.$queryRaw`
+      SELECT id FROM "message" WHERE id = ${input.id} FOR UPDATE
+    `
+    const message = await tx.message.findUnique({ where: { id: input.id } })
+    if (!message) throw new NotFoundException(`Message ${input.id} not found`)
+    if (message.status !== 'failed') {
+      throw new ConflictException(
+        `Message ${input.id} is no longer failed — reload before recovery`,
+      )
+    }
+    if (message.approvedBy === input.resolverId) {
+      throw new ForbiddenException(
+        'The message approver cannot resolve its ambiguous delivery outcome',
+      )
+    }
+
+    const resolvedAt = new Date()
+    const nextStatus: MessageStatus =
+      input.outcome === 'confirmed_sent'
+        ? 'sent'
+        : message.tier === 'auto'
+          ? 'queued'
+          : 'approved'
+    const recoveryUpdate: MessageDeliveryRecoveryUpdate = {
+      status: nextStatus,
+      deliveryResolution: input.outcome,
+      deliveryResolutionEvidence: input.evidence,
+      deliveryResolvedBy: input.resolverId,
+      deliveryResolvedAt: resolvedAt,
+      ...(input.outcome === 'confirmed_not_sent'
+        ? { dispatchStartedAt: null }
+        : { sentAt: resolvedAt }),
+    }
+    const changed = await tx.message.updateMany({
+      where: { id: message.id, status: 'failed' },
+      data: recoveryUpdate,
+    })
+    if (changed.count !== 1) {
+      throw new ConflictException(
+        `Message ${input.id} changed — reload before recovery`,
+      )
+    }
+    const updated = await tx.message.findUniqueOrThrow({
+      where: { id: message.id },
+    })
+
+    if (input.outcome === 'confirmed_sent') {
+      await this.events.emit(
+        {
+          type: 'message.sent',
+          entityType: 'Message',
+          entityId: message.id,
+          payload: {
+            recipient: message.recipient,
+            deliveryRecovery: true,
+            resolvedBy: input.resolverId,
+          },
+        },
+        tx,
+      )
+    }
+    return updated
+  }
+
+  /**
+   * Release an operator-authorized redispatch after its recovery transaction.
+   * Safe to call repeatedly: only the staged queued/approved state can claim.
+   */
+  async releaseRecovered(id: string): Promise<object> {
+    const message = await this.detail(id)
+    const recovery = message as typeof message & {
+      deliveryResolution?: string | null
+    }
+    if (recovery.deliveryResolution !== 'confirmed_not_sent') return message
+    return this.claimAndDispatch(
+      id,
+      message.tier === 'auto' ? 'queued' : 'approved',
+    )
+  }
+
   /** Release an auto-tier queued message after its staging transaction. */
   async dispatchIfQueued(id: string): Promise<object> {
     return this.claimAndDispatch(id, 'queued')
@@ -460,11 +585,37 @@ export class MessagingService {
     if (claimed.count !== 1) return this.detail(message.id)
 
     try {
-      await this.transport.send({
+      const delivery = await this.transport.send({
+        id: message.id,
         to: message.recipient,
         subject: message.subject,
         body: message.body,
       })
+      await db.$transaction(async (tx) => {
+        const updated = await tx.message.updateMany({
+          where: { id: message.id, status: 'sending' },
+          data: {
+            status: 'sent',
+            sentAt: new Date(),
+            transportMessageId: delivery.providerMessageId,
+          } as Prisma.MessageUpdateManyMutationInput,
+        })
+        if (updated.count === 1) {
+          await this.events.emit(
+            {
+              type: 'message.sent',
+              entityType: 'Message',
+              entityId: message.id,
+              payload: {
+                recipient: message.recipient,
+                transportMessageId: delivery.providerMessageId,
+              },
+            },
+            tx,
+          )
+        }
+      })
+      return this.detail(message.id)
     } catch (error) {
       await db.message.updateMany({
         where: { id: message.id, status: 'sending' },
@@ -475,25 +626,5 @@ export class MessagingService {
       })
       return this.detail(message.id)
     }
-
-    await db.$transaction(async (tx) => {
-      const updated = await tx.message.updateMany({
-        where: { id: message.id, status: 'sending' },
-        data: { status: 'sent', sentAt: new Date() },
-      })
-      if (updated.count === 1) {
-        await this.events.emit(
-          {
-            type: 'message.sent',
-            entityType: 'Message',
-            entityId: message.id,
-            payload: { recipient: message.recipient, tier: message.tier },
-          },
-          tx,
-        )
-      }
-    })
-
-    return this.detail(message.id)
   }
 }

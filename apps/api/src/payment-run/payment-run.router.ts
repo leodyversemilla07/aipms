@@ -24,11 +24,18 @@ const createInput = z.object({
 })
 
 const runIdInput = z.object({ id: z.string().min(1) })
+const runCommandInput = runIdInput.extend({
+  idempotencyKey: z.string().min(1),
+})
+const voidInput = runCommandInput.extend({
+  reason: z.string().trim().min(1).max(500),
+})
 
 const reconcileInput = z.object({
   runId: z.string().min(1),
   lineId: z.string().min(1),
   status: z.enum(['paid', 'dishonored', 'rejected']),
+  idempotencyKey: z.string().min(1),
 })
 
 const listInputWithStatus = listInput.extend({
@@ -49,7 +56,7 @@ export class PaymentRunRouter {
 
   @Query({ input: listInputWithStatus })
   async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.runs.list(input.status ? { status: input.status } : {})
+    return this.runs.list(input)
   }
 
   @Query({ input: runIdInput })
@@ -99,52 +106,68 @@ export class PaymentRunRouter {
     )
   }
 
-  @Mutation({ input: runIdInput })
+  @Mutation({ input: runCommandInput })
   async approve(
-    @Input() input: z.infer<typeof runIdInput>,
+    @Input() input: z.infer<typeof runCommandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.approve')
-    return db.$transaction(async (tx) => {
-      const run = await this.runs.approve(input.id, ctx.user.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'paymentRun.approve',
-          entity: 'PaymentRun',
-          entityId: run.id,
-          input,
-          after: run as object,
-        },
-        tx,
-      )
-      return run
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'paymentRun.approve',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const run = await this.runs.approve(input.id, ctx.user.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'paymentRun.approve',
+            entity: 'PaymentRun',
+            entityId: run.id,
+            input,
+            after: run as object,
+          },
+          tx,
+        )
+        return run
+      },
+    )
   }
 
-  @Mutation({ input: runIdInput })
+  @Mutation({ input: runCommandInput })
   async execute(
-    @Input() input: z.infer<typeof runIdInput>,
+    @Input() input: z.infer<typeof runCommandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.execute')
-    return db.$transaction(async (tx) => {
-      const run = await this.runs.execute(input.id, ctx.user.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'paymentRun.execute',
-          entity: 'PaymentRun',
-          entityId: run.id,
-          input,
-          after: run as object,
-        },
-        tx,
-      )
-      return run
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'paymentRun.execute',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const run = await this.runs.execute(input.id, ctx.user.id, tx)
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'paymentRun.execute',
+            entity: 'PaymentRun',
+            entityId: run.id,
+            input,
+            after: run as object,
+          },
+          tx,
+        )
+        return run
+      },
+    )
   }
 
   @Mutation({ input: reconcileInput })
@@ -153,50 +176,71 @@ export class PaymentRunRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.reconcile')
-    return db.$transaction(async (tx) => {
-      const result = await this.runs.reconcile(
-        input.runId,
-        input.lineId,
-        input.status,
-        tx,
-      )
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'paymentRun.reconcile',
-          entity: 'PaymentRunLine',
-          entityId: input.lineId,
-          input,
-          after: result as object,
-        },
-        tx,
-      )
-      return result
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'paymentRun.reconcile',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const result = await this.runs.reconcile(
+          input.runId,
+          input.lineId,
+          input.status,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'paymentRun.reconcile',
+            entity: 'PaymentRunLine',
+            entityId: input.lineId,
+            input,
+            after: result as object,
+          },
+          tx,
+        )
+        return result
+      },
+    )
   }
 
-  @Mutation({ input: runIdInput })
+  @Mutation({ input: voidInput })
   async voidRun(
-    @Input() input: z.infer<typeof runIdInput>,
+    @Input() input: z.infer<typeof voidInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     requireRole(ctx.user, ctx.actorKind, ['finance'], 'paymentRun.void')
-    return db.$transaction(async (tx) => {
-      const run = await this.runs.voidRun(input.id, tx)
-      await this.audit.record(
-        {
-          actorId: ctx.user.id,
-          actorKind: ctx.actorKind,
-          action: 'paymentRun.void',
-          entity: 'PaymentRun',
-          entityId: run.id,
-          input,
-          after: run as object,
-        },
-        tx,
-      )
-      return run
-    })
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'paymentRun.void',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const run = await this.runs.voidRun(
+          input.id,
+          ctx.user.id,
+          input.reason,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'paymentRun.void',
+            entity: 'PaymentRun',
+            entityId: run.id,
+            input,
+            after: run as object,
+          },
+          tx,
+        )
+        return run
+      },
+    )
   }
 }

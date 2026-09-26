@@ -48,7 +48,7 @@ export function BirReports() {
   const [period, setPeriod] = useState("")
 
   const periods = useQuery(trpc.bir.periods.queryOptions({}))
-  const periodRows = (periods.data?.rows ?? []) as unknown as PeriodRow[]
+  const periodRows = (periods.data?.rows ?? []) as PeriodRow[]
 
   // Default to the most recent period once loaded.
   useEffect(() => {

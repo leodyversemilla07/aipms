@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import {
   CanActivate,
   ExecutionContext,
@@ -22,7 +23,13 @@ export class ServiceTokenGuard implements CanActivate {
       throw new UnauthorizedException('AIPMS_SERVICE_TOKEN is not configured')
     }
     const header = request.headers.authorization
-    if (header !== `Bearer ${expected}`) {
+    const provided = header?.startsWith('Bearer ')
+      ? header.slice('Bearer '.length).trim()
+      : ''
+    if (!provided || provided.length !== expected.length) {
+      throw new UnauthorizedException('Invalid or missing service token')
+    }
+    if (!timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) {
       throw new UnauthorizedException('Invalid or missing service token')
     }
     return true

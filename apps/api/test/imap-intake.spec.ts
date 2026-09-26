@@ -8,7 +8,9 @@ import {
   type ParsedMailLike,
 } from '../src/intake/imap-message'
 import { IntakeService } from '../src/intake/intake.service'
+import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { IntakeImapService } from '../src/intake/intake-imap.service'
+import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
@@ -22,7 +24,11 @@ const docIds: string[] = []
 const vendorIds: string[] = []
 
 const intakeService = new IntakeService(new EventEmitterService())
-const imapService = new IntakeImapService(intakeService)
+const intakeCommands = new IntakeCommandService(
+  intakeService,
+  new AuditService(),
+)
+const imapService = new IntakeImapService(intakeCommands)
 
 function mail(overrides: Partial<ParsedMailLike> = {}): ParsedMailLike {
   return {
@@ -59,6 +65,23 @@ describe('imap-message mapping (§8.2, pure)', () => {
     expect(raw.attachments[0].contentBase64).toBe(
       Buffer.from('pdf-bytes').toString('base64'),
     )
+  })
+
+  it('projects bounded textual attachments without prompt-facing base64', () => {
+    const raw = buildRawPayload(
+      mail({
+        attachments: [
+          {
+            filename: 'invoice.json',
+            contentType: 'application/json',
+            content: Buffer.from('{"number":"INV-42","total":12500}'),
+          },
+        ],
+      }),
+    )
+    expect(raw.attachments[0].textContent).toContain('INV-42')
+    expect(raw.attachments[0].textTruncated).toBe(false)
+    expect(raw.attachments[0].contentBase64).toBeUndefined()
   })
 
   it('caps inlined attachments at the byte limit but keeps their hash', () => {

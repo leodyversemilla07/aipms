@@ -16,10 +16,12 @@ import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 const suffix = Math.random().toString(36).slice(2, 8)
 const actorId = `test-user-${suffix}`
+const checkerId = `test-checker-${suffix}`
 
 const created: Record<string, string[]> = {
   requisition: [],
   po: [],
+  quote: [],
   approval: [],
   budget: [],
   vendor: [],
@@ -41,20 +43,29 @@ const policyService = new PolicyService()
 
 // §10: decide() requires a real actor — an admin bypasses route membership.
 beforeAll(async () => {
-  await db.user.create({
-    data: {
-      id: actorId,
-      name: 'Test Admin',
-      email: `${actorId}@test.aipms`,
-      role: 'admin',
-    },
+  await db.user.createMany({
+    data: [
+      {
+        id: actorId,
+        name: 'Test Admin',
+        email: `${actorId}@test.aipms`,
+        role: 'admin',
+      },
+      {
+        id: checkerId,
+        name: 'Test Checker',
+        email: `${checkerId}@test.aipms`,
+        role: 'admin',
+      },
+    ],
   })
 })
 
 afterAll(async () => {
-  await db.user.deleteMany({ where: { id: actorId } })
+  await db.user.deleteMany({ where: { id: { in: [actorId, checkerId] } } })
   await db.approval.deleteMany({ where: { id: { in: created.approval } } })
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
+  await db.quote.deleteMany({ where: { id: { in: created.quote } } })
   await db.requisition.deleteMany({
     where: { id: { in: created.requisition } },
   })
@@ -146,6 +157,7 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     const cancelGate = await purchaseOrderService.requestCancellation(
       confirmed.id,
       'test cancellation',
+      actorId,
     )
     created.approval.push(cancelGate.id)
     expect(cancelGate.kind).toBe('poCancellation')
@@ -153,7 +165,7 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     const decided = await approvalService.decide(
       cancelGate.id,
       'approve',
-      actorId,
+      checkerId,
       'ok',
     )
     expect(decided.outcome).toBe('PO_CANCELLED')
@@ -163,6 +175,64 @@ describe('PO issue + cancellation (budget commit / release)', () => {
     expect((await purchaseOrderService.detail(confirmed.id)).status).toBe(
       'cancelled',
     )
+  })
+})
+
+describe('Awarded quote traceability', () => {
+  it('requires the awarded vendor and uses the accepted commercial total', async () => {
+    await makeThresholdPolicy(500_000)
+    const budget = await makeBudget(100_000_000)
+    const awardedVendor = await makeVendor('active')
+    const otherVendor = await makeVendor('active')
+    const req = await makeApprovedRequisition(budget.id, 125_000)
+
+    const quote = await db.quote.create({
+      data: {
+        requisitionId: req.id,
+        vendorId: awardedVendor.id,
+        status: 'accepted',
+        totalMinor: 110_000,
+        currencyCode: 'PHP',
+        lines: [
+          {
+            description: 'Awarded equipment',
+            quantity: 2,
+            unitPriceMinor: 55_000,
+            amountMinor: 110_000,
+          },
+        ],
+        awardedAt: new Date(),
+        requestedBy: actorId,
+        createdBy: actorId,
+      },
+    })
+    created.quote.push(quote.id)
+
+    await expect(
+      purchaseOrderService.issue(
+        { requisitionId: req.id, vendorId: otherVendor.id },
+        actorId,
+      ),
+    ).rejects.toThrow(/accepted quote/)
+
+    const issued = await purchaseOrderService.issue(
+      { requisitionId: req.id, vendorId: awardedVendor.id },
+      actorId,
+    )
+    expect(issued.outcome).toBe('ISSUED')
+    if (issued.outcome !== 'ISSUED') throw new Error('expected issued PO')
+    created.po.push(issued.purchaseOrder.id)
+    expect(issued.purchaseOrder.awardedQuoteId).toBe(quote.id)
+    expect(issued.purchaseOrder.totalMinor).toBe(110_000)
+    expect(issued.purchaseOrder.lines).toMatchObject([
+      {
+        description: 'Awarded equipment',
+        quantity: 2,
+        unitPriceMinor: 55_000,
+        lineTotalMinor: 110_000,
+      },
+    ])
+    expect((await budgetService.detail(budget.id)).committedMinor).toBe(110_000)
   })
 })
 
@@ -187,7 +257,10 @@ describe('Vendor gate at PO issue', () => {
     if (!gate) throw new Error('expected a pending vendor-gate approval')
     created.approval.push(gate.id)
 
-    await approvalService.decide(gate.id, 'approve', actorId, 'vendor ok')
+    await expect(
+      approvalService.decide(gate.id, 'approve', actorId, 'self approval'),
+    ).rejects.toThrow(/maker and checker/i)
+    await approvalService.decide(gate.id, 'approve', checkerId, 'vendor ok')
     expect(
       (await db.vendor.findUnique({ where: { id: vendor.id } }))?.status,
     ).toBe('active')

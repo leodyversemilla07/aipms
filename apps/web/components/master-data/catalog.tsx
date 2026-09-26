@@ -47,7 +47,7 @@ export function CatalogPanel() {
   const list = useQuery(
     trpc.catalog.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (list.data?.rows ?? []) as unknown as ItemRow[]
+  const rows = (list.data?.rows ?? []) as ItemRow[]
 
   const create = useMutation(trpc.catalog.create.mutationOptions())
   const deactivate = useMutation(trpc.catalog.deactivate.mutationOptions())

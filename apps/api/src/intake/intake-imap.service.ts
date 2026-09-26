@@ -13,7 +13,7 @@ import {
   matchVendorSender,
   senderAddress,
 } from './imap-message'
-import { IntakeService } from './intake.service'
+import { IntakeCommandService } from './intake-command.service'
 
 /**
  * §8.2 email intake — IMAP polling channel (the "default, highest coverage"
@@ -77,7 +77,7 @@ export class IntakeImapService implements OnModuleInit, OnModuleDestroy {
   /** Set by tests to drive poll cycles without real timers/IMAP servers. */
   pollOnce?: () => Promise<void>
 
-  constructor(private readonly intake: IntakeService) {}
+  constructor(private readonly commands: IntakeCommandService) {}
 
   onModuleInit() {
     if (!this.config) {
@@ -178,12 +178,20 @@ export class IntakeImapService implements OnModuleInit, OnModuleDestroy {
     const contentHash = contentHashFor(mail, raw)
     const from = senderAddress(mail)
 
-    const doc = await this.intake.ingest({
-      channel: EMAIL_IMAP_CHANNEL,
-      contentHash,
-      senderId: matchVendorSender(from, vendors),
-      raw,
-    })
+    const doc = await this.commands.ingest(
+      {
+        channel: EMAIL_IMAP_CHANNEL,
+        contentHash,
+        senderId: matchVendorSender(from, vendors),
+        raw,
+      },
+      {
+        id: 'agent:imap-intake',
+        kind: 'agent',
+        source: 'imap',
+        idempotencyKey: `email:${contentHash}`,
+      },
+    )
     // ingest() resolves duplicates idempotently; report whether this was new
     // so the caller knows whether to spend a \\Seen flag (harmless either way).
     return Boolean(doc.id)

@@ -19,7 +19,11 @@ import {
   qboConfigFromEnv,
   refreshToken as refreshAccessToken,
 } from './qbo-client'
-import { decryptSecret, encryptSecret } from './token-crypto'
+import {
+  decryptSecret,
+  encryptSecret,
+  secretNeedsRotation,
+} from './token-crypto'
 
 const PROVIDER = 'quickbooks'
 const STATE_TTL_MS = 10 * 60 * 1000
@@ -172,13 +176,15 @@ export class QboService {
     conn: ErpConnection,
   ): Promise<{ conn: ErpConnection; accessToken: string }> {
     let current = conn
+    let accessToken = decryptSecret(current.accessTokenEnc)
+    const refreshToken = decryptSecret(current.refreshTokenEnc)
     if (current.expiresAt.getTime() - Date.now() < 5 * 60 * 1000) {
       const refreshed = await refreshAccessToken(
         this.config,
-        decryptSecret(current.refreshTokenEnc),
+        refreshToken,
         this.fetchImpl,
       )
-      const updated = await db.erpConnection.update({
+      current = await db.erpConnection.update({
         where: { id: current.id },
         data: {
           accessTokenEnc: encryptSecret(refreshed.accessToken),
@@ -186,9 +192,22 @@ export class QboService {
           expiresAt: new Date(Date.now() + refreshed.expiresIn * 1000),
         },
       })
-      current = updated
+      accessToken = refreshed.accessToken
+    } else if (
+      secretNeedsRotation(current.accessTokenEnc) ||
+      secretNeedsRotation(current.refreshTokenEnc)
+    ) {
+      // Lazy online rotation: while both keys are configured, first use
+      // re-envelopes credentials under the current dedicated key.
+      current = await db.erpConnection.update({
+        where: { id: current.id },
+        data: {
+          accessTokenEnc: encryptSecret(accessToken),
+          refreshTokenEnc: encryptSecret(refreshToken),
+        },
+      })
     }
-    return { conn: current, accessToken: decryptSecret(current.accessTokenEnc) }
+    return { conn: current, accessToken }
   }
 
   /** Chart-of-accounts pull — QBO owns master data (§8.5 ownership rule). */

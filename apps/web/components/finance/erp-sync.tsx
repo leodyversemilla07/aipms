@@ -30,8 +30,14 @@ type ExportRow = {
   status: string
   externalRef: string | null
   rejectedReason: string | null
-  acknowledgedAt: string | null
-  exportedAt: string
+  acknowledgedAt: string | Date | null
+  dispatchClaimId: string | null
+  dispatchClaimedBy: string | null
+  dispatchStartedAt: string | Date | null
+  dispatchFailure: string | null
+  dispatchResolvedBy: string | null
+  dispatchResolvedAt: string | Date | null
+  exportedAt: string | Date
 }
 
 /** aipms chart codes (§8.5 v1 defaults) → ERP account ids. */
@@ -59,7 +65,7 @@ export function ErpSync() {
   const exportsQuery = useQuery(
     trpc.erp.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (exportsQuery.data?.rows ?? []) as unknown as ExportRow[]
+  const rows = (exportsQuery.data?.rows ?? []) as ExportRow[]
 
   const report = useQuery(trpc.erp.reconcileReport.queryOptions({}))
   const qbo = useQuery(trpc.erp.qboStatus.queryOptions({}))
@@ -117,13 +123,19 @@ export function ErpSync() {
             <span className="text-muted-foreground">
               un-exported:{" "}
               <span className="font-mono">
-                {report.data.missingExports.length}
+                {report.data.missingExportCount}
               </span>
             </span>
             <span className="text-muted-foreground">
               awaiting ERP ack:{" "}
               <span className="font-mono">
-                {report.data.awaitingAcknowledgement.length}
+                {report.data.awaitingAcknowledgementCount}
+              </span>
+            </span>
+            <span className="text-muted-foreground">
+              QBO review:{" "}
+              <span className="font-mono">
+                {report.data.ambiguousDispatchCount}
               </span>
             </span>
             <span className="text-muted-foreground">
@@ -231,7 +243,9 @@ export function ErpSync() {
                   >
                     Journal
                   </Button>
-                  {qbo.data?.connected && e.status === "exported" ? (
+                  {qbo.data?.connected &&
+                  e.status === "exported" &&
+                  !e.dispatchClaimId ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -257,18 +271,25 @@ export function ErpSync() {
                       <Button
                         size="sm"
                         disabled={acknowledge.isPending}
-                        onClick={() =>
+                        onClick={() => {
+                          const externalRef = e.dispatchClaimId
+                            ? window.prompt(
+                                "Enter the QBO JournalEntry reference confirmed during manual review:"
+                              )
+                            : undefined
+                          if (e.dispatchClaimId && !externalRef?.trim()) return
                           acknowledge
                             .mutateAsync({
                               exportId: e.id,
                               status: "posted",
-                              externalRef: undefined,
+                              externalRef: externalRef?.trim() || undefined,
+                              resolveDispatchClaim: Boolean(e.dispatchClaimId),
                             })
                             .then(refresh)
                             .catch((err: Error) => setError(err.message))
-                        }
+                        }}
                       >
-                        Mark posted
+                        {e.dispatchClaimId ? "Resolve posted" : "Mark posted"}
                       </Button>
                       <ConfirmReject
                         pending={acknowledge.isPending}
@@ -283,6 +304,7 @@ export function ErpSync() {
                               exportId: e.id,
                               status: "rejected",
                               rejectedReason: reason.trim(),
+                              resolveDispatchClaim: Boolean(e.dispatchClaimId),
                             })
                             .then(() => {
                               setRejecting(null)
@@ -296,6 +318,13 @@ export function ErpSync() {
                   ) : null}
                 </div>
               </div>
+              {e.dispatchClaimId && e.status === "exported" ? (
+                <p className="mt-1 text-amber-600 text-xs">
+                  {e.dispatchFailure
+                    ? `QBO outcome requires review by a different finance user than ${e.dispatchClaimedBy ?? "the dispatcher"}: ${e.dispatchFailure}`
+                    : `QBO dispatch is claimed by ${e.dispatchClaimedBy ?? "another user"}; a different finance user must review it before manual resolution.`}
+                </p>
+              ) : null}
               {e.rejectedReason ? (
                 <p className="mt-1 text-destructive text-xs">
                   Rejected by ERP: {e.rejectedReason}

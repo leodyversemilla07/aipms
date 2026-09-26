@@ -4,6 +4,7 @@ import {
   ApprovalSlaService,
   resolveSlaHours,
 } from '../src/approval/approval-sla.service'
+import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 /**
@@ -17,7 +18,10 @@ const created: { approvals: string[]; events: string[] } = {
   events: [],
 }
 
-const sla = new ApprovalSlaService(new EventEmitterService())
+const sla = new ApprovalSlaService(
+  new EventEmitterService(),
+  new AuditService(),
+)
 
 afterAll(async () => {
   await db.domainEvent.deleteMany({ where: { id: { in: created.events } } })
@@ -40,6 +44,7 @@ function makeApproval(createdAt: Date) {
         kind: 'threshold',
         route: ['manager'],
         status: 'pending',
+        requestedBy: 'sla-test-maker',
         createdAt,
         updatedAt: createdAt,
       },

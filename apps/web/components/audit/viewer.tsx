@@ -56,7 +56,7 @@ type AudRow = {
   entity: string
   entityId: string | null
   inputHash: string | null
-  at: string
+  at: string | Date
 }
 
 function PageControls({
@@ -142,7 +142,7 @@ export function AuditViewer() {
       action: action || undefined,
     })
   )
-  const rows = (feed.data?.rows ?? []) as unknown as AudRow[]
+  const rows = (feed.data?.rows ?? []) as AudRow[]
   const total = feed.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 

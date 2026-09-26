@@ -16,7 +16,15 @@
     "db:reset": "turbo run db:reset",
     "db:seed": "turbo run db:seed",
     "db:studio": "turbo run db:studio",
-    "auth:generate": "turbo run auth:generate"
+    "auth:generate": "turbo run auth:generate",
+    "capacity:smoke": "node scripts/capacity-smoke.mjs",
+    "staging:validate": "node scripts/staging-validate.mjs",
+    "staging:browser-workload": "node scripts/staging-browser-workload.mjs",
+    "deployment:preflight": "node scripts/deployment-preflight.mjs",
+    "release:gate": "node scripts/release-gate.mjs",
+    "release:gate:test": "node scripts/test-release-gate.mjs",
+    "operations:check": "node scripts/operations-check.mjs",
+    "operations:check:test": "node scripts/test-operations-check.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",

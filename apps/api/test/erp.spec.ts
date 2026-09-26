@@ -64,9 +64,11 @@ async function makeExecutedRun(tag: string) {
         holder: `ERP Vendor ${suffix}`,
       },
       bankAccountVerifiedAt: new Date(),
+      bankAccountVerifiedBy: 'finance-checker',
       // Fresh account = verified at creation; a *change* would force
       // re-verification (§8.6), so changedAt stays null.
       bankAccountChangedAt: null,
+      bankAccountSubmittedBy: null,
     },
   })
   created.vendor.push(vendor.id)
@@ -183,7 +185,9 @@ describe('ErpService', () => {
           holder: 'Draft-only Co',
         },
         bankAccountVerifiedAt: new Date(),
+        bankAccountVerifiedBy: 'finance-checker',
         bankAccountChangedAt: null,
+        bankAccountSubmittedBy: null,
       },
     })
     created.vendor.push(vendor.id)
@@ -212,22 +216,28 @@ describe('ErpService', () => {
     created.erpExport.push(exp.id)
 
     await expect(
-      erp.acknowledge({
-        exportId: exp.id,
-        status: 'rejected',
-        rejectedReason: null,
-      }),
+      erp.acknowledge(
+        {
+          exportId: exp.id,
+          status: 'rejected',
+          rejectedReason: null,
+        },
+        'erp-feed',
+      ),
     ).rejects.toThrow(/reason/i)
 
-    const posted = await erp.acknowledge({
-      exportId: exp.id,
-      status: 'posted',
-      externalRef: 'QB-JE-991',
-    })
+    const posted = await erp.acknowledge(
+      {
+        exportId: exp.id,
+        status: 'posted',
+        externalRef: 'QB-JE-991',
+      },
+      'erp-feed',
+    )
     expect(posted.status).toBe('posted')
 
     await expect(
-      erp.acknowledge({ exportId: exp.id, status: 'rejected' }),
+      erp.acknowledge({ exportId: exp.id, status: 'rejected' }, 'erp-feed'),
     ).rejects.toThrow(/already posted/)
   })
 

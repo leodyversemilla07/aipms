@@ -12,7 +12,11 @@ import {
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { assertDatabaseInt } from '../shared/money/minor-units'
+import {
+  assertDatabaseInt,
+  assertSingleCurrency,
+  normalizeCurrencyCode,
+} from '../shared/money/minor-units'
 import { paginate } from '../trpc/list-input'
 
 export interface CreateRequisitionLineInput {
@@ -48,6 +52,8 @@ export interface RequisitionListInput {
   dir?: 'asc' | 'desc'
   page: number
   pageSize: number
+  /** Row-level boundary for ordinary requesters; supervisors omit it. */
+  requestedBy?: string
 }
 
 @Injectable()
@@ -60,7 +66,9 @@ export class RequisitionService {
 
   async list(input: RequisitionListInput) {
     const { skip, take } = paginate(input)
-    const where: Prisma.RequisitionWhereInput = {}
+    const where: Prisma.RequisitionWhereInput = input.requestedBy
+      ? { requestedBy: input.requestedBy }
+      : {}
     if (input.q) {
       where.OR = [
         { requestNumber: { contains: input.q, mode: 'insensitive' } },
@@ -91,9 +99,9 @@ export class RequisitionService {
     return { rows, total, facetCounts: {} }
   }
 
-  async detail(id: string): Promise<RequisitionWith> {
-    const req = await db.requisition.findUnique({
-      where: { id },
+  async detail(id: string, requestedBy?: string): Promise<RequisitionWith> {
+    const req = await db.requisition.findFirst({
+      where: { id, ...(requestedBy ? { requestedBy } : {}) },
       include: { lines: true, approvals: true },
     })
     if (!req) throw new NotFoundException(`Requisition ${id} not found`)
@@ -118,7 +126,10 @@ export class RequisitionService {
         line.unitPriceMinor,
         `Line ${i + 1} unit price`,
       ),
-      currencyCode: line.currencyCode ?? 'PHP',
+      currencyCode: normalizeCurrencyCode(
+        line.currencyCode ?? 'PHP',
+        `Line ${i + 1} currency`,
+      ),
       lineTotalMinor: assertDatabaseInt(
         line.quantity * line.unitPriceMinor,
         `Line ${i + 1} total`,
@@ -128,10 +139,29 @@ export class RequisitionService {
       lines.reduce((sum, line) => sum + line.lineTotalMinor, 0),
       'Requisition total',
     )
+    const currencyCode = assertSingleCurrency(
+      lines.map((line) => line.currencyCode),
+      'Requisition lines',
+    )
 
     // Number mint serializes on an advisory lock inside a transaction, so
     // concurrent creators cannot collide. Standalone calls keep a retry net.
     const attempt = async (tx: Prisma.TransactionClient) => {
+      if (input.budgetId) {
+        const budget = await tx.budget.findUnique({
+          where: { id: input.budgetId },
+          select: { currencyCode: true },
+        })
+        if (!budget) throw new NotFoundException('Budget not found')
+        if (
+          normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+          currencyCode
+        ) {
+          throw new BadRequestException(
+            'Requisition currency must match its budget currency',
+          )
+        }
+      }
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('requisition_number'))`
       const requestNumber = await this.numbers.next('REQ-', () =>
         tx.requisition
@@ -195,13 +225,14 @@ export class RequisitionService {
   async submit(
     id: string,
     outerTx?: Prisma.TransactionClient,
+    requestedBy?: string,
   ): Promise<SubmitResult> {
     const run = async (tx: Prisma.TransactionClient) => {
       // Lock the requisition first: concurrent submits serialize here and
       // the conditional updates below make double-submit impossible.
       await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${id} FOR UPDATE`
-      const requisition = await tx.requisition.findUnique({
-        where: { id },
+      const requisition = await tx.requisition.findFirst({
+        where: { id, ...(requestedBy ? { requestedBy } : {}) },
         include: { lines: true },
       })
       if (!requisition)
@@ -214,6 +245,10 @@ export class RequisitionService {
         (sum, line) => sum + line.lineTotalMinor,
         0,
       )
+      const currencyCode = assertSingleCurrency(
+        requisition.lines.map((line) => line.currencyCode),
+        'Requisition lines',
+      )
 
       const thresholdPolicy = await this.policy.latest('threshold')
       let budgetRemainingMinor: number | undefined
@@ -222,6 +257,14 @@ export class RequisitionService {
           where: { id: requisition.budgetId },
         })
         if (!budget) throw new NotFoundException('Budget not found')
+        if (
+          normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+          currencyCode
+        ) {
+          throw new BadRequestException(
+            'Requisition currency must match its budget currency',
+          )
+        }
         budgetRemainingMinor =
           budget.limitMinor - budget.committedMinor - budget.spentMinor
       }
@@ -254,6 +297,7 @@ export class RequisitionService {
             route: [],
             citations: decision.citations,
             status: 'approved',
+            requestedBy: requisition.requestedBy,
             decidedBy: 'system',
             decidedAt: now,
             evidence: decision.reason,
@@ -296,6 +340,7 @@ export class RequisitionService {
           route: (decision.approvers ?? []) as string[],
           citations: decision.citations as string[],
           status: 'pending',
+          requestedBy: requisition.requestedBy,
           evidence: decision.reason,
         },
       })

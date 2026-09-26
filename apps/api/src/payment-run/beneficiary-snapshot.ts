@@ -22,14 +22,18 @@ export function freezeBeneficiary(
     taxId: string | null
     bankAccount: unknown
     bankAccountVerifiedAt: Date | null
+    bankAccountVerifiedBy: string | null
     bankAccountChangedAt: Date | null
+    bankAccountSubmittedBy: string | null
   },
 ) {
   const bankAccount = parseBeneficiary(vendor.bankAccount)
   if (
     !bankAccount ||
     !vendor.bankAccountVerifiedAt ||
-    vendor.bankAccountChangedAt
+    !vendor.bankAccountVerifiedBy ||
+    vendor.bankAccountChangedAt ||
+    vendor.bankAccountSubmittedBy
   ) {
     throw new Error(`Unverified beneficiary account for: ${vendor.name}`)
   }

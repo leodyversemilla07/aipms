@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header"
 import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
+import { Sourcing } from "@/components/procurement/sourcing"
 import { SignInCard } from "@/components/sign-in"
 
 function ProcurementBody() {
@@ -15,6 +16,7 @@ function ProcurementBody() {
         title="Procurement desk"
         description="Sourcing, orders, receipts & vendor messaging"
       />
+      <Sourcing />
       <IssuePo />
       <PoList />
       <Receipts />

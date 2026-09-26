@@ -1,6 +1,7 @@
 import { db } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
+import { withAuditMaintenance } from './audit-test-utils'
 
 /**
  * §16.3 tamper-evident audit chain: entries hash-link to their predecessor;
@@ -22,12 +23,32 @@ function record(action: string, extra: Record<string, unknown> = {}) {
 
 describe('Audit chain', () => {
   beforeEach(async () => {
-    await db.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } }),
+    )
   })
 
   afterAll(async () => {
-    await db.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } }),
+    )
     await db.$disconnect()
+  })
+
+  it('rejects update and delete outside explicit maintenance mode', async () => {
+    await record('immutable.probe')
+    const row = await db.auditEntry.findFirstOrThrow({
+      where: { action: 'immutable.probe' },
+    })
+    await expect(
+      db.auditEntry.update({
+        where: { id: row.id },
+        data: { action: 'immutable.changed' },
+      }),
+    ).rejects.toThrow(/append-only/)
+    await expect(
+      db.auditEntry.delete({ where: { id: row.id } }),
+    ).rejects.toThrow(/append-only/)
   })
 
   it('links sequential records', async () => {
@@ -72,7 +93,10 @@ describe('Audit chain', () => {
     expect(row.runId).toBe('run-original')
     expect((await service.verifyChain()).ok).toBe(true)
 
-    await db.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`
+    await withAuditMaintenance(
+      (tx) =>
+        tx.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`,
+    )
     const result = await service.verifyChain()
     expect(result.ok).toBe(false)
     expect(result.brokenAtSeq).toBe(row.seq)
@@ -87,7 +111,10 @@ describe('Audit chain', () => {
     const victim = await db.auditEntry.findFirstOrThrow({
       where: { action: 't.two' },
     })
-    await db.$executeRaw`UPDATE "AuditEntry" SET action = 't.evil' WHERE id = ${victim.id}`
+    await withAuditMaintenance(
+      (tx) =>
+        tx.$executeRaw`UPDATE "AuditEntry" SET action = 't.evil' WHERE id = ${victim.id}`,
+    )
 
     const result = await service.verifyChain()
     expect(result.ok).toBe(false)
@@ -103,7 +130,9 @@ describe('Audit chain', () => {
     const victim = await db.auditEntry.findFirstOrThrow({
       where: { action: 'd.two' },
     })
-    await db.auditEntry.delete({ where: { id: victim.id } })
+    await withAuditMaintenance((tx) =>
+      tx.auditEntry.delete({ where: { id: victim.id } }),
+    )
 
     const result = await service.verifyChain()
     expect(result.ok).toBe(false)

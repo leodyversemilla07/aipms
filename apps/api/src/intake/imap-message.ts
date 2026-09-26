@@ -12,6 +12,8 @@ export const EMAIL_IMAP_CHANNEL = 'EMAIL_IMAP'
 
 /** Attachments larger than this are recorded by hash/metadata only. */
 export const DEFAULT_ATTACHMENT_INLINE_MAX_BYTES = 2_097_152 // 2 MiB
+/** Text sent to classification is bounded independently from stored binaries. */
+export const DEFAULT_ATTACHMENT_TEXT_MAX_BYTES = 100_000
 
 /** Loose shape of what we consume from mailparser's ParsedMail. */
 export interface ParsedMailLike {
@@ -38,8 +40,11 @@ export interface RawAttachment {
   contentType: string | null
   size: number
   sha256: string
-  /** base64 body — present only when within the inline byte cap */
+  /** base64 body — present for bounded binary attachments only */
   contentBase64?: string
+  /** UTF-8 projection for bounded text/JSON/XML/CSV attachments. */
+  textContent?: string
+  textTruncated?: boolean
 }
 
 export interface RawPayload {
@@ -59,6 +64,19 @@ function sha256(value: Buffer | string): string {
   return createHash('sha256').update(value).digest('hex')
 }
 
+function isTextAttachment(filename: string | null, contentType: string | null) {
+  const type = contentType?.toLowerCase() ?? ''
+  if (
+    type.startsWith('text/') ||
+    type.includes('json') ||
+    type.includes('xml') ||
+    type.includes('csv')
+  ) {
+    return true
+  }
+  return /\.(txt|csv|json|xml|ubl)$/i.test(filename ?? '')
+}
+
 /** First RFC-5322 address of a parsed header value (lower-cased). */
 export function senderAddress(mail: ParsedMailLike): string | null {
   const first = mail.from?.value?.[0]?.address?.trim().toLowerCase()
@@ -74,9 +92,9 @@ function headerDate(date: Date | string | undefined): string | null {
 
 /**
  * Build the `raw` JSON stored on the IntakeDocument: header subset, text
- * body, and attachment metadata. Attachment bodies are inlined as base64 up
- * to `inlineMaxBytes` each (default 2 MiB); larger ones keep filename/type/
- * size/hash only so a poison attachment cannot bloat Postgres.
+ * body, and attachment metadata. Bounded text/JSON/XML/CSV attachments get a
+ * UTF-8 projection; other bounded bodies are base64. Larger files keep only
+ * filename/type/size/hash so a poison attachment cannot bloat Postgres.
  */
 export function buildRawPayload(
   mail: ParsedMailLike,
@@ -90,7 +108,15 @@ export function buildRawPayload(
       sha256: sha256(att.content),
     }
     if (meta.size <= inlineMaxBytes) {
-      meta.contentBase64 = att.content.toString('base64')
+      if (isTextAttachment(meta.filename, meta.contentType)) {
+        meta.textContent = att.content
+          .subarray(0, DEFAULT_ATTACHMENT_TEXT_MAX_BYTES)
+          .toString('utf8')
+        meta.textTruncated =
+          att.content.byteLength > DEFAULT_ATTACHMENT_TEXT_MAX_BYTES
+      } else {
+        meta.contentBase64 = att.content.toString('base64')
+      }
     }
     return meta
   })

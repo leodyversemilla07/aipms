@@ -15,6 +15,8 @@ const t = initTRPC.create();
 const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
 import { nonnegativeMinorUnits, positiveDatabaseInt, positiveMinorUnits } from "../sourcing/../shared/money/minor-units";
+import { invoicePayloadSchema } from "../intake/../agent/invoice-payload";
+import { invoiceLineInput } from "../invoice/invoice.router";
 import { receiptLineInput } from "../receipt/receipt.router";
 import type { AgentRouter } from "../agent/agent.router";
 import type { AnalyticsRouter } from "../analytics/analytics.router";
@@ -55,7 +57,17 @@ const appRouter = t.router({
       .input(listInput.extend({
   status: z.enum(['running', 'succeeded', 'failed', 'cancelled']).optional(),
 }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["runs"]>>),
+    staleRuns: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["staleRuns"]>>),
+    cancelStaleRun: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AgentRouter["cancelStaleRun"]>>)
     }),
   analytics: t.router({
     overview: publicProcedure
@@ -72,12 +84,22 @@ const appRouter = t.router({
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["detail"]>>),
     decide: publicProcedure
-      .input(z.object({
-  id: z.string().min(1),
-  idempotencyKey: z.string().min(1),
-  verdict: z.enum(['approve', 'reject', 'override']),
-  evidence: z.string().max(1000).optional(),
-}))
+      .input(z
+  .object({
+    id: z.string().min(1),
+    idempotencyKey: z.string().min(1),
+    verdict: z.enum(['approve', 'reject', 'override']),
+    evidence: z.string().max(1000).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.verdict === 'override' && !input.evidence?.trim()) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['evidence'],
+        message: 'Override evidence is required',
+      })
+    }
+  }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["decide"]>>)
     }),
   audit: t.router({
@@ -180,6 +202,7 @@ const appRouter = t.router({
   status: z.enum(['posted', 'rejected']),
   externalRef: z.string().min(1).max(100).optional(),
   rejectedReason: z.string().min(1).max(500).optional(),
+  resolveDispatchClaim: z.boolean().optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ErpRouter["acknowledge"]>>),
     ingestVendors: publicProcedure
@@ -236,6 +259,9 @@ const appRouter = t.router({
     .optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["list"]>>),
+    detail: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["detail"]>>),
     ingest: publicProcedure
       .input(z.object({
   idempotencyKey: z.string().min(1),
@@ -256,14 +282,15 @@ const appRouter = t.router({
     classify: publicProcedure
       .input(z.object({
   id: z.string().min(1),
-  classified: z.unknown(),
+  idempotencyKey: z.string().min(1),
+  classified: invoicePayloadSchema,
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["classify"]>>),
     drop: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["drop"]>>),
     requeue: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["requeue"]>>),
     registerInvoice: publicProcedure
       .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
@@ -350,12 +377,22 @@ const appRouter = t.router({
     approve: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["approve"]>>),
+    resolveFailed: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  outcome: z.enum(['confirmed_sent', 'confirmed_not_sent']),
+  evidence: z.string().trim().min(1).max(1000),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["resolveFailed"]>>),
     reject: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   reason: z.string().min(1).max(500).optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["reject"]>>)
@@ -382,20 +419,29 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["create"]>>),
     approve: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({
+  idempotencyKey: z.string().min(1),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["approve"]>>),
     execute: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({
+  idempotencyKey: z.string().min(1),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["execute"]>>),
     reconcile: publicProcedure
       .input(z.object({
   runId: z.string().min(1),
   lineId: z.string().min(1),
   status: z.enum(['paid', 'dishonored', 'rejected']),
+  idempotencyKey: z.string().min(1),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["reconcile"]>>),
     voidRun: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({
+  idempotencyKey: z.string().min(1),
+}).extend({
+  reason: z.string().trim().min(1).max(500),
+}))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["voidRun"]>>)
     }),
   policy: t.router({
@@ -446,7 +492,7 @@ const appRouter = t.router({
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["signature"]>>),
     sign: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PurchaseOrderRouter["sign"]>>),
     issue: publicProcedure
       .input(z.object({
@@ -487,7 +533,7 @@ const appRouter = t.router({
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["record"]>>),
     cancel: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ReceiptRouter["cancel"]>>)
     }),
   requisition: t.router({
@@ -532,24 +578,42 @@ const appRouter = t.router({
   since: z.string().datetime().optional(),
   limit: z.number().int().min(1).max(100).default(20),
 }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["poll"]>>),
+    recoverySummary: publicProcedure
+      .input(z.object({}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["recoverySummary"]>>),
+    deadLetters: publicProcedure
+      .input(listInput)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["deadLetters"]>>),
+    requeue: publicProcedure
+      .input(z.object({
+  id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<EventSubscriptionRouter["requeue"]>>)
     }),
   sourcing: t.router({
     list: publicProcedure
-      .input(listInput)
+      .input(z.object({
+  requisitionId: z.string().min(1).optional(),
+  status: z.enum(['requested', 'received', 'accepted', 'rejected']).optional(),
+}))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["list"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["detail"]>>),
     request: publicProcedure
       .input(z.object({
+  idempotencyKey: z.string().min(1),
   requisitionId: z.string().min(1),
-  vendorIds: z.array(z.string().min(1)).min(1),
+  vendorIds: z.array(z.string().min(1)).min(1).max(100),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["request"]>>),
     receive: publicProcedure
       .input(z.object({
   id: z.string().min(1),
+  idempotencyKey: z.string().min(1),
   totalMinor: positiveMinorUnits,
   currencyCode: z.string().min(3).max(3).optional(),
   leadTimeDays: z.number().int().positive().optional(),
@@ -572,7 +636,7 @@ const appRouter = t.router({
       .input(z.object({ requisitionId: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["compare"]>>),
     award: publicProcedure
-      .input(z.object({ id: z.string().min(1) }))
+      .input(z.object({ id: z.string().min(1) }).extend({ idempotencyKey: z.string().min(1) }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<SourcingRouter["award"]>>)
     }),
   sso: t.router({
@@ -664,7 +728,16 @@ const appRouter = t.router({
     verifyBankAccount: publicProcedure
       .input(z.object({
   id: z.string().min(1),
-  bankAccount: z.any(),
+  bankAccount: z
+  .object({
+    bank: z.string().min(1).max(120),
+    accountNumber: z.string().min(1).max(80).optional(),
+    accountNo: z.string().min(1).max(80).optional(),
+    holder: z.string().min(1).max(200),
+  })
+  .refine((value) => value.accountNumber || value.accountNo, {
+    message: 'accountNumber is required',
+  }),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>)
     })

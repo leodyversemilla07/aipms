@@ -8,6 +8,7 @@ import type {
   TRPCMiddleware,
 } from 'nestjs-trpc'
 import { assertAgentCapability } from '../agent-capabilities'
+import { assertHumanProcedureRole } from '../authorize'
 import type { AuthedTrpcContext, BaseTrpcContext } from '../context.types'
 import { AgentQuotaMiddleware } from './agent-quota.middleware'
 
@@ -40,6 +41,7 @@ export class AuthMiddleware implements TRPCMiddleware {
             select: { role: true },
           })
         )?.role ?? 'user'
+      assertHumanProcedureRole(opts.path, role)
     } else {
       const raw = (user as SessionUser & { scopes?: unknown }).scopes
       if (Array.isArray(raw))

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import { db } from '@workspace/db'
+import { db, Prisma } from '@workspace/db'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 
@@ -162,28 +162,31 @@ export class BirService {
    * aggregated per supplier.
    */
   async summary1601e(input: { period: string }): Promise<Bir1601E> {
-    const invoices = await this.withheldInPeriod(undefined, input.period)
-
-    const byVendor = new Map<string, Bir1601ESupplierRow>()
-    for (const inv of invoices) {
-      let row = byVendor.get(inv.vendorId)
-      if (!row) {
-        row = {
-          vendorId: inv.vendorId,
-          name: inv.vendor.name,
-          taxId: inv.vendor.taxId,
-          invoiceCount: 0,
-          baseAmountMinor: 0,
-          taxWithheldMinor: 0,
-        }
-        byVendor.set(inv.vendorId, row)
+    assertPeriod(input.period)
+    const range = periodRange(input.period)
+    const aggregates = await db.invoice.groupBy({
+      by: ['vendorId'],
+      where: { receivedAt: range, ewtMinor: { gt: 0 } },
+      _count: { _all: true },
+      _sum: { amountMinor: true, ewtMinor: true },
+      orderBy: { vendorId: 'asc' },
+    })
+    const vendors = await db.vendor.findMany({
+      where: { id: { in: aggregates.map((row) => row.vendorId) } },
+      select: { id: true, name: true, taxId: true },
+    })
+    const byId = new Map(vendors.map((vendor) => [vendor.id, vendor]))
+    const suppliers: Bir1601ESupplierRow[] = aggregates.map((row) => {
+      const vendor = byId.get(row.vendorId)
+      return {
+        vendorId: row.vendorId,
+        name: vendor?.name ?? '(deleted)',
+        taxId: vendor?.taxId ?? null,
+        invoiceCount: row._count._all,
+        baseAmountMinor: row._sum.amountMinor ?? 0,
+        taxWithheldMinor: row._sum.ewtMinor ?? 0,
       }
-      row.invoiceCount += 1
-      row.baseAmountMinor += inv.amountMinor
-      row.taxWithheldMinor += inv.ewtMinor
-    }
-
-    const suppliers = [...byVendor.values()]
+    })
     return {
       form: '1601-E',
       period: input.period,
@@ -208,31 +211,37 @@ export class BirService {
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
     })
-    const rows = await db.invoice.findMany({
-      where: { ewtMinor: { gt: 0 } },
-      select: { receivedAt: true, ewtMinor: true },
-    })
-    const acc = new Map<
-      string,
-      { period: string; taxWithheldMinor: number; invoiceCount: number }
-    >()
-    for (const r of rows) {
-      const period = r.receivedAt.toISOString().slice(0, 7)
-      const row = acc.get(period) ?? {
-        period,
-        taxWithheldMinor: 0,
-        invoiceCount: 0,
-      }
-      row.taxWithheldMinor += r.ewtMinor
-      row.invoiceCount += 1
-      acc.set(period, row)
-    }
-    const sorted = [...acc.values()].sort((a, b) =>
-      b.period.localeCompare(a.period),
-    )
+    const [rows, totals] = await Promise.all([
+      db.$queryRaw<
+        {
+          period: string
+          taxWithheldMinor: bigint
+          invoiceCount: bigint
+        }[]
+      >(Prisma.sql`
+        select to_char(date_trunc('month', "receivedAt"), 'YYYY-MM') as period,
+               sum("ewtMinor")::bigint as "taxWithheldMinor",
+               count(*)::bigint as "invoiceCount"
+        from invoice
+        where "ewtMinor" > 0
+        group by 1
+        order by 1 desc
+        offset ${skip}
+        limit ${take}
+      `),
+      db.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+        select count(distinct date_trunc('month', "receivedAt"))::bigint as count
+        from invoice
+        where "ewtMinor" > 0
+      `),
+    ])
     return {
-      rows: sorted.slice(skip, skip + take),
-      total: sorted.length,
+      rows: rows.map((row) => ({
+        period: row.period,
+        taxWithheldMinor: Number(row.taxWithheldMinor),
+        invoiceCount: Number(row.invoiceCount),
+      })),
+      total: Number(totals[0]?.count ?? 0),
       facetCounts: {},
     }
   }

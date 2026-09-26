@@ -8,6 +8,7 @@ import { computeTax } from '@workspace/tax'
 import { PolicyService } from '../policy/policy.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { assertDatabaseInt } from '../shared/money/minor-units'
+import { type ListInput, paginate } from '../trpc/list-input'
 
 /** §9 3-way match tolerance: ± this much (basis points) is a clean match. */
 export const MATCH_TOLERANCE_BPS = 500 // 5%
@@ -79,9 +80,16 @@ export class InvoiceService {
     }
   }
 
-  list(where: { status?: InvoiceStatus } = {}) {
+  list(input: Partial<ListInput> & { status?: InvoiceStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where = input.status ? { status: input.status } : {}
     return db.invoice.findMany({
       where,
+      skip,
+      take,
       orderBy: { receivedAt: 'desc' },
     })
   }

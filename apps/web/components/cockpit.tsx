@@ -63,20 +63,30 @@ function OverviewCard({
 
 function Dashboard() {
   const trpc = useTRPC()
-  const pending = useQuery(trpc.approval.pendingList.queryOptions())
+  const me = useQuery(trpc.users.me.queryOptions())
+  const role = me.data?.role
+  const isSupervisor =
+    role === "procurement" || role === "finance" || role === "admin"
+  const isFinance = role === "finance" || role === "admin"
+  const pending = useQuery({
+    ...trpc.approval.pendingList.queryOptions(),
+    enabled: isSupervisor,
+  })
   const requisitions = useQuery(
     trpc.requisition.list.queryOptions({ q: "", page: 1, pageSize: 1 })
   )
-  const orders = useQuery(
-    trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 1 })
-  )
-  // The invoice API returns all rows even when given pagination input.
-  const invoices = useQuery(
-    trpc.invoice.list.queryOptions({ q: "", page: 1, pageSize: 1 })
-  )
-  const runs = useQuery(
-    trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 })
-  )
+  const orders = useQuery({
+    ...trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 1 }),
+    enabled: isSupervisor,
+  })
+  const invoices = useQuery({
+    ...trpc.invoice.list.queryOptions({ q: "", page: 1, pageSize: 25 }),
+    enabled: isFinance,
+  })
+  const runs = useQuery({
+    ...trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 }),
+    enabled: isSupervisor,
+  })
   const invoiceRows = invoices.data as { status: string }[] | undefined
   const exceptionInvoices = invoiceRows?.filter(
     (invoice) => invoice.status === "exception"
@@ -93,59 +103,61 @@ function Dashboard() {
         description="Human decisions and agent operations"
       />
 
-      <section
-        aria-labelledby="attention-title"
-        className="flex flex-col gap-4"
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <h2
-            id="attention-title"
-            className="font-heading font-semibold text-xl"
-          >
-            Needs attention
-          </h2>
-          {pending.data && pending.data.length > 0 ? (
-            <Badge variant="destructive">
-              {pending.data.length} awaiting review
-            </Badge>
+      {isSupervisor && (
+        <section
+          aria-labelledby="attention-title"
+          className="flex flex-col gap-4"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <h2
+              id="attention-title"
+              className="font-heading font-semibold text-xl"
+            >
+              Needs attention
+            </h2>
+            {pending.data && pending.data.length > 0 ? (
+              <Badge variant="destructive">
+                {pending.data.length} awaiting review
+              </Badge>
+            ) : null}
+            <span className="text-muted-foreground text-sm">
+              Human decisions and operational exceptions
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <OverviewCard
+              title="Pending approvals"
+              count={pending.data?.length}
+              description="Decisions awaiting a human"
+              href="#exception-queue"
+              linkLabel="Review queue"
+            />
+            <OverviewCard
+              title="Invoice exceptions"
+              count={exceptionInvoices}
+              description="Among the 25 most recent invoices"
+              href="/finance"
+              linkLabel="Open finance"
+            />
+            <OverviewCard
+              title="Failed agent runs"
+              count={failedRecentRuns}
+              description="Among the 8 most recent runs"
+              href="#agent-activity"
+              linkLabel="Inspect runs"
+            />
+          </div>
+          {pending.isError || invoices.isError || runs.isError ? (
+            <p role="alert" className="text-destructive text-sm">
+              Some attention counts could not load. Check the sections below or
+              refresh.
+            </p>
           ) : null}
-          <span className="text-muted-foreground text-sm">
-            Human decisions and operational exceptions
-          </span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <OverviewCard
-            title="Pending approvals"
-            count={pending.data?.length}
-            description="Decisions awaiting a human"
-            href="#exception-queue"
-            linkLabel="Review queue"
-          />
-          <OverviewCard
-            title="Invoice exceptions"
-            count={exceptionInvoices}
-            description="Invoices requiring investigation · all time"
-            href="/finance"
-            linkLabel="Open finance"
-          />
-          <OverviewCard
-            title="Failed agent runs"
-            count={failedRecentRuns}
-            description="Among the 8 most recent runs"
-            href="#agent-activity"
-            linkLabel="Inspect runs"
-          />
-        </div>
-        {pending.isError || invoices.isError || runs.isError ? (
-          <p role="alert" className="text-destructive text-sm">
-            Some attention counts could not load. Check the sections below or
-            refresh.
-          </p>
-        ) : null}
-        <div id="exception-queue" className="scroll-mt-6">
-          <ExceptionQueue />
-        </div>
-      </section>
+          <div id="exception-queue" className="scroll-mt-6">
+            <ExceptionQueue />
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section aria-labelledby="flow-title" className="flex flex-col gap-3">
@@ -165,20 +177,24 @@ function Dashboard() {
               href="/procurement"
               linkLabel="View requests"
             />
-            <OverviewCard
-              title="Purchase orders"
-              count={orders.data?.total}
-              description="Orders issued"
-              href="/procurement"
-              linkLabel="View orders"
-            />
-            <OverviewCard
-              title="Invoices"
-              count={invoiceRows?.length}
-              description="All statuses"
-              href="/finance"
-              linkLabel="View invoices"
-            />
+            {isSupervisor && (
+              <OverviewCard
+                title="Purchase orders"
+                count={orders.data?.total}
+                description="Orders issued"
+                href="/procurement"
+                linkLabel="View orders"
+              />
+            )}
+            {isFinance && (
+              <OverviewCard
+                title="Invoices"
+                count={invoiceRows?.length}
+                description="Most recent 25 · all statuses"
+                href="/finance"
+                linkLabel="View invoices"
+              />
+            )}
           </div>
           {requisitions.isError || orders.isError ? (
             <p role="alert" className="text-destructive text-sm">
@@ -186,12 +202,14 @@ function Dashboard() {
             </p>
           ) : null}
         </section>
-        <div id="agent-activity" className="scroll-mt-6">
-          <AgentRuns />
-        </div>
+        {isSupervisor && (
+          <div id="agent-activity" className="scroll-mt-6">
+            <AgentRuns />
+          </div>
+        )}
       </div>
 
-      <AnalyticsPanel />
+      {isSupervisor && <AnalyticsPanel />}
       <CreateRequisition />
     </div>
   )

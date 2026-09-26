@@ -56,13 +56,29 @@ export class RequisitionRouter {
   ) {}
 
   @Query({ input: listInput })
-  async list(@Input() input: z.infer<typeof listInput>) {
-    return this.requisition.list(input)
+  async list(
+    @Input() input: z.infer<typeof listInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    return this.requisition.list({
+      ...input,
+      ...(ctx.actorKind === 'human' && ctx.user.role === 'user'
+        ? { requestedBy: ctx.user.id }
+        : {}),
+    })
   }
 
   @Query({ input: idInput })
-  async detail(@Input() input: z.infer<typeof idInput>) {
-    return this.requisition.detail(input.id)
+  async detail(
+    @Input() input: z.infer<typeof idInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    return this.requisition.detail(
+      input.id,
+      ctx.actorKind === 'human' && ctx.user.role === 'user'
+        ? ctx.user.id
+        : undefined,
+    )
   }
 
   @Query()
@@ -124,7 +140,13 @@ export class RequisitionRouter {
         input,
       },
       async (tx) => {
-        const result = await this.requisition.submit(input.id, tx)
+        const result = await this.requisition.submit(
+          input.id,
+          tx,
+          ctx.actorKind === 'human' && ctx.user.role === 'user'
+            ? ctx.user.id
+            : undefined,
+        )
         await this.audit.record(
           {
             actorId: ctx.user.id,

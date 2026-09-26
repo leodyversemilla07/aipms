@@ -31,7 +31,7 @@ export function BudgetsPanel() {
   const list = useQuery(
     trpc.budget.list.queryOptions({ q: "", page: 1, pageSize: 50 })
   )
-  const rows = (list.data?.rows ?? []) as unknown as BudgetRow[]
+  const rows = (list.data?.rows ?? []) as BudgetRow[]
 
   const create = useMutation(trpc.budget.create.mutationOptions())
   function refresh() {
