@@ -36,6 +36,12 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
   private handlers = new Map<string, EventHandler[]>()
   private interval: ReturnType<typeof setInterval> | null = null
   private polling = false
+  private readonly leaseMs = (() => {
+    const configured = Number(process.env.EVENT_RELAY_CLAIM_TTL_MS ?? 900_000)
+    return Number.isFinite(configured) && configured >= 1000
+      ? configured
+      : 900_000
+  })()
 
   /** Register a handler for a specific event type. */
   subscribe(type: DomainEventType, handler: EventHandler) {
@@ -62,13 +68,19 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
     if (this.polling) return
     this.polling = true
     try {
-      const { claimId, events } = await this.claimBatch()
-      for (const event of events) {
+      // Claim only when ready to dispatch. A batch of 50 claimed up front
+      // could expire while earlier, slower handlers were still running.
+      const attempted = new Set<string>()
+      for (let processed = 0; processed < 50; processed++) {
+        const { claimId, event } = await this.claimNext(attempted)
+        if (!event) break
+        attempted.add(event.id)
         const handlers = this.handlers.get(event.type) ?? []
         if (handlers.length === 0) {
           await this.markPublished(event.id, claimId)
           continue
         }
+        const stopHeartbeat = this.keepClaimAlive(event.id, claimId)
         try {
           for (const handler of handlers) {
             await handler({
@@ -83,6 +95,8 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
           await this.markPublished(event.id, claimId)
         } catch (error) {
           await this.recordFailure(event.id, claimId, error)
+        } finally {
+          stopHeartbeat()
         }
       }
     } catch (error) {
@@ -92,19 +106,45 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async claimBatch(): Promise<{
+  private keepClaimAlive(id: string, claimId: string): () => void {
+    let stopped = false
+    const heartbeat = setInterval(
+      () => {
+        void db.domainEvent
+          .updateMany({
+            where: { id, dispatchClaimId: claimId, publishedAt: null },
+            data: { dispatchClaimedAt: new Date() },
+          })
+          .then(({ count }) => {
+            if (count !== 1 && !stopped)
+              console.error(`[event-relay] lost claim for ${id}`)
+          })
+          .catch((error: unknown) => {
+            if (!stopped)
+              console.error(
+                `[event-relay] claim heartbeat failed for ${id}`,
+                error,
+              )
+          })
+      },
+      Math.max(250, Math.floor(this.leaseMs / 3)),
+    )
+    heartbeat.unref?.()
+    return () => {
+      stopped = true
+      clearInterval(heartbeat)
+    }
+  }
+
+  private async claimNext(attempted: Set<string>): Promise<{
     claimId: string
-    events: RelayedEvent[]
+    event: RelayedEvent | undefined
   }> {
     const claimId = randomUUID()
-    const configuredLeaseMs = Number(
-      process.env.EVENT_RELAY_CLAIM_TTL_MS ?? 900_000,
-    )
-    const leaseMs =
-      Number.isFinite(configuredLeaseMs) && configuredLeaseMs >= 1000
-        ? configuredLeaseMs
-        : 900_000
-    const staleBefore = new Date(Date.now() - leaseMs)
+    const staleBefore = new Date(Date.now() - this.leaseMs)
+    const excludeAttempted = attempted.size
+      ? Prisma.sql`AND "id" NOT IN (${Prisma.join([...attempted])})`
+      : Prisma.empty
     const events = await db.$transaction((tx) =>
       tx.$queryRaw<RelayedEvent[]>(Prisma.sql`
         UPDATE "domainEvent" AS event
@@ -116,6 +156,7 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
           FROM "domainEvent"
           WHERE "publishedAt" IS NULL
             AND "deadLetteredAt" IS NULL
+            ${excludeAttempted}
             AND (
               "dispatchClaimId" IS NULL
               OR "dispatchClaimedAt" IS NULL
@@ -123,7 +164,7 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
             )
           ORDER BY "createdAt" ASC
           FOR UPDATE SKIP LOCKED
-          LIMIT 50
+          LIMIT 1
         ) AS claimable
         WHERE event."id" = claimable."id"
         RETURNING
@@ -135,7 +176,7 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
           event."createdAt"
       `),
     )
-    return { claimId, events }
+    return { claimId, event: events[0] }
   }
 
   private async markPublished(id: string, claimId: string) {

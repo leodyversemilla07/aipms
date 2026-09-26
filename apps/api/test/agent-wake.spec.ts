@@ -56,6 +56,28 @@ describe('AgentWakeService', () => {
     expect(updated?.publishedAt).not.toBeNull()
   })
 
+  it('does not invent an invoice-match run for already-matched invoices', async () => {
+    const wake = new AgentWakeService(relay, {} as never)
+    wake.onModuleInit()
+    const event = await db.domainEvent.create({
+      data: {
+        type: 'invoice.received',
+        entityType: 'Invoice',
+        entityId: 'invoice-1',
+        payload: {},
+      },
+    })
+
+    await relay.poll()
+    expect(
+      (await db.domainEvent.findUnique({ where: { id: event.id } }))
+        ?.publishedAt,
+    ).not.toBeNull()
+    expect(
+      await db.agentRun.count({ where: { triggerEventId: event.id } }),
+    ).toBe(0)
+  })
+
   it('leaves failed wakes unpublished so the relay can retry/dead-letter', async () => {
     const wake = new AgentWakeService(relay, {
       processDocument: async () => {

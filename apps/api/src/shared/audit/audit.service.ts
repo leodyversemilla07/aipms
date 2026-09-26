@@ -125,8 +125,10 @@ export class AuditService {
    * §16.3 — walk the chain in insertion order and recompute every hash. Any
    * edit, deletion, or reordering of chained rows breaks verification here.
    */
-  async verifyChain(): Promise<ChainVerification> {
-    const entries = await db.auditEntry.findMany({
+  async verifyChain(
+    client: Prisma.TransactionClient | typeof db = db,
+  ): Promise<ChainVerification> {
+    const entries = await client.auditEntry.findMany({
       orderBy: { seq: 'asc' },
       select: {
         seq: true,

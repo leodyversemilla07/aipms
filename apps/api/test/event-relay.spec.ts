@@ -40,7 +40,7 @@ describe('EventRelayService (§13)', () => {
   async function pollUntilPublished(
     relay: EventRelayService,
     eventId: string,
-    maxPasses = 25,
+    maxPasses = 100,
   ) {
     let row = await db.domainEvent.findUnique({ where: { id: eventId } })
     for (let i = 0; i < maxPasses && !row?.publishedAt; i++) {
@@ -119,6 +119,52 @@ describe('EventRelayService (§13)', () => {
     row = await pollUntilPublished(relay, event.id)
     expect(row?.publishedAt).not.toBeNull()
     expect(row?.dispatchClaimId).toBeNull()
+  })
+
+  it('keeps an in-flight claim alive beyond its lease while another replica polls', async () => {
+    const originalTtl = process.env.EVENT_RELAY_CLAIM_TTL_MS
+    process.env.EVENT_RELAY_CLAIM_TTL_MS = '1000'
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let signalStarted: () => void = () => {}
+    const started = new Promise<void>((resolve) => {
+      signalStarted = resolve
+    })
+    try {
+      const first = new EventRelayService()
+      const second = new EventRelayService()
+      let duplicateCalls = 0
+      first.subscribe('invoice.received', async (item) => {
+        if (item.id !== event.id) return
+        signalStarted()
+        await held
+      })
+      second.subscribe('invoice.received', async (item) => {
+        if (item.id === event.id) duplicateCalls++
+      })
+      const event = await makeEvent('invoice.received', 'slow-handler')
+      const firstPoll = first.poll()
+      await started
+      await new Promise((resolve) => setTimeout(resolve, 1300))
+      await second.poll()
+      expect(duplicateCalls).toBe(0)
+      expect(
+        (await db.domainEvent.findUnique({ where: { id: event.id } }))
+          ?.publishedAt,
+      ).toBeNull()
+      release()
+      await firstPoll
+      expect(
+        (await db.domainEvent.findUnique({ where: { id: event.id } }))
+          ?.publishedAt,
+      ).not.toBeNull()
+    } finally {
+      release()
+      if (originalTtl === undefined) delete process.env.EVENT_RELAY_CLAIM_TTL_MS
+      else process.env.EVENT_RELAY_CLAIM_TTL_MS = originalTtl
+    }
   })
 
   it('retries failing events and dead-letters after max attempts', async () => {

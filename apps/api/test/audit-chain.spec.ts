@@ -1,44 +1,61 @@
-import { db } from '@workspace/db'
+import { randomUUID } from 'node:crypto'
+import { db, type Prisma } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
-import { withAuditMaintenance } from './audit-test-utils'
 
 /**
- * §16.3 tamper-evident audit chain: entries hash-link to their predecessor;
- * edits, deletions, and concurrent writers are all handled.
+ * Audit history is append-only, including in tests. Each test uses its own
+ * entity; destructive probes run inside a rolled-back transaction so they
+ * cannot break the global chain for later integration specs.
  */
-
 const service = new AuditService()
+let probeEntity: string
 
-function record(action: string, extra: Record<string, unknown> = {}) {
-  return service.record({
-    actorId: 'chain-tester',
-    actorKind: 'human',
-    action,
-    entity: 'ChainProbe',
-    entityId: 'probe-1',
-    ...extra,
-  })
+function record(
+  action: string,
+  extra: Record<string, unknown> = {},
+  tx?: Prisma.TransactionClient,
+) {
+  return service.record(
+    {
+      actorId: 'chain-tester',
+      actorKind: 'human',
+      action,
+      entity: probeEntity,
+      entityId: 'probe-1',
+      ...extra,
+    },
+    tx,
+  )
+}
+
+async function withRollback(
+  action: (tx: Prisma.TransactionClient) => Promise<void>,
+) {
+  const rollback = new Error('rollback audit integrity probe')
+  try {
+    await db.$transaction(async (tx) => {
+      await action(tx)
+      throw rollback
+    })
+  } catch (error) {
+    if (error !== rollback) throw error
+  }
 }
 
 describe('Audit chain', () => {
-  beforeEach(async () => {
-    await withAuditMaintenance((tx) =>
-      tx.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } }),
-    )
+  beforeEach(() => {
+    probeEntity = `ChainProbe:${randomUUID()}`
   })
 
   afterAll(async () => {
-    await withAuditMaintenance((tx) =>
-      tx.auditEntry.deleteMany({ where: { entity: 'ChainProbe' } }),
-    )
     await db.$disconnect()
   })
 
   it('rejects update and delete outside explicit maintenance mode', async () => {
     await record('immutable.probe')
     const row = await db.auditEntry.findFirstOrThrow({
-      where: { action: 'immutable.probe' },
+      where: { action: 'immutable.probe', entity: probeEntity },
     })
     await expect(
       db.auditEntry.update({
@@ -57,11 +74,10 @@ describe('Audit chain', () => {
     await record('a.third')
 
     const rows = await db.auditEntry.findMany({
-      where: { entity: 'ChainProbe' },
+      where: { entity: probeEntity },
       orderBy: { seq: 'asc' },
     })
     expect(rows).toHaveLength(3)
-    // Relative linkage holds regardless of what other suites wrote.
     expect(rows[1].prevHash).toBe(rows[0].entryHash)
     expect(rows[2].prevHash).toBe(rows[1].entryHash)
 
@@ -76,78 +92,74 @@ describe('Audit chain', () => {
     )
 
     const rows = await db.auditEntry.findMany({
-      where: { entity: 'ChainProbe' },
+      where: { entity: probeEntity },
       orderBy: { seq: 'asc' },
     })
     expect(rows).toHaveLength(10)
-
-    const result = await service.verifyChain()
-    expect(result.ok).toBe(true)
+    expect((await service.verifyChain()).ok).toBe(true)
   })
 
   it('persists run identity in the hash and detects trace tampering', async () => {
-    await record('run.linked', { runId: 'run-original' })
-    const row = await db.auditEntry.findFirstOrThrow({
-      where: { action: 'run.linked' },
-    })
-    expect(row.runId).toBe('run-original')
-    expect((await service.verifyChain()).ok).toBe(true)
+    await withRollback(async (tx) => {
+      await record('run.linked', { runId: 'run-original' }, tx)
+      const row = await tx.auditEntry.findFirstOrThrow({
+        where: { action: 'run.linked', entity: probeEntity },
+      })
+      expect(row.runId).toBe('run-original')
+      expect((await service.verifyChain(tx)).ok).toBe(true)
 
-    await withAuditMaintenance(
-      (tx) =>
-        tx.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`,
-    )
-    const result = await service.verifyChain()
-    expect(result.ok).toBe(false)
-    expect(result.brokenAtSeq).toBe(row.seq)
+      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await tx.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`
+      const result = await service.verifyChain(tx)
+      expect(result.ok).toBe(false)
+      expect(result.brokenAtSeq).toBe(row.seq)
+    })
   })
 
   it('detects a tampered entry', async () => {
-    await record('t.one')
-    await record('t.two')
-    await record('t.three')
+    await withRollback(async (tx) => {
+      await record('t.one', {}, tx)
+      await record('t.two', {}, tx)
+      await record('t.three', {}, tx)
+      const victim = await tx.auditEntry.findFirstOrThrow({
+        where: { action: 't.two', entity: probeEntity },
+      })
+      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await tx.$executeRaw`UPDATE "AuditEntry" SET action = 't.evil' WHERE id = ${victim.id}`
 
-    // Rewrite history behind the API's back.
-    const victim = await db.auditEntry.findFirstOrThrow({
-      where: { action: 't.two' },
+      const result = await service.verifyChain(tx)
+      expect(result.ok).toBe(false)
+      expect(result.brokenAtSeq).toBe(victim.seq)
+      expect(result.reason).toMatch(/no longer matches/)
     })
-    await withAuditMaintenance(
-      (tx) =>
-        tx.$executeRaw`UPDATE "AuditEntry" SET action = 't.evil' WHERE id = ${victim.id}`,
-    )
-
-    const result = await service.verifyChain()
-    expect(result.ok).toBe(false)
-    expect(result.brokenAtSeq).toBe(victim.seq)
-    expect(result.reason).toMatch(/no longer matches/)
   })
 
   it('detects a deleted entry', async () => {
-    await record('d.one')
-    await record('d.two')
-    await record('d.three')
+    await withRollback(async (tx) => {
+      await record('d.one', {}, tx)
+      await record('d.two', {}, tx)
+      await record('d.three', {}, tx)
+      const victim = await tx.auditEntry.findFirstOrThrow({
+        where: { action: 'd.two', entity: probeEntity },
+      })
+      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await tx.auditEntry.delete({ where: { id: victim.id } })
 
-    const victim = await db.auditEntry.findFirstOrThrow({
-      where: { action: 'd.two' },
+      const result = await service.verifyChain(tx)
+      expect(result.ok).toBe(false)
+      expect(result.brokenAtSeq).toBeDefined()
+      expect(result.reason).toMatch(/preceding chained entry/)
     })
-    await withAuditMaintenance((tx) =>
-      tx.auditEntry.delete({ where: { id: victim.id } }),
-    )
-
-    const result = await service.verifyChain()
-    expect(result.ok).toBe(false)
-    expect(result.brokenAtSeq).toBeDefined()
-    expect(result.reason).toMatch(/preceding chained entry/)
   })
 
   it('skips legacy (null-hash) rows', async () => {
-    // Simulate a pre-feature row.
-    await db.$executeRaw`INSERT INTO "AuditEntry" (id, "actorId", "actorKind", action, entity, at) VALUES ('legacy-1', 'old', 'human', 'legacy.action', 'ChainProbe', now())`
+    await withRollback(async (tx) => {
+      await tx.$executeRaw`INSERT INTO "AuditEntry" (id, "actorId", "actorKind", action, entity, at) VALUES (${`legacy-${randomUUID()}`}, 'old', 'human', 'legacy.action', ${probeEntity}, now())`
+      await record('l.after-legacy', {}, tx)
 
-    await record('l.after-legacy')
-
-    const result = await service.verifyChain()
-    expect(result.ok).toBe(true)
-    expect(result.legacy).toBeGreaterThan(0)
+      const result = await service.verifyChain(tx)
+      expect(result.ok).toBe(true)
+      expect(result.legacy).toBeGreaterThan(0)
+    })
   })
 })

@@ -3,7 +3,16 @@ set -euo pipefail
 
 # Build the exact deployment targets, apply migrations through the production
 # API entrypoint, and verify both externally reachable health surfaces.
-PROJECT_NAME="${COMPOSE_PROJECT_NAME:-aipms-release-smoke}"
+PROJECT_NAME="${COMPOSE_PROJECT_NAME:-aipms-release-smoke-$(date +%s)-$$}"
+# Never let an inherited production project name reach the destructive restore
+# drill or the cleanup trap. CI uses its own unique aipms-ci-* project name.
+case "$PROJECT_NAME" in
+  aipms-release-smoke-* | aipms-ci-*) ;;
+  *)
+    printf 'Refusing unsafe smoke project name: %s\n' "$PROJECT_NAME" >&2
+    exit 1
+    ;;
+esac
 export COMPOSE_PROJECT_NAME="$PROJECT_NAME"
 API_PORT="${API_PORT:-3101}"
 WEB_PORT="${WEB_PORT:-3100}"
@@ -24,6 +33,15 @@ PROBE_VALUE="restore-probe-$(date +%s)-$$"
 compose() {
   docker compose -p "$PROJECT_NAME" "$@"
 }
+
+# A previous run may have left data even if its containers are stopped. Refuse
+# to adopt or delete any existing Compose project, including orphaned volumes.
+existing_containers="$(compose ps --all --quiet)"
+existing_volumes="$(docker volume ls --quiet --filter "label=com.docker.compose.project=$PROJECT_NAME")"
+if [ -n "$existing_containers" ] || [ -n "$existing_volumes" ]; then
+  printf 'Refusing to reuse existing smoke project: %s\n' "$PROJECT_NAME" >&2
+  exit 1
+fi
 
 cleanup() {
   local exit_code=$?

@@ -51,10 +51,8 @@ export class AgentWakeService implements OnModuleInit {
       await this.handleRequisitionApproved(event)
     })
 
-    // Wake on invoice received → audit/match agent should process intake
-    this.relay.subscribe('invoice.received', async (event) => {
-      await this.spawnRun('operator', ['invoice-match'], event)
-    })
+    // Invoice registration already runs the deterministic match in-transaction.
+    // Do not report a successful agent run for an event with no agent work.
 
     // Wake on intake received → classify document
     this.relay.subscribe('intake.received', async (event) => {

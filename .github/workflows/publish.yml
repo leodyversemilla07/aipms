@@ -29,17 +29,18 @@ jobs:
         env:
           POSTGRES_USER: aipms
           POSTGRES_PASSWORD: aipms
-          POSTGRES_DB: aipms
+          POSTGRES_DB: aipms_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U aipms -d aipms"
+          --health-cmd "pg_isready -U aipms -d aipms_test"
           --health-interval 3s
           --health-timeout 5s
           --health-retries 20
 
     env:
-      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms_test
+      AIPMS_TEST_DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms_test
       BETTER_AUTH_SECRET: release-verification-only-secret
       SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
 
@@ -78,6 +79,7 @@ jobs:
         run: |
           pnpm check
           ./scripts/test-deployment-preflight.sh
+          ./scripts/test-production-smoke-guard.sh
           pnpm release:gate:test
           pnpm operations:check:test
           pnpm typecheck
@@ -97,7 +99,7 @@ jobs:
       id-token: write
       attestations: write
     env:
-      COMPOSE_PROJECT_NAME: aipms-release-${{ github.run_id }}
+      COMPOSE_PROJECT_NAME: aipms-release-smoke-${{ github.run_id }}
       API_PORT: "3101"
       WEB_PORT: "3100"
       POSTGRES_PORT: "55432"

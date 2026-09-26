@@ -14,6 +14,7 @@ export default defineConfig({
     }),
   ],
   test: {
+    globalSetup: ['test/test-db.guard.ts'],
     environment: 'node',
     globals: true,
     // Integration specs share one Postgres; serial files avoid cross-file

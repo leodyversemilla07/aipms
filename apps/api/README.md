@@ -18,6 +18,25 @@ pnpm --filter api start    # production-ish: node (SWC loader) src/main.ts
 > A real `dist` bundle (for serverless/containers) is a follow-up: it needs to
 > bundle the workspace `.ts` packages (e.g. `tsup`), like crm's `bun build`.
 
+## Integration tests (destructive)
+
+API Vitest specs delete and intentionally tamper with database rows. They refuse
+any database other than an explicitly selected, disposable `*_test` database.
+Create and migrate a **separate** database, then run with both variables set to
+the same URL (do not point either at your development database):
+
+```bash
+# Example: create aipms_test using your local Postgres credentials.
+DATABASE_URL="postgresql://user:password@localhost:5432/aipms_test" pnpm db:deploy
+DATABASE_URL="postgresql://user:password@localhost:5432/aipms_test" pnpm db:seed
+DATABASE_URL="postgresql://user:password@localhost:5432/aipms_test" \
+  AIPMS_TEST_DATABASE_URL="postgresql://user:password@localhost:5432/aipms_test" \
+  pnpm --filter api test
+```
+
+CI provisions its own `aipms_test` service database. Merely setting the `_test`
+name is not sufficient isolation: use a disposable database you control.
+
 ## How tRPC is wired
 
 Mirrors the crm reference:
