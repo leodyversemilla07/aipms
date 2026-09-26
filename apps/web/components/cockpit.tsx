@@ -2,6 +2,17 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
+import { Badge } from "@workspace/ui/components/badge"
+import { buttonVariants } from "@workspace/ui/components/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import { Skeleton } from "@workspace/ui/components/skeleton"
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { AgentRuns } from "@/components/agent-runs"
@@ -9,25 +20,49 @@ import { AnalyticsPanel } from "@/components/analytics-panel"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { ExceptionQueue } from "./exception-queue"
+import { PageHeader } from "./page-header"
 import { SignInCard } from "./sign-in"
-import { SignOutButton } from "./sign-out-button"
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function OverviewCard({
+  title,
+  count,
+  description,
+  href,
+  linkLabel,
+}: {
+  title: string
+  count: number | undefined
+  description: string
+  href: string
+  linkLabel: string
+}) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl border bg-card p-4 shadow-sm">
-      <span className="text-muted-foreground text-xs uppercase tracking-wide">
-        {label}
-      </span>
-      <span className="font-semibold text-2xl tabular-nums">{value}</span>
-    </div>
+    <Card size="sm" className="min-w-0">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {count === undefined ? (
+          <Skeleton className="h-9 w-16" />
+        ) : (
+          <p className="font-semibold text-3xl tabular-nums">{count}</p>
+        )}
+      </CardContent>
+      <CardFooter>
+        <Link
+          href={href}
+          className={buttonVariants({ variant: "link", size: "sm" })}
+        >
+          {linkLabel} →
+        </Link>
+      </CardFooter>
+    </Card>
   )
 }
 
 function Dashboard() {
   const trpc = useTRPC()
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   const pending = useQuery(trpc.approval.pendingList.queryOptions())
   const requisitions = useQuery(
     trpc.requisition.list.queryOptions({ q: "", page: 1, pageSize: 1 })
@@ -35,85 +70,128 @@ function Dashboard() {
   const orders = useQuery(
     trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 1 })
   )
+  // The invoice API returns all rows even when given pagination input.
   const invoices = useQuery(
     trpc.invoice.list.queryOptions({ q: "", page: 1, pageSize: 1 })
   )
   const runs = useQuery(
-    trpc.paymentRun.list.queryOptions({ q: "", page: 1, pageSize: 1 })
+    trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 })
   )
-
-  const size = (d: unknown): number => {
-    if (Array.isArray(d)) return d.length
-    if (
-      d &&
-      typeof d === "object" &&
-      "rows" in d &&
-      Array.isArray((d as { rows: unknown[] }).rows)
-    ) {
-      return (d as { rows: unknown[] }).rows.length
-    }
-    return 0
-  }
-  const count = (q: { isPending: boolean; data?: unknown }) =>
-    q.isPending ? "…" : size(q.data)
+  const invoiceRows = invoices.data as { status: string }[] | undefined
+  const exceptionInvoices = invoiceRows?.filter(
+    (invoice) => invoice.status === "exception"
+  ).length
+  const recentRuns = runs.data?.rows as { status: string }[] | undefined
+  const failedRecentRuns = recentRuns?.filter(
+    (run) => run.status === "failed"
+  ).length
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">
-            Supervisory desk
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · signed in
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/procurement"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Procurement
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance
-          </Link>
-          <Link
-            href="/audit"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Audit
-          </Link>
-          <Link
-            href="/intake"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Intake
-          </Link>
-          <Link
-            href="/master-data"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Master data
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Supervisory desk"
+        description="Human decisions and agent operations"
+      />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatCard label="Approvals" value={count(pending)} />
-        <StatCard label="Requisitions" value={count(requisitions)} />
-        <StatCard label="POs" value={count(orders)} />
-        <StatCard label="Invoices" value={count(invoices)} />
-        <StatCard label="Pay runs" value={count(runs)} />
+      <section
+        aria-labelledby="attention-title"
+        className="flex flex-col gap-4"
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <h2
+            id="attention-title"
+            className="font-heading font-semibold text-xl"
+          >
+            Needs attention
+          </h2>
+          {pending.data && pending.data.length > 0 ? (
+            <Badge variant="destructive">
+              {pending.data.length} awaiting review
+            </Badge>
+          ) : null}
+          <span className="text-muted-foreground text-sm">
+            Human decisions and operational exceptions
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <OverviewCard
+            title="Pending approvals"
+            count={pending.data?.length}
+            description="Decisions awaiting a human"
+            href="#exception-queue"
+            linkLabel="Review queue"
+          />
+          <OverviewCard
+            title="Invoice exceptions"
+            count={exceptionInvoices}
+            description="Invoices requiring investigation · all time"
+            href="/finance"
+            linkLabel="Open finance"
+          />
+          <OverviewCard
+            title="Failed agent runs"
+            count={failedRecentRuns}
+            description="Among the 8 most recent runs"
+            href="#agent-activity"
+            linkLabel="Inspect runs"
+          />
+        </div>
+        {pending.isError || invoices.isError || runs.isError ? (
+          <p role="alert" className="text-destructive text-sm">
+            Some attention counts could not load. Check the sections below or
+            refresh.
+          </p>
+        ) : null}
+        <div id="exception-queue" className="scroll-mt-6">
+          <ExceptionQueue />
+        </div>
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <section aria-labelledby="flow-title" className="flex flex-col gap-3">
+          <div>
+            <h2 id="flow-title" className="font-heading font-semibold text-xl">
+              Procurement flow
+            </h2>
+            <p className="text-muted-foreground text-sm">
+              Records across the lifecycle · all time
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+            <OverviewCard
+              title="Requisitions"
+              count={requisitions.data?.total}
+              description="Purchase requests"
+              href="/procurement"
+              linkLabel="View requests"
+            />
+            <OverviewCard
+              title="Purchase orders"
+              count={orders.data?.total}
+              description="Orders issued"
+              href="/procurement"
+              linkLabel="View orders"
+            />
+            <OverviewCard
+              title="Invoices"
+              count={invoiceRows?.length}
+              description="All statuses"
+              href="/finance"
+              linkLabel="View invoices"
+            />
+          </div>
+          {requisitions.isError || orders.isError ? (
+            <p role="alert" className="text-destructive text-sm">
+              Could not load some procurement counts.
+            </p>
+          ) : null}
+        </section>
+        <div id="agent-activity" className="scroll-mt-6">
+          <AgentRuns />
+        </div>
       </div>
 
-      <AgentRuns />
       <AnalyticsPanel />
-      <ExceptionQueue />
       <CreateRequisition />
     </div>
   )
@@ -121,9 +199,7 @@ function Dashboard() {
 
 export function Cockpit() {
   const { data: session, isPending } = authClient.useSession()
-  // Only show the loading state on the initial check. Background session
-  // refetches (e.g. on window focus) must not unmount the sign-in card —
-  // remounting would wipe whatever the user already typed/pasted.
+  // Background session refetches must not unmount a partially filled sign-in form.
   const [initialCheckDone, setInitialCheckDone] = useState(false)
   useEffect(() => {
     if (!isPending) setInitialCheckDone(true)

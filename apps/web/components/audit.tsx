@@ -1,47 +1,17 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
-import Link from "next/link"
 import { AuditViewer } from "@/components/audit/viewer"
+import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 
 function AuditBody() {
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">Audit trail</h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · §16 append-only review
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/procurement"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Procurement
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
-
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Audit trail"
+        description="Attributable, append-only activity"
+      />
       <AuditViewer />
     </div>
   )

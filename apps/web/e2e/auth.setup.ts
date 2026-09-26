@@ -20,7 +20,9 @@ setup("authenticate as demo maker", async ({ page }) => {
   // The cookie is host-scoped, so it covers :3000 on the same host too — verify
   // by loading a page that requires a session.
   await page.goto("/")
-  await expect(page.getByText("Supervisory desk")).toBeVisible({
+  await expect(
+    page.getByRole("heading", { name: "Supervisory desk" })
+  ).toBeVisible({
     timeout: 20_000,
   })
 

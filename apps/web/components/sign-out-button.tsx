@@ -2,6 +2,8 @@
 
 import { useQueryClient } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
+import { Button } from "@workspace/ui/components/button"
+import { LogOutIcon } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 
@@ -29,13 +31,19 @@ export function SignOutButton() {
   }
 
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
+      title="Sign out"
+      className="w-full justify-start group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-2"
       disabled={pending}
       onClick={signOut}
-      className="text-muted-foreground underline hover:text-foreground disabled:cursor-wait disabled:opacity-60"
     >
-      {pending ? "Signing out…" : "Sign out"}
-    </button>
+      <LogOutIcon data-icon="inline-start" />
+      <span className="group-data-[collapsible=icon]:sr-only">
+        {pending ? "Signing out…" : "Sign out"}
+      </span>
+    </Button>
   )
 }

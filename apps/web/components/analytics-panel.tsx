@@ -2,6 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query"
 import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -29,7 +35,7 @@ export function AnalyticsPanel() {
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Operations metrics (§14)
+          Financial control & operations
         </h2>
         <Select value={months} onValueChange={(v) => setMonths(v ?? "3")}>
           <SelectTrigger className="w-36" aria-label="Window">
@@ -45,13 +51,65 @@ export function AnalyticsPanel() {
         </Select>
       </div>
 
-      {!d ? (
+      {overview.isError ? (
+        <p role="alert" className="text-destructive text-sm">
+          Could not load operations metrics: {overview.error.message}
+        </p>
+      ) : !d ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
           Computing…
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {/* Gate decisions */}
+          {/* Spend control stays above secondary operational metrics. */}
+          <Card size="sm" className="md:col-span-2">
+            <CardHeader>
+              <CardTitle>Budget utilization · all periods</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {d.spend.length === 0 ? (
+                <Empty>No budgets registered.</Empty>
+              ) : (
+                <ul className="flex flex-col divide-y divide-border">
+                  {d.spend.map((b) => (
+                    <li
+                      key={`${b.costCenter}-${b.period}`}
+                      className="flex flex-col gap-1 py-2"
+                    >
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="font-medium">
+                          {b.costCenter} · {b.period}
+                        </span>
+                        <span className="font-mono text-muted-foreground">
+                          {minorToPhp(b.spentMinor)} spent /{" "}
+                          {minorToPhp(b.limitMinor)} limit
+                          {b.committedMinor > 0
+                            ? ` (+${minorToPhp(b.committedMinor)} committed)`
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={
+                            b.utilizationPct > 90
+                              ? "h-full rounded-full bg-destructive"
+                              : b.utilizationPct > 70
+                                ? "h-full rounded-full bg-amber-500"
+                                : "h-full rounded-full bg-primary"
+                          }
+                          style={{
+                            width: `${Math.min(100, b.utilizationPct)}%`,
+                          }}
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Gate decisions in the selected window */}
           <MetricCard title="Gate decisions">
             {d.gates.byStatus.length === 0 ? (
               <Empty>No gate activity in this window.</Empty>
@@ -139,49 +197,6 @@ export function AnalyticsPanel() {
               </table>
             )}
           </MetricCard>
-
-          {/* Spend utilization spans both columns */}
-          <div className="flex flex-col gap-2 rounded-xl border bg-card p-4 md:col-span-2">
-            <span className="text-muted-foreground text-xs uppercase tracking-wide">
-              Budget utilization (spent / limit)
-            </span>
-            {d.spend.length === 0 ? (
-              <Empty>No budgets registered.</Empty>
-            ) : (
-              <ul className="flex flex-col divide-y divide-border">
-                {d.spend.map((b) => (
-                  <li
-                    key={`${b.costCenter}-${b.period}`}
-                    className="flex flex-col gap-1 py-2"
-                  >
-                    <div className="flex items-baseline justify-between text-xs">
-                      <span className="font-medium">
-                        {b.costCenter} · {b.period}
-                      </span>
-                      <span className="font-mono text-muted-foreground">
-                        {minorToPhp(b.spentMinor)} / {minorToPhp(b.limitMinor)}
-                        {b.committedMinor > 0
-                          ? ` (+${minorToPhp(b.committedMinor)} committed)`
-                          : ""}
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={
-                          b.utilizationPct > 90
-                            ? "h-full rounded-full bg-destructive"
-                            : b.utilizationPct > 70
-                              ? "h-full rounded-full bg-amber-500"
-                              : "h-full rounded-full bg-primary"
-                        }
-                        style={{ width: `${Math.min(100, b.utilizationPct)}%` }}
-                      />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
       )}
     </section>
@@ -196,12 +211,12 @@ function MetricCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-      <span className="text-muted-foreground text-xs uppercase tracking-wide">
-        {title}
-      </span>
-      {children}
-    </div>
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   )
 }
 

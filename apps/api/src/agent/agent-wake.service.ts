@@ -38,6 +38,13 @@ export class AgentWakeService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    if (process.env.AGENT_EVENT_WAKE !== '1') {
+      console.log(
+        '[agent-wake] disabled (set AGENT_EVENT_WAKE=1 to enable event-driven automation)',
+      )
+      return
+    }
+
     // Wake on requisition approval → operator agent should issue PO
     this.relay.subscribe('requisition.approved', async (event) => {
       await this.handleRequisitionApproved(event)
@@ -55,19 +62,13 @@ export class AgentWakeService implements OnModuleInit {
   }
 
   private async handleRequisitionApproved(event: RelayedEvent) {
-    const run = await db.agentRun.create({
-      data: {
-        agentId: 'operator',
-        skills: ['requisition-to-po'],
-        meta: {
-          triggeredBy: event.type,
-          entityType: event.entityType,
-          entityId: event.entityId,
-          eventId: event.id,
-        },
-      },
-    })
-    console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
+    const started = await this.beginRun(
+      'operator',
+      ['requisition-to-po'],
+      event,
+    )
+    if (!started.shouldProcess) return
+    const run = started.run
     try {
       const requisition = await db.requisition.findUnique({
         where: { id: event.entityId },
@@ -169,6 +170,7 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      throw err
     }
   }
 
@@ -177,24 +179,14 @@ export class AgentWakeService implements OnModuleInit {
     skills: string[],
     event: RelayedEvent,
   ) {
-    const run = await db.agentRun.create({
-      data: {
-        agentId,
-        skills,
-        meta: {
-          triggeredBy: event.type,
-          entityType: event.entityType,
-          entityId: event.entityId,
-          eventId: event.id,
-        },
-      },
-    })
-    console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
+    const started = await this.beginRun(agentId, skills, event)
+    if (!started.shouldProcess) return
+    const run = started.run
     try {
       if (event.type === 'intake.received') {
-        const result = await this.agent.processPending(5)
+        const result = await this.agent.classifyAndRegister(event.entityId)
         console.log(
-          `[agent-wake] run ${run.id} processed ${result.succeeded}/${result.documents} docs`,
+          `[agent-wake] run ${run.id} processed intake ${event.entityId}`,
         )
         await db.agentRun.update({
           where: { id: run.id },
@@ -226,6 +218,57 @@ export class AgentWakeService implements OnModuleInit {
           },
         },
       })
+      throw err
     }
+  }
+
+  /**
+   * At-least-once outbox delivery maps to one durable run. A published event
+   * whose final relay acknowledgement was interrupted returns its succeeded
+   * run; failed/stale-running runs are reclaimed for retry without creating
+   * duplicate trace rows.
+   */
+  private async beginRun(
+    agentId: string,
+    skills: string[],
+    event: RelayedEvent,
+  ) {
+    const data = {
+      agentId,
+      skills,
+      triggerEventId: event.id,
+      meta: {
+        triggeredBy: event.type,
+        entityType: event.entityType,
+        entityId: event.entityId,
+        eventId: event.id,
+      },
+    }
+    try {
+      const run = await db.agentRun.create({ data })
+      console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
+      return { run, shouldProcess: true as const }
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2002'
+      ) {
+        throw error
+      }
+    }
+
+    const existing = await db.agentRun.findUnique({
+      where: { triggerEventId: event.id },
+    })
+    if (!existing) throw new Error(`Run for event ${event.id} disappeared`)
+    if (existing.status === 'succeeded') {
+      return { run: existing, shouldProcess: false as const }
+    }
+    const run = await db.agentRun.update({
+      where: { id: existing.id },
+      data: { status: 'running', finishedAt: null, meta: data.meta },
+    })
+    console.log(`[agent-wake] retrying run ${run.id} for ${event.type}`)
+    return { run, shouldProcess: true as const }
   }
 }

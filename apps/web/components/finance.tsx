@@ -1,46 +1,23 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
-import Link from "next/link"
 import { DemoSwitcher } from "@/components/demo-switcher"
 import { BirReports } from "@/components/finance/bir-reports"
 import { ErpSync } from "@/components/finance/erp-sync"
 import { InvoiceList } from "@/components/finance/invoice-list"
 import { InvoiceRegister } from "@/components/finance/invoice-register"
 import { PaymentRuns } from "@/components/finance/payment-runs"
+import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 
 function FinanceBody() {
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">Finance desk</h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · invoice intake & payment runs
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/procurement"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Procurement
-          </Link>
-          <SignOutButton />
-          <DemoSwitcher />
-        </nav>
-      </header>
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Finance desk"
+        description="Invoices, payment runs & reconciliation"
+        action={<DemoSwitcher />}
+      />
 
       <InvoiceRegister />
       <InvoiceList />

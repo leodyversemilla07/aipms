@@ -51,6 +51,11 @@ export function AgentRuns() {
     trpc.agent.runs.queryOptions({ q: "", page: 1, pageSize: 8 })
   )
   const rows = (runsQuery.data?.rows ?? []) as unknown as RunRow[]
+  const attentionRank = (status: string) =>
+    status === "failed" ? 0 : status === "running" ? 1 : 2
+  const prioritizedRows = [...rows].sort(
+    (a, b) => attentionRank(a.status) - attentionRank(b.status)
+  )
 
   return (
     <section className="flex flex-col gap-3">
@@ -63,14 +68,20 @@ export function AgentRuns() {
         </span>
       </div>
 
-      {rows.length === 0 ? (
+      {runsQuery.isError ? (
+        <p role="alert" className="text-destructive text-sm">
+          Could not load agent runs: {runsQuery.error.message}
+        </p>
+      ) : runsQuery.isPending ? (
+        <p className="text-muted-foreground text-sm">Loading agent activity…</p>
+      ) : rows.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
           No agent runs yet — runs appear here as agents drain intake or react
           to domain events.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {rows.map((r) => {
+          {prioritizedRows.map((r) => {
             const status = RUN_STATUS[r.status] ?? {
               label: r.status,
               tone: "muted" as const,
@@ -105,12 +116,9 @@ export function AgentRuns() {
                       {status.label}
                     </Badge>
                     {r.skills.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded-full bg-muted px-2 py-0.5 text-muted-foreground text-xs"
-                      >
+                      <Badge key={s} variant="outline">
                         {s}
-                      </span>
+                      </Badge>
                     ))}
                     <span className="text-muted-foreground text-xs">
                       agent {r.agentId.slice(0, 12)}

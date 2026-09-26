@@ -14,6 +14,7 @@ import { z } from "zod";
 const t = initTRPC.create();
 const publicProcedure = t.procedure;
 import { listInput } from "../vendor/../trpc/list-input";
+import { nonnegativeMinorUnits, positiveDatabaseInt, positiveMinorUnits } from "../sourcing/../shared/money/minor-units";
 import { receiptLineInput } from "../receipt/receipt.router";
 import type { AgentRouter } from "../agent/agent.router";
 import type { AnalyticsRouter } from "../analytics/analytics.router";
@@ -123,7 +124,7 @@ const appRouter = t.router({
   costCenter: z.string().min(1).max(80),
   period: z.string().min(1).max(20),
   currencyCode: z.string().length(3).default('PHP'),
-  limitMinor: z.number().int().nonnegative(),
+  limitMinor: nonnegativeMinorUnits,
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["create"]>>)
     }),
@@ -141,7 +142,7 @@ const appRouter = t.router({
   name: z.string().min(1).max(200),
   category: z.string().max(120).default('general'),
   unit: z.string().max(20).default('ea'),
-  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultPriceMinor: nonnegativeMinorUnits.nullable().optional(),
   defaultCurrencyCode: z.string().length(3).default('PHP'),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<CatalogRouter["create"]>>),
@@ -152,7 +153,7 @@ const appRouter = t.router({
   name: z.string().min(1).max(200).optional(),
   category: z.string().max(120).optional(),
   unit: z.string().max(20).optional(),
-  defaultPriceMinor: z.number().int().nonnegative().nullable().optional(),
+  defaultPriceMinor: nonnegativeMinorUnits.nullable().optional(),
   defaultCurrencyCode: z.string().length(3).optional(),
   active: z.boolean().optional(),
 }))
@@ -279,16 +280,7 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["detail"]>>),
     compute: publicProcedure
       .input(z.object({
-  lines: z
-    .array(
-      z.object({
-        description: z.string().optional(),
-        amountMinor: z.number().int().nonnegative(),
-        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-        vatExempt: z.boolean().optional(),
-      }),
-    )
-    .min(1),
+  lines: z.array(invoiceLineInput).min(1),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["compute"]>>),
     register: publicProcedure
@@ -298,16 +290,7 @@ const appRouter = t.router({
   number: z.string().min(1).max(80),
   poId: z.string().min(1).optional(),
   currencyCode: z.string().length(3).default('PHP'),
-  lines: z
-    .array(
-      z.object({
-        description: z.string().optional(),
-        amountMinor: z.number().int().nonnegative(),
-        class: z.enum(['goods', 'services', 'professional', 'rental', 'other']),
-        vatExempt: z.boolean().optional(),
-      }),
-    )
-    .min(1),
+  lines: z.array(invoiceLineInput).min(1),
   receivedAt: z.coerce.date().optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
@@ -528,9 +511,9 @@ const appRouter = t.router({
       z.object({
         sku: z.string().min(1).max(100).nullish(),
         description: z.string().min(1).max(500),
-        quantity: z.number().int().positive(),
+        quantity: positiveDatabaseInt,
         unit: z.string().max(20).optional(),
-        unitPriceMinor: z.number().int().nonnegative(),
+        unitPriceMinor: nonnegativeMinorUnits,
         currencyCode: z.string().length(3).optional(),
       }),
     )
@@ -567,7 +550,7 @@ const appRouter = t.router({
     receive: publicProcedure
       .input(z.object({
   id: z.string().min(1),
-  totalMinor: z.number().int().positive(),
+  totalMinor: positiveMinorUnits,
   currencyCode: z.string().min(3).max(3).optional(),
   leadTimeDays: z.number().int().positive().optional(),
   validUntil: z.date().optional(),
@@ -576,9 +559,9 @@ const appRouter = t.router({
       z.object({
         sku: z.string().optional(),
         description: z.string(),
-        quantity: z.number().int().positive().optional(),
-        unitPriceMinor: z.number().int().nonnegative().optional(),
-        amountMinor: z.number().int().nonnegative(),
+        quantity: positiveDatabaseInt.optional(),
+        unitPriceMinor: nonnegativeMinorUnits.optional(),
+        amountMinor: nonnegativeMinorUnits,
       }),
     )
     .optional(),

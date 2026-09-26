@@ -278,6 +278,7 @@ model AgentRun {
   id         String    @id @default(cuid())
   agentId    String    // User.id where kind = agent
   taskId     String?   // parent task, if decomposed by orchestrator
+  triggerEventId String? @unique // outbox event; prevents duplicate wake runs
   status     RunStatus @default(running)
   skills     String[]  // which skill bundles were active
   meta       Json?     // runtime metadata (model, tokens, cost)
@@ -305,11 +306,14 @@ model DomainEvent {
   lastError         String?
   deadLetteredAt    DateTime? // null = still retryable
   deadLetterReason  String?
+  processingAt      DateTime? // exclusive relay lease; stale leases are reclaimable
+  processingBy      String?
   createdAt         DateTime  @default(now())
 
   @@map("domainEvent")
   @@index([publishedAt])
   @@index([deadLetteredAt])
+  @@index([processingAt])
   @@index([type])
   @@index([createdAt])
 }

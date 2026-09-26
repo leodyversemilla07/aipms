@@ -1,9 +1,35 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@workspace/ui/components/alert-dialog"
+import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
-import { cn } from "@workspace/ui/lib/utils"
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@workspace/ui/components/empty"
+import { Skeleton } from "@workspace/ui/components/skeleton"
+import { useState } from "react"
 import { minorToPhp } from "@/lib/money"
+import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
 const KIND_LABEL: Record<string, string> = {
@@ -14,18 +40,12 @@ const KIND_LABEL: Record<string, string> = {
   poCancellation: "PO cancellation",
 }
 
-/**
- * Shape of a pending-approval row as consumed by this view. The router returns
- * richer Prisma rows; we only need the fields rendered here, so we cast to
- * avoid dragging the whole JSON-typed model (incl. recursive citations) into
- * the component type.
- */
 type QueueApprovalRow = {
   id: string
   kind: string
   gateOutcome: string
   evidence: string | null
-  citations?: Array<string> | null
+  citations?: string[] | null
   createdAt: string
   requisition: {
     lines: Array<{
@@ -37,137 +57,163 @@ type QueueApprovalRow = {
 }
 
 function lineSummary(
-  lines: Array<{
-    description: string
-    quantity: number
-    unitPriceMinor: number
-  }>
-): string {
-  if (lines.length === 0) return ""
-  const total = lines.reduce((sum, l) => sum + l.quantity * l.unitPriceMinor, 0)
-  const first = lines[0]?.description ?? ""
+  lines: NonNullable<QueueApprovalRow["requisition"]>["lines"]
+) {
+  if (lines.length === 0) return "No requisition lines"
+  const total = lines.reduce(
+    (sum, line) => sum + line.quantity * line.unitPriceMinor,
+    0
+  )
   const suffix = lines.length > 1 ? ` +${lines.length - 1} more` : ""
-  return `${first}${suffix} — ${minorToPhp(total)}`
+  return `${lines[0]?.description ?? "Requisition"}${suffix} · ${minorToPhp(total)}`
 }
 
-/**
- * §10.2 exception queue — approvals that need a human verdict. The API is the
- * source of truth; this view only renders pending rows and issues decide calls.
- */
+/** Human review requires an explicit confirmation; the API remains the source of truth. */
 export function ExceptionQueue() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
-
+  const [review, setReview] = useState<QueueApprovalRow | null>(null)
   const pending = useQuery(trpc.approval.pendingList.queryOptions())
-
   const decide = useMutation(
     trpc.approval.decide.mutationOptions({
       onSuccess: () => {
+        setReview(null)
         queryClient.invalidateQueries(trpc.approval.pathFilter())
         queryClient.invalidateQueries(trpc.requisition.pathFilter())
       },
     })
   )
-
-  if (pending.isPending)
-    return <p className="text-muted-foreground text-sm">loading queue…</p>
-  if (pending.isError) {
-    return (
-      <p className="text-destructive text-sm">
-        Could not load the approval queue: {pending.error.message}
-      </p>
-    )
-  }
   const rows = (pending.data ?? []) as unknown as QueueApprovalRow[]
 
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Exception queue
-        </h2>
-        <span className="text-muted-foreground text-xs">
-          {rows.length} pending
-        </span>
-      </div>
+  function submit(verdict: "approve" | "reject") {
+    if (!review || decide.isPending) return
+    decide.mutate({
+      id: review.id,
+      idempotencyKey: `web-${verdict}-${review.id}`,
+      verdict,
+      ...(verdict === "reject"
+        ? { evidence: "Rejected from supervisory desk" }
+        : {}),
+    })
+  }
 
-      {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          Queue is clear — no approvals need a human verdict.
+  return (
+    <section aria-labelledby="queue-title" className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 id="queue-title" className="font-heading font-medium">
+          Approval queue
+        </h3>
+        {pending.data ? (
+          <Badge variant="outline">{rows.length} pending</Badge>
+        ) : null}
+      </div>
+      {pending.isPending ? (
+        <Skeleton className="h-24 w-full" />
+      ) : pending.isError ? (
+        <p role="alert" className="text-destructive text-sm">
+          Could not load the approval queue: {pending.error.message}
         </p>
+      ) : rows.length === 0 ? (
+        <Empty className="border py-6">
+          <EmptyHeader>
+            <EmptyTitle>All caught up</EmptyTitle>
+            <EmptyDescription>
+              No approvals need a human decision right now.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       ) : (
         <ul className="flex flex-col gap-3">
-          {rows.map((a) => (
-            <li
-              key={a.id}
-              className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-                  {KIND_LABEL[a.kind] ?? a.kind}
-                </span>
-                <span className="text-muted-foreground text-xs">
-                  {a.createdAt.toLocaleString()}
-                </span>
-              </div>
-
-              {a.requisition ? (
-                <p className="font-medium text-sm">
-                  {lineSummary(a.requisition.lines)}
-                </p>
-              ) : null}
-
-              <p className="text-muted-foreground text-xs">
-                Gate outcome: <span className="font-mono">{a.gateOutcome}</span>
-                {a.evidence ? ` · evidence: ${a.evidence}` : ""}
-              </p>
-
-              {a.citations && a.citations.length > 0 ? (
-                <p className="font-mono text-[11px] text-muted-foreground">
-                  cites: {a.citations.join(", ")}
-                </p>
-              ) : null}
-
-              <div className="mt-1 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="default"
-                  disabled={decide.isPending}
-                  onClick={() =>
-                    decide.mutate({
-                      id: a.id,
-                      idempotencyKey: `web-approve-${a.id}`,
-                      verdict: "approve",
-                    })
-                  }
-                >
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={decide.isPending}
-                  onClick={() =>
-                    decide.mutate({
-                      id: a.id,
-                      idempotencyKey: `web-reject-${a.id}`,
-                      verdict: "reject",
-                      evidence: "Rejected from supervisory desk",
-                    })
-                  }
-                >
-                  Reject
-                </Button>
-                {decide.isPending && (
-                  <span className={cn("text-muted-foreground text-xs")}>
-                    deciding…
-                  </span>
-                )}
-              </div>
+          {rows.map((item) => (
+            <li key={item.id}>
+              <Card size="sm">
+                <CardHeader>
+                  <CardTitle>{KIND_LABEL[item.kind] ?? item.kind}</CardTitle>
+                  <CardAction>
+                    <Badge variant="secondary">Pending</Badge>
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-2">
+                  <p className="font-medium">
+                    {item.requisition
+                      ? lineSummary(item.requisition.lines)
+                      : "Approval requires review"}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {fmtTime(item.createdAt)} · Gate outcome: {item.gateOutcome}
+                    {item.evidence ? ` · ${item.evidence}` : ""}
+                  </p>
+                </CardContent>
+                <CardFooter>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setReview(item)}
+                  >
+                    Review decision
+                  </Button>
+                </CardFooter>
+              </Card>
             </li>
           ))}
         </ul>
       )}
+
+      <AlertDialog
+        open={review !== null}
+        onOpenChange={(open) => {
+          if (!open && !decide.isPending) setReview(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Review approval decision</AlertDialogTitle>
+            <AlertDialogDescription>
+              Check the request, policy evidence and amount before deciding.
+              Your decision will be recorded in the audit trail.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {review ? (
+            <div className="flex flex-col gap-2 text-sm">
+              <p className="font-medium">
+                {review.requisition
+                  ? lineSummary(review.requisition.lines)
+                  : (KIND_LABEL[review.kind] ?? review.kind)}
+              </p>
+              <p>Gate: {review.gateOutcome}</p>
+              {review.evidence ? <p>Evidence: {review.evidence}</p> : null}
+              {review.citations?.length ? (
+                <p className="break-words text-muted-foreground text-xs">
+                  Citations: {review.citations.join(", ")}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {decide.isError ? (
+            <p role="alert" className="text-destructive text-sm">
+              Decision failed: {decide.error.message}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={decide.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={decide.isPending}
+              onClick={() => submit("reject")}
+            >
+              Reject
+            </Button>
+            <Button
+              disabled={decide.isPending}
+              onClick={() => submit("approve")}
+            >
+              Approve
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   )
 }

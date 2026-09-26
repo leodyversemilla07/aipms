@@ -2,6 +2,7 @@ import "@workspace/ui/globals.css"
 
 import { cn } from "@workspace/ui/lib/utils"
 import { Geist_Mono, Inter } from "next/font/google"
+import { AppShell } from "@/components/app-shell"
 import { ThemeProvider } from "@/components/theme-provider"
 import { TRPCReactProvider } from "@/lib/trpc/client"
 import { HydrateClient } from "@/lib/trpc/hydrate"
@@ -32,7 +33,9 @@ export default function RootLayout({
       <body>
         <ThemeProvider>
           <TRPCReactProvider>
-            <HydrateClient>{children}</HydrateClient>
+            <HydrateClient>
+              <AppShell>{children}</AppShell>
+            </HydrateClient>
           </TRPCReactProvider>
         </ThemeProvider>
       </body>

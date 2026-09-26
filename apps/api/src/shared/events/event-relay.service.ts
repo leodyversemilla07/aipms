@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   Injectable,
   type OnModuleDestroy,
@@ -25,15 +26,17 @@ type EventHandler = (event: {
  * attempt counter and, after EVENT_RELAY_MAX_ATTEMPTS (default 5), is
  * dead-lettered so one poison event cannot block the queue forever.
  *
- * This is a database-backed relay suitable for single-tenant, single-node
- * deployment. A message broker (Redis Streams, etc.) can replace the
- * polling loop in Phase 6 without changing the emit/subscribe API.
+ * Database leases coordinate multiple API replicas. Delivery remains
+ * at-least-once: a stale lease is reclaimed after EVENT_RELAY_LEASE_MS, so
+ * handlers must be idempotent. A broker can replace the polling loop later
+ * without changing the emit/subscribe API.
  */
 @Injectable()
 export class EventRelayService implements OnModuleInit, OnModuleDestroy {
   private handlers = new Map<string, EventHandler[]>()
   private interval: ReturnType<typeof setInterval> | null = null
   private polling = false
+  private readonly workerId = randomUUID()
 
   /** Register a handler for a specific event type. */
   subscribe(type: DomainEventType, handler: EventHandler) {
@@ -60,13 +63,42 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
     if (this.polling) return
     this.polling = true
     try {
+      const leaseMs = Math.max(
+        1_000,
+        Number(process.env.EVENT_RELAY_LEASE_MS) || 300_000,
+      )
+      const staleBefore = new Date(Date.now() - leaseMs)
       const events = await db.domainEvent.findMany({
-        where: { publishedAt: null, deadLetteredAt: null },
+        where: {
+          publishedAt: null,
+          deadLetteredAt: null,
+          OR: [
+            { processingAt: null },
+            { processingAt: { lt: staleBefore } },
+          ],
+        },
         orderBy: { createdAt: 'asc' },
         take: 50,
       })
 
-      for (const event of events) {
+      for (const candidate of events) {
+        // Candidate reads are intentionally optimistic. The conditional claim
+        // decides ownership across all API replicas before any handler runs.
+        const claimed = await db.domainEvent.updateMany({
+          where: {
+            id: candidate.id,
+            publishedAt: null,
+            deadLetteredAt: null,
+            OR: [
+              { processingAt: null },
+              { processingAt: { lt: staleBefore } },
+            ],
+          },
+          data: { processingAt: new Date(), processingBy: this.workerId },
+        })
+        if (claimed.count !== 1) continue
+
+        const event = candidate
         const handlers = this.handlers.get(event.type) ?? []
         if (handlers.length === 0) {
           await this.markPublished(event.id)
@@ -96,9 +128,13 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async markPublished(id: string) {
-    await db.domainEvent.update({
-      where: { id },
-      data: { publishedAt: new Date() },
+    await db.domainEvent.updateMany({
+      where: { id, processingBy: this.workerId },
+      data: {
+        publishedAt: new Date(),
+        processingAt: null,
+        processingBy: null,
+      },
     })
   }
 
@@ -112,12 +148,17 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
     const maxAttempts = Number(process.env.EVENT_RELAY_MAX_ATTEMPTS ?? 5)
     const message =
       err instanceof Error ? err.message : JSON.stringify(err ?? 'unknown')
-    const event = await db.domainEvent.update({
-      where: { id },
+    const changed = await db.domainEvent.updateMany({
+      where: { id, processingBy: this.workerId },
       data: {
         attemptCount: { increment: 1 },
         lastError: message,
       },
+    })
+    if (changed.count !== 1) return // lease was reclaimed by another worker
+
+    const event = await db.domainEvent.findUniqueOrThrow({
+      where: { id },
       select: { attemptCount: true },
     })
     console.error(
@@ -125,14 +166,23 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
       message,
     )
     if (event.attemptCount >= maxAttempts) {
-      await db.domainEvent.update({
-        where: { id },
+      await db.domainEvent.updateMany({
+        where: { id, processingBy: this.workerId },
         data: {
           deadLetteredAt: new Date(),
           deadLetterReason: `exceeded ${maxAttempts} delivery attempts: ${message}`,
+          processingAt: null,
+          processingBy: null,
         },
       })
       console.error(`[event-relay] event#${id} dead-lettered`)
+    } else {
+      // Release immediately for the next retry pass; failures do not hold a
+      // lease until timeout.
+      await db.domainEvent.updateMany({
+        where: { id, processingBy: this.workerId },
+        data: { processingAt: null, processingBy: null },
+      })
     }
   }
 }

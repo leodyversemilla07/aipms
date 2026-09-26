@@ -15,7 +15,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    // Match APP_URL / Better Auth trusted origin for browser sign-in.
+    baseURL: "http://localhost:3000",
     trace: "retain-on-failure",
   },
   projects: [

@@ -7,50 +7,20 @@ import {
   TabsList,
   TabsTrigger,
 } from "@workspace/ui/components/tabs"
-import Link from "next/link"
 import { BudgetsPanel } from "@/components/master-data/budgets"
 import { CatalogPanel } from "@/components/master-data/catalog"
 import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
+import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 
 function MasterDataBody() {
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">Master data</h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · vendors, catalog, budgets, policies
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/intake"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Intake
-          </Link>
-          <Link
-            href="/audit"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Audit
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
-
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Master data"
+        description="Vendors, catalog, budgets & policies"
+      />
       {/* Tabs for Master‑Data panels */}
       <Tabs defaultValue="vendors" className="w-full">
         <TabsList variant="default" className="mb-4">

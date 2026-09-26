@@ -1,53 +1,17 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
-import Link from "next/link"
 import { IntakeQueue } from "@/components/intake/queue"
+import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 
 function IntakeBody() {
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">Intake desk</h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · §8.2 normalized ingestion queue
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/procurement"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Procurement
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance
-          </Link>
-          <Link
-            href="/audit"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Audit
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
-
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Intake desk"
+        description="Incoming documents and classification"
+      />
       <IntakeQueue />
     </div>
   )

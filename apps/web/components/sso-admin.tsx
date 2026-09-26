@@ -3,10 +3,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
 import { Button } from "@workspace/ui/components/button"
+import { cn } from "@workspace/ui/lib/utils"
 import Link from "next/link"
 import { useState } from "react"
+import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 import { useTRPC } from "@/lib/trpc/client"
 
 type ProviderRow = {
@@ -32,27 +33,38 @@ export function SsoAdmin() {
   const user = session?.user as { role?: string } | undefined
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">
-            Identity &amp; SSO
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Single sign-on for this instance — OIDC/SAML sign-in and SCIM
-            provisioning
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
+    <div
+      className={cn(
+        "flex w-full flex-col gap-8",
+        !user && "mx-auto max-w-3xl px-4 py-8 sm:px-6"
+      )}
+    >
+      {!user ? (
+        <header className="flex items-center justify-between">
+          <div>
+            <h1 className="font-semibold text-lg tracking-tight">
+              Identity &amp; SSO
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Single sign-on for this instance — OIDC/SAML sign-in and SCIM
+              provisioning
+            </p>
+          </div>
           <Link
             href="/"
             className="text-muted-foreground underline hover:text-foreground"
           >
             Supervisory desk
           </Link>
-          <SignOutButton />
-        </nav>
-      </header>
+        </header>
+      ) : null}
+
+      {user ? (
+        <PageHeader
+          title="Identity & SSO"
+          description="Single sign-on and SCIM provisioning"
+        />
+      ) : null}
 
       {user ? (
         user.role === "admin" ? (

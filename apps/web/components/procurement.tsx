@@ -1,46 +1,20 @@
 "use client"
 
 import { authClient } from "@workspace/auth/client"
-import Link from "next/link"
 import { MessagingQueue } from "@/components/messaging-queue"
+import { PageHeader } from "@/components/page-header"
 import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
 import { SignInCard } from "@/components/sign-in"
-import { SignOutButton } from "@/components/sign-out-button"
 
 function ProcurementBody() {
-  const { data: session } = authClient.useSession()
-  const user = session?.user
-
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">
-            Procurement desk
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {user?.email} · sourcing, receipts & vendor messaging
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance desk
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
-
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Procurement desk"
+        description="Sourcing, orders, receipts & vendor messaging"
+      />
       <IssuePo />
       <PoList />
       <Receipts />
