@@ -549,6 +549,19 @@ model ErpJournalExport {
   @@index([status])
 }
 
+// One-time browser-session-bound authorization handoffs. Only a hash of the
+// random OAuth state is stored; the callback atomically consumes it.
+model QboOAuthState {
+  stateHash String   @id
+  userId    String
+  sessionId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("qboOAuthState")
+}
+
 // OAuth connection to an ERP instance (§8.5 v1 anchor: QuickBooks Online).
 // One row per provider+realm; tokens use versioned AES-256-GCM envelopes
 // under the independently rotatable AIPMS_TOKEN_ENCRYPTION_SECRET.

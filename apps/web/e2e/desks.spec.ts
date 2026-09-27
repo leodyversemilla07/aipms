@@ -6,15 +6,19 @@ import { expect, test } from "@playwright/test"
  */
 
 test.describe("desks render", () => {
-  test("supervisory desk shows stats, agent activity, and the exception queue", async ({
+  test("supervisory desk shows stats, agent activity, and attention queue", async ({
     page,
   }) => {
     await page.goto("/")
     await expect(
       page.getByRole("heading", { name: "Supervisory desk" })
     ).toBeVisible()
-    await expect(page.getByText("Agent activity")).toBeVisible()
-    await expect(page.getByText("Exception queue")).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Agent activity" })
+    ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Needs attention" })
+    ).toBeVisible()
     await expect(page.getByText("New requisition")).toBeVisible()
   })
 
@@ -38,5 +42,13 @@ test.describe("desks render", () => {
     ).toBeVisible()
     // Reconciliation gate always renders its summary line.
     await expect(page.getByText("executed runs:")).toBeVisible()
+    const invoices = page
+      .getByRole("heading", { name: "Invoices", exact: true })
+      .locator("../..")
+    await expect(
+      invoices
+        .getByRole("table")
+        .or(invoices.getByText("No invoices registered yet."))
+    ).toBeVisible()
   })
 })

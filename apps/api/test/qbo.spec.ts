@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { db } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { QboService } from '../src/erp/qbo.service'
@@ -23,8 +24,10 @@ const config = {
 }
 
 const createdConnections: string[] = []
+const principal = { userId: 'qbo-oauth-test', sessionId: 'qbo-session-1' }
 
 afterAll(async () => {
+  await db.qboOAuthState.deleteMany({ where: { userId: principal.userId } })
   await db.erpConnection.deleteMany({
     where: { id: { in: createdConnections } },
   })
@@ -146,7 +149,7 @@ describe('QboService connection lifecycle', () => {
     svc = new QboService()
   })
 
-  it('mints signed state and completes the callback into a stored connection', async () => {
+  it('mints single-use state and completes the callback into a stored connection', async () => {
     const { impl } = fetchMock([
       {
         body: {
@@ -160,10 +163,17 @@ describe('QboService connection lifecycle', () => {
     // route: exchangeCode is called with svc's own transport, so swap it.
     ;(svc as unknown as { fetchImpl: FetchLike }).fetchImpl = impl
 
-    const url = new URL(svc.authorizeUrl())
+    const url = new URL(await svc.authorizeUrl(principal))
     const state = url.searchParams.get('state') ?? ''
+    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(
+      await db.qboOAuthState.findUnique({ where: { stateHash: state } }),
+    ).toBeNull()
+    expect(url.searchParams.get('redirect_uri')).toBe(
+      'http://localhost:3000/api/erp/qbo/callback',
+    )
 
-    await svc.handleCallback('auth-code', 'realm-123', state)
+    await svc.handleCallback('auth-code', 'realm-123', state, principal)
     const conn = await db.erpConnection.findUnique({
       where: {
         provider_realmId: { provider: 'quickbooks', realmId: 'realm-123' },
@@ -177,10 +187,51 @@ describe('QboService connection lifecycle', () => {
     expect(decryptSecret(conn.refreshTokenEnc)).toBe('rt-cb')
   })
 
-  it('rejects forged or expired OAuth state', async () => {
-    await expect(svc.handleCallback('c', 'r', '999.badsig')).rejects.toThrow(
-      /signature|expired|Malformed/i,
-    )
+  it('rejects a callback URI on a different browser origin', async () => {
+    const previous = process.env.QBO_REDIRECT_URI
+    process.env.QBO_REDIRECT_URI =
+      'https://api.example.com/api/erp/qbo/callback'
+    try {
+      await expect(svc.authorizeUrl(principal)).rejects.toThrow(/APP_URL/)
+    } finally {
+      if (previous === undefined) delete process.env.QBO_REDIRECT_URI
+      else process.env.QBO_REDIRECT_URI = previous
+    }
+  })
+
+  it('refuses forged, expired, replayed and cross-session OAuth state before token exchange', async () => {
+    const { impl, calls } = fetchMock([])
+    ;(svc as unknown as { fetchImpl: FetchLike }).fetchImpl = impl
+    const state =
+      new URL(await svc.authorizeUrl(principal)).searchParams.get('state') ?? ''
+
+    await expect(
+      svc.handleCallback('c', 'r', state, { ...principal, sessionId: 'other' }),
+    ).rejects.toThrow(/session changed/)
+    await expect(
+      svc.handleCallback('c', 'r', `${state}forged`, principal),
+    ).rejects.toThrow(/state expired/)
+    expect(calls).toHaveLength(0)
+
+    await db.qboOAuthState.update({
+      where: { stateHash: createHash('sha256').update(state).digest('hex') },
+      data: { expiresAt: new Date(Date.now() - 1) },
+    })
+    await expect(
+      svc.handleCallback('c', 'r', state, principal),
+    ).rejects.toThrow(/state expired/)
+    expect(calls).toHaveLength(0)
+
+    const fresh =
+      new URL(await svc.authorizeUrl(principal)).searchParams.get('state') ?? ''
+    // First callback consumes the nonce even if Intuit's exchange fails.
+    await expect(
+      svc.handleCallback('c', 'r', fresh, principal),
+    ).rejects.toThrow()
+    await expect(
+      svc.handleCallback('c', 'r', fresh, principal),
+    ).rejects.toThrow(/state expired/)
+    expect(calls).toHaveLength(1)
   })
 
   it('posts a journal and surfaces QBO errors verbatim', async () => {

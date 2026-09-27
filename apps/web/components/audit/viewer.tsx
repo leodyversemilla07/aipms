@@ -27,12 +27,6 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@workspace/ui/components/native-select"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-} from "@workspace/ui/components/pagination"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
@@ -42,7 +36,8 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
-import { Fragment, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
+import { PageControls } from "@/components/page-controls"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -59,70 +54,6 @@ type AudRow = {
   at: string | Date
 }
 
-function PageControls({
-  page,
-  totalPages,
-  onPageChange,
-}: {
-  page: number
-  totalPages: number
-  onPageChange: (page: number) => void
-}) {
-  const pages = [...new Set([1, page - 1, page, page + 1, totalPages])]
-    .filter((value) => value >= 1 && value <= totalPages)
-    .sort((a, b) => a - b)
-
-  return (
-    <Pagination className="mx-0 w-auto justify-start">
-      <PaginationContent>
-        <PaginationItem>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page === 1}
-            onClick={() => onPageChange(page - 1)}
-          >
-            Previous
-          </Button>
-        </PaginationItem>
-        {pages.map((number, index) => (
-          <Fragment key={number}>
-            {index > 0 && number - (pages[index - 1] ?? 0) > 1 ? (
-              <PaginationItem>
-                <PaginationEllipsis />
-              </PaginationItem>
-            ) : null}
-            <PaginationItem>
-              <Button
-                type="button"
-                variant={number === page ? "outline" : "ghost"}
-                size="icon-sm"
-                aria-label={`Go to page ${number}`}
-                aria-current={number === page ? "page" : undefined}
-                onClick={() => onPageChange(number)}
-              >
-                {number}
-              </Button>
-            </PaginationItem>
-          </Fragment>
-        ))}
-        <PaginationItem>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page === totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            Next
-          </Button>
-        </PaginationItem>
-      </PaginationContent>
-    </Pagination>
-  )
-}
-
 /** Read-only, server-paginated view of the immutable audit trail. */
 export function AuditViewer() {
   const trpc = useTRPC()
@@ -132,7 +63,11 @@ export function AuditViewer() {
   const [page, setPage] = useState(1)
 
   const meta = useQuery(trpc.audit.meta.queryOptions())
-  const chain = useQuery(trpc.audit.chain.queryOptions())
+  const chain = useQuery({
+    ...trpc.audit.chain.queryOptions(),
+    enabled: false,
+    retry: false,
+  })
   const feed = useQuery(
     trpc.audit.list.queryOptions({
       q,
@@ -203,6 +138,19 @@ export function AuditViewer() {
         </Alert>
       ) : null}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={chain.isFetching}
+          onClick={() => void chain.refetch()}
+        >
+          {chain.isFetching ? "Verifying full chain…" : "Verify full chain"}
+        </Button>
+        <span className="text-muted-foreground text-xs">
+          Full verification reads every entry; it runs only on request.
+        </span>
+      </div>
       {chain.isError ? (
         <Alert variant="destructive">
           <AlertTitle>Could not verify audit chain</AlertTitle>
@@ -211,12 +159,15 @@ export function AuditViewer() {
       ) : chain.data ? (
         <Alert variant={chain.data.ok ? "default" : "destructive"}>
           <AlertTitle>
-            {chain.data.ok ? "Chain intact" : "Chain integrity warning"}
+            {chain.data.ok
+              ? "Chain intact at last check"
+              : "Chain integrity warning"}
           </AlertTitle>
           <AlertDescription>
             {chain.data.ok
               ? `${chain.data.checked} hashed entries verified${chain.data.legacy > 0 ? ` · ${chain.data.legacy} legacy entries predate the chain` : ""}`
               : `Broken at seq ${chain.data.brokenAtSeq}: ${chain.data.reason}`}
+            {` · checked ${new Date(chain.dataUpdatedAt).toLocaleString()}. An external checkpoint is needed to detect a removed chain tip.`}
           </AlertDescription>
         </Alert>
       ) : null}

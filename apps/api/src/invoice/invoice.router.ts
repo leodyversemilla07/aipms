@@ -58,6 +58,12 @@ export class InvoiceRouter {
     return this.invoice.list(input)
   }
 
+  /** Count-backed pages for the Finance table; keep list for existing callers. */
+  @Query({ input: listInputWithStatus })
+  async page(@Input() input: z.infer<typeof listInputWithStatus>) {
+    return this.invoice.page(input)
+  }
+
   @Query({ input: idInput })
   async detail(@Input() input: z.infer<typeof idInput>) {
     return this.invoice.detail(input.id)

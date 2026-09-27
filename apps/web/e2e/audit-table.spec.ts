@@ -1,5 +1,20 @@
 import { expect, test } from "@playwright/test"
 
+test("full chain verification runs only on request", async ({ page }) => {
+  let checks = 0
+  page.on("request", (request) => {
+    if (request.url().includes("audit.chain")) checks++
+  })
+  await page.goto("/audit")
+  await expect(page.getByRole("table")).toBeVisible()
+  expect(checks).toBe(0)
+  await page.getByRole("button", { name: "Verify full chain" }).click()
+  await expect(
+    page.getByText(/Chain intact at last check|Chain integrity warning/)
+  ).toBeVisible()
+  expect(checks).toBe(1)
+})
+
 test("audit entries are server-paginated and filters reset the page", async ({
   page,
 }) => {

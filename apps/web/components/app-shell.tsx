@@ -1,5 +1,6 @@
 "use client"
 
+import { useQuery } from "@tanstack/react-query"
 import { authClient } from "@workspace/auth/client"
 import {
   Sidebar,
@@ -31,6 +32,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import type { ReactNode } from "react"
 import { SignOutButton } from "@/components/sign-out-button"
+import { useTRPC } from "@/lib/trpc/client"
 
 const pageSections: Record<string, string> = {
   "/": "Overview",
@@ -44,16 +46,46 @@ const pageSections: Record<string, string> = {
 }
 
 const desks = [
-  { title: "Overview", href: "/", icon: LayoutDashboardIcon },
-  { title: "Procurement", href: "/procurement", icon: ClipboardListIcon },
-  { title: "Finance", href: "/finance", icon: WalletIcon },
-  { title: "Intake", href: "/intake", icon: InboxIcon },
-  { title: "Audit", href: "/audit", icon: FileClockIcon },
-  { title: "Master data", href: "/master-data", icon: DatabaseIcon },
-  { title: "Recovery", href: "/operations", icon: RotateCcwIcon },
+  { title: "Overview", href: "/", icon: LayoutDashboardIcon, roles: [] },
+  {
+    title: "Procurement",
+    href: "/procurement",
+    icon: ClipboardListIcon,
+    roles: ["procurement", "finance", "admin"],
+  },
+  {
+    title: "Finance",
+    href: "/finance",
+    icon: WalletIcon,
+    roles: ["finance", "admin"],
+  },
+  {
+    title: "Intake",
+    href: "/intake",
+    icon: InboxIcon,
+    roles: ["finance", "admin"],
+  },
+  {
+    title: "Audit",
+    href: "/audit",
+    icon: FileClockIcon,
+    roles: ["finance", "admin"],
+  },
+  {
+    title: "Master data",
+    href: "/master-data",
+    icon: DatabaseIcon,
+    roles: ["procurement", "finance", "admin"],
+  },
+  {
+    title: "Recovery",
+    href: "/operations",
+    icon: RotateCcwIcon,
+    roles: ["finance", "admin"],
+  },
 ] as const
 
-function AppSidebar({ email }: { email: string }) {
+function AppSidebar({ email, role }: { email: string; role?: string }) {
   const pathname = usePathname()
   const { setOpenMobile } = useSidebar()
 
@@ -86,24 +118,30 @@ function AppSidebar({ email }: { email: string }) {
           <SidebarGroupContent>
             <nav aria-label="Desks">
               <SidebarMenu>
-                {desks.map(({ title, href, icon: Icon }) => (
-                  <SidebarMenuItem key={href}>
-                    <SidebarMenuButton
-                      render={
-                        <Link
-                          href={href}
-                          onClick={() => setOpenMobile(false)}
-                        />
-                      }
-                      isActive={pathname === href}
-                      title={title}
-                      aria-current={pathname === href ? "page" : undefined}
-                    >
-                      <Icon aria-hidden="true" />
-                      <span>{title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {desks
+                  .filter(
+                    (desk) =>
+                      desk.roles.length === 0 ||
+                      desk.roles.some((allowed) => allowed === role)
+                  )
+                  .map(({ title, href, icon: Icon }) => (
+                    <SidebarMenuItem key={href}>
+                      <SidebarMenuButton
+                        render={
+                          <Link
+                            href={href}
+                            onClick={() => setOpenMobile(false)}
+                          />
+                        }
+                        isActive={pathname === href}
+                        title={title}
+                        aria-current={pathname === href ? "page" : undefined}
+                      >
+                        <Icon aria-hidden="true" />
+                        <span>{title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
               </SidebarMenu>
             </nav>
           </SidebarGroupContent>
@@ -127,13 +165,26 @@ function AppSidebar({ email }: { email: string }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const { data: session } = authClient.useSession()
   const pathname = usePathname()
+  const trpc = useTRPC()
+  const profile = useQuery({
+    ...trpc.users.me.queryOptions(),
+    enabled: !!session,
+    staleTime: 0,
+  })
   if (!session) return <>{children}</>
 
   const section = pageSections[pathname] ?? "Workspace"
 
   return (
     <SidebarProvider>
-      <AppSidebar email={session.user.email} />
+      <AppSidebar
+        email={session.user.email}
+        // The query cache survives account switching; hide previous user's
+        // navigation while the new profile is fetched.
+        role={
+          profile.data?.id === session.user.id ? profile.data.role : undefined
+        }
+      />
       <SidebarInset>
         <header className="flex h-12 shrink-0 items-center gap-3 border-b px-4 sm:px-6">
           <SidebarTrigger />

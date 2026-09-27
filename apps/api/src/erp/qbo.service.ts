@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import {
   ConflictException,
   Injectable,
@@ -27,6 +27,15 @@ import {
 
 const PROVIDER = 'quickbooks'
 const STATE_TTL_MS = 10 * 60 * 1000
+
+export interface OAuthPrincipal {
+  userId: string
+  sessionId: string
+}
+
+function hashState(state: string): string {
+  return createHash('sha256').update(state).digest('hex')
+}
 
 export interface ConnectionView {
   connected: boolean
@@ -68,52 +77,70 @@ export class QboService {
   }
 
   private get redirectUri(): string {
-    const base =
-      process.env.API_URL ?? `http://localhost:${process.env.PORT ?? 3001}`
-    return process.env.QBO_REDIRECT_URI ?? `${base}/api/erp/qbo/callback`
+    // The callback must arrive at the same browser origin as Better Auth's
+    // cookie; Next proxies this path to the API. A cross-origin override
+    // cannot prove which browser session initiated the handoff.
+    const appUrl = process.env.APP_URL || 'http://localhost:3000'
+    const uri =
+      process.env.QBO_REDIRECT_URI ||
+      new URL('/api/erp/qbo/callback', appUrl).toString()
+    const callback = new URL(uri)
+    if (
+      callback.origin !== new URL(appUrl).origin ||
+      callback.pathname !== '/api/erp/qbo/callback' ||
+      callback.search ||
+      callback.hash
+    ) {
+      throw new ServiceUnavailableException(
+        'QBO_REDIRECT_URI must be APP_URL/api/erp/qbo/callback',
+      )
+    }
+    return callback.toString()
   }
 
-  private signState(expiresAtMs: number): string {
-    const secret = process.env.BETTER_AUTH_SECRET ?? 'aipms-dev-only-secret'
-    return createHmac('sha256', secret)
-      .update(String(expiresAtMs))
-      .digest('hex')
-  }
-
-  /**
-   * Authorize URL with an HMAC-signed, expiring state parameter (CSRF).
-   * The browser follows it; Intuit redirects back to our callback route.
-   */
-  authorizeUrl(): string {
+  /** Mint a cryptographically random, single-use state for this session. */
+  async authorizeUrl(principal: OAuthPrincipal): Promise<string> {
     if (!this.configured) {
       throw new ServiceUnavailableException(
         'QuickBooks connector not configured (set QBO_CLIENT_ID / QBO_CLIENT_SECRET)',
       )
     }
-    const expiresAt = Date.now() + STATE_TTL_MS
-    const state = `${expiresAt}.${this.signState(expiresAt)}`
-    return buildAuthorizeUrl(this.config, this.redirectUri, state)
-  }
-
-  private assertState(state: string): void {
-    const [expRaw, sig] = state.split('.')
-    const exp = Number(expRaw)
-    if (!exp || !sig || Number.isNaN(exp)) {
-      throw new ConflictException('Malformed OAuth state')
-    }
-    if (Date.now() > exp) throw new ConflictException('OAuth state expired')
-    if (this.signState(exp) !== sig) {
-      throw new ConflictException('OAuth state signature mismatch')
-    }
+    const redirectUri = this.redirectUri
+    await db.qboOAuthState.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    })
+    const state = randomBytes(32).toString('base64url')
+    await db.qboOAuthState.create({
+      data: {
+        stateHash: hashState(state),
+        userId: principal.userId,
+        sessionId: principal.sessionId,
+        expiresAt: new Date(Date.now() + STATE_TTL_MS),
+      },
+    })
+    return buildAuthorizeUrl(this.config, redirectUri, state)
   }
 
   async handleCallback(
     code: string,
     realmId: string,
     state: string,
+    principal: OAuthPrincipal,
   ): Promise<void> {
-    this.assertState(state)
     if (!realmId) throw new ConflictException('Missing realmId in callback')
+    const consumed = await db.qboOAuthState.deleteMany({
+      where: {
+        stateHash: hashState(state),
+        userId: principal.userId,
+        sessionId: principal.sessionId,
+        expiresAt: { gt: new Date() },
+      },
+    })
+    if (consumed.count !== 1) {
+      throw new ConflictException(
+        'OAuth state expired, used, or session changed',
+      )
+    }
     const token = await exchangeCode(
       this.config,
       code,
@@ -121,9 +148,6 @@ export class QboService {
       this.fetchImpl,
     )
 
-    const existing = await db.erpConnection.findUnique({
-      where: { provider_realmId: { provider: PROVIDER, realmId } },
-    })
     const data = {
       accessTokenEnc: encryptSecret(token.accessToken),
       refreshTokenEnc: encryptSecret(token.refreshToken),
@@ -135,7 +159,6 @@ export class QboService {
       create: { provider: PROVIDER, realmId, ...data },
       update: data,
     })
-    void existing
   }
 
   async status(): Promise<ConnectionView> {

@@ -94,6 +94,24 @@ export class InvoiceService {
     })
   }
 
+  async page(input: Partial<ListInput> & { status?: InvoiceStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where = input.status ? { status: input.status } : {}
+    const [rows, total] = await Promise.all([
+      db.invoice.findMany({
+        where,
+        skip,
+        take,
+        orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      }),
+      db.invoice.count({ where }),
+    ])
+    return { rows, total }
+  }
+
   async detail(id: string) {
     const invoice = await db.invoice.findUnique({ where: { id } })
     if (!invoice) throw new NotFoundException(`Invoice ${id} not found`)

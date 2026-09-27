@@ -302,6 +302,11 @@ const appRouter = t.router({
   status: z.enum(['received', 'matched', 'exception', 'paid']).optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["list"]>>),
+    page: publicProcedure
+      .input(listInput.extend({
+  status: z.enum(['received', 'matched', 'exception', 'paid']).optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["page"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["detail"]>>),

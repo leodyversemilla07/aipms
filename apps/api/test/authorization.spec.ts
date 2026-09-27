@@ -352,7 +352,7 @@ describe('requester row-level boundary (§10)', () => {
 
 describe('central human procedure policy (§10)', () => {
   it('covers the complete current tRPC surface', () => {
-    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(104)
+    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(105)
   })
 
   it('grants procurement and finance capabilities without conflating them', () => {
@@ -375,6 +375,12 @@ describe('central human procedure policy (§10)', () => {
       assertHumanProcedureRole('requisition.create', 'user'),
     ).not.toThrow()
     expect(() => assertHumanProcedureRole('invoice.list', 'user')).toThrow(
+      TRPCError,
+    )
+    expect(() =>
+      assertHumanProcedureRole('invoice.page', 'finance'),
+    ).not.toThrow()
+    expect(() => assertHumanProcedureRole('invoice.page', 'user')).toThrow(
       TRPCError,
     )
     expect(() =>

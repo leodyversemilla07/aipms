@@ -60,6 +60,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'receipt.cancel': ['procurement', 'finance'],
 
   'invoice.list': ['finance'],
+  'invoice.page': ['finance'],
   'invoice.detail': ['finance'],
   'invoice.compute': ['finance'],
   'invoice.register': ['finance'],

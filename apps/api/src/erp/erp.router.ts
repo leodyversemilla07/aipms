@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { TRPCError } from '@trpc/server'
 import { db } from '@workspace/db'
 import {
   Ctx,
@@ -10,7 +11,7 @@ import {
 } from 'nestjs-trpc'
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
-import { requireRole } from '../trpc/authorize'
+import { requireHumanRole, requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -167,8 +168,12 @@ export class ErpRouter {
     @Input() _input: Record<string, never>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    requireRole(ctx.user, ctx.actorKind, ['finance'], 'erp.qboAuthorize')
-    const url = this.qbo.authorizeUrl()
+    requireHumanRole(ctx.user, ctx.actorKind, ['finance'], 'erp.qboAuthorize')
+    if (!ctx.session) throw new TRPCError({ code: 'UNAUTHORIZED' })
+    const url = await this.qbo.authorizeUrl({
+      userId: ctx.user.id,
+      sessionId: ctx.session.session.id,
+    })
     await this.audit.record({
       actorId: ctx.user.id,
       actorKind: ctx.actorKind,

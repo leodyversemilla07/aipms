@@ -159,3 +159,15 @@ One file per feature under `test/`, mirroring `@workspace/crm`:
 Loaded from the repo-root `.env` via `@workspace/env` (see `.env.example`).
 Required at boot: `DATABASE_URL` (db package), `BETTER_AUTH_SECRET`
 (`betterAuth()` throws without it).
+
+## QuickBooks OAuth callback
+
+Register `${APP_URL}/api/erp/qbo/callback` with Intuit. The Next.js web app
+proxies that path to the API; `QBO_REDIRECT_URI`, when set, must be the same
+origin and path. An old `API_URL`/API-subdomain redirect will be rejected:
+the browser would not send the web-origin Better Auth cookie there. Deploy the
+new database migration before initiating connections, update the registered
+Intuit callback, and use a finance/admin human session to connect. Each
+10-minute authorization state is bound to that session and consumed once;
+a failed exchange requires starting a new connection flow. Expired states
+are pruned when another flow is started.

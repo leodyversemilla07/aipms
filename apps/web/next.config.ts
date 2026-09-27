@@ -53,6 +53,11 @@ const nextConfig: NextConfig = {
     return [
       { source: "/api/trpc/:path*", destination: `${apiUrl}/api/trpc/:path*` },
       { source: "/api/auth/:path*", destination: `${apiUrl}/api/auth/:path*` },
+      // OAuth must return to this origin so the browser sends its auth cookie.
+      {
+        source: "/api/erp/qbo/callback",
+        destination: `${apiUrl}/api/erp/qbo/callback`,
+      },
     ]
   },
 }
