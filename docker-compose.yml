@@ -139,9 +139,11 @@ services:
       AIPMS_AGENT_TOKEN_EXCHANGE: "true"
       # Separate inbound operator credential; unset means production access denied.
       AIPMS_AGENT_ACCESS_TOKEN: ${AIPMS_AGENT_ACCESS_TOKEN:-}
-      # LLM provider gate: "cloud" (BYO OpenAI-compatible keys) or "offline"
-      # (local zero-egress endpoint). The agent refuses to start when the
-      # gate is not satisfied (§16.6).
+      # LLM provider gate for compose/production: "cloud" (BYO
+      # OpenAI-compatible keys) or "offline" (local zero-egress endpoint).
+      # The local ChatGPT subscription mode is intentionally not supported in
+      # this NODE_ENV=production container. The agent refuses to start when
+      # the gate is not satisfied (§16.6).
       AIPMS_LLM_KIND: ${AIPMS_LLM_KIND:-cloud}
       AIPMS_LLM_ENDPOINT: ${AIPMS_LLM_ENDPOINT:-}
       AIPMS_LLM_MODEL: ${AIPMS_LLM_MODEL:-}
@@ -151,7 +153,8 @@ services:
       # Cloud key fallback (BYO keys).
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Optional provider gate policies: residency, retention, no-retention.
-      # residency requires AIPMS_LLM_ALLOWED_HOSTS.
+      # Residency requires AIPMS_LLM_ALLOWED_HOSTS; retention/no-retention
+      # policies require offline mode.
       AIPMS_LLM_GATE: ${AIPMS_LLM_GATE:-}
       AIPMS_LLM_ALLOWED_HOSTS: ${AIPMS_LLM_ALLOWED_HOSTS:-}
       # Custom endpoints bypass the AI Gateway model catalog; set the model's

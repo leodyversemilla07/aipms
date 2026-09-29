@@ -70,6 +70,30 @@ if isolated_preflight > "$TEMP_DIR/image.out" 2>&1; then
 fi
 grep -q 'immutable sha256 image digest' "$TEMP_DIR/image.out"
 
+# Local ChatGPT subscription auth must never pass production preflight.
+mv "$ENV_FILE.valid" "$ENV_FILE"
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's/AIPMS_LLM_KIND="offline"/AIPMS_LLM_KIND="chatgpt"/' "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/chatgpt.out" 2>&1; then
+  echo "deployment preflight accepted local ChatGPT subscription mode" >&2
+  exit 1
+fi
+grep -q 'local-development only' "$TEMP_DIR/chatgpt.out"
+
+# Retention/no-retention gates are only enforceable by the offline provider path.
+mv "$ENV_FILE.valid" "$ENV_FILE"
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i \
+  -e 's/AIPMS_LLM_KIND="offline"/AIPMS_LLM_KIND="cloud"/' \
+  -e 's|AIPMS_LLM_ENDPOINT="http://llm:11434/v1"|AIPMS_LLM_ENDPOINT="https://api.openai.com/v1"|' \
+  "$ENV_FILE"
+printf 'AIPMS_LLM_API_KEY="sk_test_abcdefghijklmnopqrstuvwxyz"\nAIPMS_LLM_GATE="no-retention"\n' >> "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/retention.out" 2>&1; then
+  echo "deployment preflight accepted a cloud no-retention gate" >&2
+  exit 1
+fi
+grep -q 'retention/no-retention policies require offline mode' "$TEMP_DIR/retention.out"
+
 # A valid file with broad filesystem permissions must still fail closed.
 mv "$ENV_FILE.valid" "$ENV_FILE"
 chmod 644 "$ENV_FILE"

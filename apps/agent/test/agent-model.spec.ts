@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
 import { chatgpt } from "eve/models/openai"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   assertProviderGate,
   buildModel,

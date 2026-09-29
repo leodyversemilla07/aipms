@@ -214,6 +214,15 @@ if (llmKind === "cloud") {
   const endpoint = llmEndpointRaw
     ? httpsUrl("AIPMS_LLM_ENDPOINT")
     : new URL("https://api.openai.com/v1")
+  if (
+    gatePolicies.includes("retention") ||
+    gatePolicies.includes("no-retention")
+  ) {
+    fail(
+      "AIPMS_LLM_GATE",
+      "retention/no-retention policies require offline mode; generic cloud endpoints cannot prove retention controls"
+    )
+  }
   if (gatePolicies.includes("residency") && endpoint) {
     if (!allowedHosts.includes(endpoint.hostname.toLowerCase())) {
       fail(
@@ -250,7 +259,10 @@ if (llmKind === "cloud") {
     }
   }
 } else {
-  fail("AIPMS_LLM_KIND", 'must be "cloud" or "offline"')
+  fail(
+    "AIPMS_LLM_KIND",
+    'production deployments must use "cloud" or "offline"; "chatgpt" is local-development only'
+  )
 }
 
 const messageTransport = values.AIPMS_MESSAGING_TRANSPORT?.trim() || "smtp"

@@ -160,7 +160,7 @@ aipms/
 
 ### Prerequisites
 - Node.js 24.x
-- pnpm 11.23.0+
+- pnpm 12.7.0+
 - Docker (for PostgreSQL)
 
 ### Install Dependencies
@@ -192,6 +192,10 @@ pnpm dev --filter web
 # Start Agent (eve runtime)
 pnpm dev --filter agent
 ```
+
+For local agent development without an API key, set `AIPMS_LLM_KIND=chatgpt`,
+start the agent, then sign in through eve `/login`. This mode is rejected in
+production; deployments must use `cloud` or `offline` provider-gated modes.
 
 ### Seed Data
 The seed creates:

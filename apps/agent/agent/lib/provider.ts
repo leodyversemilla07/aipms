@@ -11,7 +11,8 @@
      instance boundary with zero egress; model weights stay in-boundary.
    - Gate:    `AIPMS_LLM_GATE` declares residency / retention / no-retention
      policies; offline mode satisfies them by construction, cloud mode must
-     satisfy the residency allowlist.
+     satisfy the residency allowlist. Generic cloud endpoints cannot prove
+     retention/no-retention controls, so those policies require offline mode.
 
    The provider interface is deliberately tiny so new backends can be added
    without touching the agent skill logic.
@@ -241,6 +242,14 @@ export function assertProviderGate(
   if (!cfg.apiKey) {
     throw new Error(
       "AIPMS_LLM_KIND=cloud requires AIPMS_LLM_API_KEY (or OPENAI_API_KEY)."
+    )
+  }
+
+  if (gate.retention || gate.noRetention) {
+    throw new Error(
+      "AIPMS_LLM_GATE retention/no-retention policies require " +
+        "AIPMS_LLM_KIND=offline; generic cloud endpoints cannot prove " +
+        "retention controls."
     )
   }
 

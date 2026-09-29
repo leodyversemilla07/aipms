@@ -243,6 +243,23 @@ describe("assertProviderGate", () => {
       )
     ).not.toThrow()
   })
+
+  it.each(["retention", "no-retention"])(
+    "requires offline mode for the %s gate",
+    (policy) => {
+      expect(() =>
+        assertProviderGate(
+          normalizeProviderConfig({
+            kind: "cloud",
+            endpoint: "https://api.openai.com/v1",
+            model: "gpt-4o-mini",
+            apiKey: "sk-test",
+          }),
+          env({ AIPMS_LLM_GATE: policy })
+        )
+      ).toThrow(/require AIPMS_LLM_KIND=offline/)
+    }
+  )
 })
 
 describe("resolveContextWindowTokens", () => {
