@@ -1,5 +1,4 @@
 import { Inject } from '@nestjs/common'
-import { db } from '@workspace/db'
 import {
   Ctx,
   Input,
