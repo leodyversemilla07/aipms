@@ -187,23 +187,23 @@ export function resolveProviderFromEnv(
 }
 
 /* ── Host classification (zero-egress enforcement) ───────────────────────── */
-function _isLoopback(host: string): boolean {
+function isPrivateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "")
   if (h === "localhost" || h === "::1") return true
-  const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
-  if (!m) return false
-  return m[1] === "127"
-}
-
-function isPrivateHost(host: string): boolean {
-  const h = host.toLowerCase()
-  if (h === "localhost" || h === "::1") return true
   if (h.endsWith(".local") || h.endsWith(".internal")) return true
+  // In the supported Docker Compose deployment, service names such as `llm`
+  // resolve inside the deployment network and are documented offline endpoints.
+  if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(h) && !/^\d+$/.test(h)) {
+    return true
+  }
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
   if (!m) return false
   const [a, b] = [Number(m[1]), Number(m[2])]
   return (
-    a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)
+    a === 10 ||
+    a === 127 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
   )
 }
 

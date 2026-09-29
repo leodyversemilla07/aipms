@@ -122,9 +122,12 @@ describe("assertProviderGate", () => {
   })
 
   it.each([
+    "http://127.0.0.1:11434/v1",
+    "http://[::1]:11434/v1",
     "http://10.0.0.5:8080/v1",
     "http://192.168.1.20:1234/v1",
     "http://172.16.3.9:8000/v1",
+    "http://llm:11434/v1",
     "http://llm.internal:11434/v1",
     "http://llm.local:11434/v1",
   ])("accepts an offline provider on private host %s", (endpoint) => {

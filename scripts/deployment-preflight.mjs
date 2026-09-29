@@ -191,9 +191,31 @@ for (const name of [
 const llmKind = values.AIPMS_LLM_KIND?.trim() || "cloud"
 const llmEndpointRaw = values.AIPMS_LLM_ENDPOINT?.trim()
 const llmModel = values.AIPMS_LLM_MODEL?.trim()
+function normalizeHost(host) {
+  return host.toLowerCase().replace(/^\[|\]$/g, "")
+}
+
+function isPrivateLlmHost(hostname) {
+  const host = normalizeHost(hostname)
+  if (host === "localhost" || host === "::1") return true
+  if (host.endsWith(".local") || host.endsWith(".internal")) return true
+  if (
+    /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(host) &&
+    !/^\d+$/.test(host)
+  ) {
+    return true
+  }
+  return (
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  )
+}
+
 const allowedHosts = (values.AIPMS_LLM_ALLOWED_HOSTS ?? "")
   .split(",")
-  .map((host) => host.trim().toLowerCase())
+  .map((host) => normalizeHost(host.trim()))
   .filter(Boolean)
 const gatePolicies = (values.AIPMS_LLM_GATE ?? "")
   .split(",")
@@ -238,17 +260,8 @@ if (llmKind === "cloud") {
   if (llmEndpointRaw) {
     try {
       const endpoint = new URL(llmEndpointRaw)
-      const host = endpoint.hostname.toLowerCase()
-      const privateName =
-        host === "localhost" ||
-        host === "::1" ||
-        host.endsWith(".local") ||
-        host.endsWith(".internal") ||
-        /^127\./.test(host) ||
-        /^10\./.test(host) ||
-        /^192\.168\./.test(host) ||
-        /^172\.(1[6-9]|2\d|3[01])\./.test(host)
-      if (!privateName && !allowedHosts.includes(host)) {
+      const host = normalizeHost(endpoint.hostname)
+      if (!isPrivateLlmHost(host) && !allowedHosts.includes(host)) {
         fail(
           "AIPMS_LLM_ALLOWED_HOSTS",
           "offline endpoint must be private or explicitly allowlisted"
