@@ -199,12 +199,8 @@ function isPrivateLlmHost(hostname) {
   const host = normalizeHost(hostname)
   if (host === "localhost" || host === "::1") return true
   if (host.endsWith(".local") || host.endsWith(".internal")) return true
-  if (
-    /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(host) &&
-    !/^\d+$/.test(host)
-  ) {
-    return true
-  }
+  // Other single-label names may resolve through external DNS search domains.
+  if (host === "llm") return true
   return (
     /^127\./.test(host) ||
     /^10\./.test(host) ||

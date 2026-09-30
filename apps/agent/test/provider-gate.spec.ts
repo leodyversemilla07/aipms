@@ -143,6 +143,26 @@ describe("assertProviderGate", () => {
     ).not.toThrow()
   })
 
+  it("refuses an arbitrary single-label offline host unless explicitly allowlisted", () => {
+    const provider = normalizeProviderConfig({
+      kind: "offline",
+      endpoint: "http://external:11434/v1",
+      model: "llama3.2:3b",
+    })
+    expect(() =>
+      assertProviderGate(provider, env({ AIPMS_LLM_KIND: "offline" }))
+    ).toThrow(/zero egress/)
+    expect(() =>
+      assertProviderGate(
+        provider,
+        env({
+          AIPMS_LLM_KIND: "offline",
+          AIPMS_LLM_ALLOWED_HOSTS: "external",
+        })
+      )
+    ).not.toThrow()
+  })
+
   it("refuses an offline provider on a public LLM host (zero egress)", () => {
     expect(() =>
       assertProviderGate(

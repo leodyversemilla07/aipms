@@ -191,11 +191,9 @@ function isPrivateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "")
   if (h === "localhost" || h === "::1") return true
   if (h.endsWith(".local") || h.endsWith(".internal")) return true
-  // In the supported Docker Compose deployment, service names such as `llm`
-  // resolve inside the deployment network and are documented offline endpoints.
-  if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(h) && !/^\d+$/.test(h)) {
-    return true
-  }
+  // Only the bundled Compose service is trusted by default. Arbitrary
+  // single-label names can resolve via DNS search domains outside the network.
+  if (h === "llm") return true
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
   if (!m) return false
   const [a, b] = [Number(m[1]), Number(m[2])]

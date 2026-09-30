@@ -42,6 +42,16 @@ isolated_preflight() {
 write_valid
 isolated_preflight | grep -q '"ok": true'
 
+# Only the bundled Compose hostname is trusted without an explicit allowlist.
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's|http://llm:11434/v1|http://external:11434/v1|' "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/hostname.out" 2>&1; then
+  echo "deployment preflight accepted an unlisted single-label LLM hostname" >&2
+  exit 1
+fi
+grep -q 'offline endpoint must be private or explicitly allowlisted' "$TEMP_DIR/hostname.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
+
 # Shared credentials must fail without echoing either secret.
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i \
