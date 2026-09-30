@@ -83,6 +83,7 @@ jobs:
           pnpm release:gate:test
           pnpm operations:check:test
           pnpm typecheck
+          pnpm --filter api test:unit
           pnpm --filter api test
           pnpm --filter agent test
           pnpm --filter tax test

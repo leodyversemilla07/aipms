@@ -17,7 +17,7 @@ import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { IntakeService } from './intake.service'
-import { projectIntakeValueForAgent } from './intake-agent-projection'
+import { projectIntakeDocumentForAgent } from './intake-agent-projection'
 import { IntakeCommandService } from './intake-command.service'
 import { parseStructuredInvoice } from './structured-invoice'
 
@@ -76,8 +76,12 @@ export class IntakeRouter {
   ) {}
 
   @Query({ input: listInputWithStatus })
-  async list(@Input() input: z.infer<typeof listInputWithStatus>) {
-    return this.intake.list(input)
+  async list(
+    @Input() input: z.infer<typeof listInputWithStatus>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const documents = await this.intake.list(input)
+    return documents.map((document) => this.projectDocument(document, ctx))
   }
 
   @Query({ input: idInput })
@@ -86,12 +90,7 @@ export class IntakeRouter {
     @Ctx() ctx: AuthedTrpcContext,
   ) {
     const document = await this.intake.detail(input.id)
-    if (ctx.actorKind !== 'agent') return document
-    return {
-      ...document,
-      raw: projectIntakeValueForAgent(document.raw),
-      classified: projectIntakeValueForAgent(document.classified),
-    }
+    return this.projectDocument(document, ctx)
   }
 
   @Mutation({ input: ingestInput })
@@ -99,7 +98,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof ingestInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const document = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.ingest',
@@ -127,6 +126,7 @@ export class IntakeRouter {
         )
       },
     )
+    return this.projectDocument(document, ctx)
   }
 
   /**
@@ -139,7 +139,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof ingestStructuredInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const document = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.ingestStructured',
@@ -179,6 +179,7 @@ export class IntakeRouter {
         return extracted
       },
     )
+    return this.projectDocument(document, ctx)
   }
 
   @Mutation({ input: classifyInput })
@@ -186,7 +187,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof classifyInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const document = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.classify',
@@ -213,6 +214,7 @@ export class IntakeRouter {
         return doc
       },
     )
+    return this.projectDocument(document, ctx)
   }
 
   @Mutation({ input: commandInput })
@@ -220,7 +222,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const document = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.drop',
@@ -243,6 +245,7 @@ export class IntakeRouter {
         return doc
       },
     )
+    return this.projectDocument(document, ctx)
   }
 
   @Mutation({ input: commandInput })
@@ -250,7 +253,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof commandInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const document = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.requeue',
@@ -273,6 +276,7 @@ export class IntakeRouter {
         return doc
       },
     )
+    return this.projectDocument(document, ctx)
   }
 
   /**
@@ -286,7 +290,7 @@ export class IntakeRouter {
     @Input() input: z.infer<typeof bridgeInput>,
     @Ctx() ctx: AuthedTrpcContext,
   ) {
-    return this.idempotency.runAtomic(
+    const result = await this.idempotency.runAtomic(
       {
         actorId: ctx.user.id,
         operation: 'intake.registerInvoice',
@@ -337,5 +341,19 @@ export class IntakeRouter {
         return { doc: bridged, invoice, match }
       },
     )
+    return {
+      ...result,
+      doc: this.projectDocument(result.doc, ctx),
+    }
+  }
+
+  /** Project after idempotency so cached raw outcomes cannot bypass redaction. */
+  private projectDocument<T extends { raw: unknown; classified: unknown }>(
+    document: T,
+    ctx: AuthedTrpcContext,
+  ) {
+    return ctx.actorKind === 'agent'
+      ? projectIntakeDocumentForAgent(document)
+      : document
   }
 }

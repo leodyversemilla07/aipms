@@ -78,6 +78,9 @@ jobs:
       - name: Typecheck (turbo)
         run: pnpm typecheck
 
+      - name: Database-blocked API unit tests
+        run: pnpm --filter api test:unit
+
       - name: API tests
         run: pnpm --filter api test
 

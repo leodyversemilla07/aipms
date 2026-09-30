@@ -354,7 +354,11 @@ pnpm typecheck
 # Build
 pnpm build
 
-# Tests
+# Database-blocked API unit tests (no PostgreSQL required)
+pnpm --filter api test:unit
+
+# API integration tests (requires matching DATABASE_URL and
+# AIPMS_TEST_DATABASE_URL pointing to a disposable *_test database)
 pnpm --filter api test
 
 # Database
@@ -363,6 +367,11 @@ pnpm db:migrate    # Apply migrations
 pnpm db:seed       # Seed demo data
 pnpm db:studio     # Prisma Studio UI
 ```
+
+The unit lane selects only `test/unit/**/*.spec.ts` and the pure intake projection
+spec. Its database mock fails on any default-client access. The normal API suite
+still runs the fail-closed disposable-database guard; the unit lane is not a way
+to run integration tests against a development database.
 
 ---
 

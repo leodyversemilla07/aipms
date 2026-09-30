@@ -124,8 +124,9 @@ export class AuditService {
   }
 
   /**
-   * §16.3 — walk the chain in insertion order and recompute every hash. Any
-   * edit, deletion, or reordering of chained rows breaks verification here.
+   * §16.3 — walk the chain in insertion order and recompute every hash.
+   * Changed content or predecessor links break verification. Detecting tail
+   * truncation additionally requires an independently retained checkpoint.
    */
   async verifyChain(
     client: Prisma.TransactionClient | typeof db = db,
@@ -201,8 +202,9 @@ export class AuditService {
         }
         expectedPrev = e.entryHash
       }
-      if (entries.length < VERIFICATION_PAGE_SIZE) break
-      lastSeq = entries[entries.length - 1].seq
+      const lastEntry = entries.at(-1)
+      if (entries.length < VERIFICATION_PAGE_SIZE || !lastEntry) break
+      lastSeq = lastEntry.seq
     }
 
     return { ok: true, checked, legacy }

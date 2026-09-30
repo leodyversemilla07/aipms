@@ -17,8 +17,24 @@ export function redactIntakeText(value: string) {
  * Prompt-safe projection for agent inspection. It keeps procurement fields but
  * removes payment credentials and attachment bodies before content reaches a
  * model. Binary OCR remains an explicit deployment integration, never an
- * implicit prompt upload.
+ * implicit prompt upload. Queue metadata is preserved while persisted payloads
+ * are projected recursively.
  */
+export function projectIntakeDocumentForAgent<
+  T extends { raw: unknown; classified: unknown },
+>(
+  document: T,
+): Omit<T, 'raw' | 'classified'> & {
+  raw: unknown
+  classified: unknown
+} {
+  return {
+    ...document,
+    raw: projectIntakeValueForAgent(document.raw),
+    classified: projectIntakeValueForAgent(document.classified),
+  }
+}
+
 export function projectIntakeValueForAgent(value: unknown, key = ''): unknown {
   if (SENSITIVE_KEY.test(key)) return '[REDACTED]'
   if (typeof value === 'string') return redactIntakeText(value)
