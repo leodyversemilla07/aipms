@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { db, type Prisma } from '@workspace/db'
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
 
 /**
@@ -150,6 +150,46 @@ describe('Audit chain', () => {
       expect(result.brokenAtSeq).toBeDefined()
       expect(result.reason).toMatch(/preceding chained entry/)
     })
+  })
+
+  it('reads bounded keyset pages and verifies across a page boundary', async () => {
+    const rows: { seq: number; entryHash: string | null }[] = Array.from(
+      { length: 501 },
+      (_, index) => ({
+        seq: index + 1,
+        entryHash: null,
+      }),
+    )
+    rows.push({ seq: 502, entryHash: 'unexpected-hash' })
+    const count = vi.fn().mockResolvedValue(501)
+    const findMany = vi.fn(
+      async ({
+        where,
+        take,
+      }: {
+        where: { seq?: { gt: number } }
+        take: number
+      }) => {
+        expect(take).toBe(500)
+        return rows
+          .filter((row) => row.seq > (where.seq?.gt ?? 0))
+          .slice(0, take)
+      },
+    )
+    const client = {
+      auditEntry: { count, findMany },
+    } as unknown as Prisma.TransactionClient
+
+    const result = await service.verifyChain(client)
+    expect(result).toMatchObject({
+      ok: false,
+      checked: 1,
+      legacy: 501,
+      brokenAtSeq: 502,
+    })
+    expect(findMany).toHaveBeenCalledTimes(2)
+    expect(findMany.mock.calls[1][0].where).toEqual({ seq: { gt: 500 } })
+    expect(count).toHaveBeenCalledWith({ where: { entryHash: null } })
   })
 
   it('skips legacy (null-hash) rows', async () => {

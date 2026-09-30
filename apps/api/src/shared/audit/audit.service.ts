@@ -39,6 +39,8 @@ export interface ChainVerification {
 }
 
 /** The row fields an entry's hash commits to. */
+const VERIFICATION_PAGE_SIZE = 500
+
 interface ChainContent {
   runId?: string
   actorId: string
@@ -128,68 +130,79 @@ export class AuditService {
   async verifyChain(
     client: Prisma.TransactionClient | typeof db = db,
   ): Promise<ChainVerification> {
-    const entries = await client.auditEntry.findMany({
-      orderBy: { seq: 'asc' },
-      select: {
-        seq: true,
-        id: true,
-        runId: true,
-        actorId: true,
-        actorKind: true,
-        action: true,
-        entity: true,
-        entityId: true,
-        inputHash: true,
-        before: true,
-        after: true,
-        at: true,
-        prevHash: true,
-        entryHash: true,
-      },
+    // Count separately so failures retain the total legacy count, even when
+    // verification stops early. Keyset pagination keeps memory bounded and
+    // avoids increasingly expensive OFFSET scans as the trail grows.
+    const legacy = await client.auditEntry.count({
+      where: { entryHash: null },
     })
-
-    const legacy = entries.filter((e) => e.entryHash === null).length
     let checked = 0
     let expectedPrev: string | null = null
+    let lastSeq: number | undefined
 
-    for (const e of entries) {
-      if (e.entryHash === null) continue // legacy row
-      checked++
-
-      if (e.prevHash !== expectedPrev) {
-        return {
-          ok: false,
-          checked,
-          legacy,
-          brokenAtSeq: e.seq,
-          reason:
-            expectedPrev === null
-              ? 'first chained entry carries an unexpected prevHash'
-              : 'prevHash does not match the preceding chained entry',
-        }
-      }
-
-      const recomputed = this.entryHash(e.prevHash, e.id, e.at, {
-        ...(e.runId ? { runId: e.runId } : {}),
-        actorId: e.actorId,
-        actorKind: e.actorKind,
-        action: e.action,
-        entity: e.entity,
-        entityId: e.entityId,
-        inputHash: e.inputHash,
-        before: e.before ?? null,
-        after: e.after ?? null,
+    while (true) {
+      const entries = await client.auditEntry.findMany({
+        where: lastSeq === undefined ? {} : { seq: { gt: lastSeq } },
+        orderBy: { seq: 'asc' },
+        take: VERIFICATION_PAGE_SIZE,
+        select: {
+          seq: true,
+          id: true,
+          runId: true,
+          actorId: true,
+          actorKind: true,
+          action: true,
+          entity: true,
+          entityId: true,
+          inputHash: true,
+          before: true,
+          after: true,
+          at: true,
+          prevHash: true,
+          entryHash: true,
+        },
       })
-      if (recomputed !== e.entryHash) {
-        return {
-          ok: false,
-          checked,
-          legacy,
-          brokenAtSeq: e.seq,
-          reason: 'entry content no longer matches its committed hash',
+      for (const e of entries) {
+        if (e.entryHash === null) continue // legacy row
+        checked++
+
+        if (e.prevHash !== expectedPrev) {
+          return {
+            ok: false,
+            checked,
+            legacy,
+            brokenAtSeq: e.seq,
+            reason:
+              expectedPrev === null
+                ? 'first chained entry carries an unexpected prevHash'
+                : 'prevHash does not match the preceding chained entry',
+          }
         }
+
+        const recomputed = this.entryHash(e.prevHash, e.id, e.at, {
+          ...(e.runId ? { runId: e.runId } : {}),
+          actorId: e.actorId,
+          actorKind: e.actorKind,
+          action: e.action,
+          entity: e.entity,
+          entityId: e.entityId,
+          inputHash: e.inputHash,
+          before: e.before ?? null,
+          after: e.after ?? null,
+        })
+        if (recomputed !== e.entryHash) {
+          return {
+            ok: false,
+            checked,
+            legacy,
+            brokenAtSeq: e.seq,
+            reason: 'entry content no longer matches its committed hash',
+          }
+        }
+        expectedPrev = e.entryHash
       }
-      expectedPrev = e.entryHash
+      if (entries.length < VERIFICATION_PAGE_SIZE) break
+      lastSeq = entries[entries.length - 1].seq
     }
 
     return { ok: true, checked, legacy }
