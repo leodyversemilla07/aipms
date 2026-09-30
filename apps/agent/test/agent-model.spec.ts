@@ -27,6 +27,7 @@ describe("agent model selection", () => {
   it("uses a ChatGPT subscription locally without requiring an API key", async () => {
     vi.stubEnv("NODE_ENV", "development")
     vi.stubEnv("AIPMS_LLM_KIND", "chatgpt")
+    vi.stubEnv("AIPMS_LLM_GATE", "")
     const { default: agent } = await import("../agent/agent")
     expect(agent.model).toBe("chatgpt-model")
     expect(chatgpt).toHaveBeenCalledOnce()
@@ -41,6 +42,19 @@ describe("agent model selection", () => {
     )
     expect(chatgpt).not.toHaveBeenCalled()
   })
+
+  it.each(["residency", "retention", "no-retention"])(
+    "rejects ChatGPT when the %s provider gate is declared",
+    async (policy) => {
+      vi.stubEnv("NODE_ENV", "development")
+      vi.stubEnv("AIPMS_LLM_KIND", "chatgpt")
+      vi.stubEnv("AIPMS_LLM_GATE", policy)
+      await expect(import("../agent/agent")).rejects.toThrow(
+        "AIPMS_LLM_KIND=chatgpt cannot satisfy AIPMS_LLM_GATE"
+      )
+      expect(chatgpt).not.toHaveBeenCalled()
+    }
+  )
 
   it("keeps the existing API-key provider path", async () => {
     vi.stubEnv("NODE_ENV", "development")

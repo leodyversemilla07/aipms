@@ -195,7 +195,8 @@ pnpm dev --filter agent
 
 For local agent development without an API key, set `AIPMS_LLM_KIND=chatgpt`,
 start the agent, then sign in through eve `/login`. This mode is rejected in
-production; deployments must use `cloud` or `offline` provider-gated modes.
+production or when `AIPMS_LLM_GATE` is set; deployments must use `cloud` or
+`offline` provider-gated modes.
 
 ### Seed Data
 The seed creates:
