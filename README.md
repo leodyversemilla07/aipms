@@ -94,6 +94,11 @@ aipms/
 - Exception queue for blocked actions
 - Revision history for all changes
 
+PO/receipt cancellation refuses paid obligations and live payment reservations;
+recorded receipts must be resolved before PO cancellation. See
+[`docs/financial-corrections.md`](docs/financial-corrections.md) for the workflow,
+locking contract, and remaining accounting limitations.
+
 ### §11 Policy Engine
 - Declarative, machine-checkable rules
 - Configuration over code: thresholds, approval chains, blacklists as data

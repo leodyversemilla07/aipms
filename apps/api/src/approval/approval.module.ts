@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { InvoiceModule } from '../invoice/invoice.module'
 import { EventsModule } from '../shared/events/events.module'
 import { SharedModule } from '../shared/shared.module'
 import { TrpcModule } from '../trpc/trpc.module'
@@ -7,7 +8,7 @@ import { ApprovalService } from './approval.service'
 import { ApprovalSlaService } from './approval-sla.service'
 
 @Module({
-  imports: [TrpcModule, SharedModule, EventsModule],
+  imports: [TrpcModule, SharedModule, EventsModule, InvoiceModule],
   providers: [ApprovalService, ApprovalRouter, ApprovalSlaService],
   exports: [ApprovalService],
 })

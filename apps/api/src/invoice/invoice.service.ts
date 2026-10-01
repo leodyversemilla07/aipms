@@ -489,42 +489,71 @@ export class InvoiceService {
   }
 
   /**
-   * Re-evaluate matched invoices after their supporting receipt changed
-   * (receipt cancellation). Invoices whose match no longer holds are demoted
-   * atomically with the caller's change; invoices claimed by a live payment
-   * run block the operation instead — void or resolve the run first.
+   * The caller must hold the PO row lock to serialize registrations/receipts.
+   * Lock ALL its invoices before checking payment state: planners/settlement
+   * also lock invoices, so a claim cannot slip in between this check and a
+   * correction. Use the same ID ordering as multi-invoice payment planning.
+   * Paid obligations require a separate return/refund workflow, not correction.
+   */
+  async assertPoCorrectionAllowed(poId: string, tx: Prisma.TransactionClient) {
+    await tx.$queryRaw`
+      SELECT id FROM "invoice" WHERE "poId" = ${poId}
+      ORDER BY id FOR UPDATE
+    `
+    const invoices = await tx.invoice.findMany({
+      where: { poId },
+      orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }],
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        vendorId: true,
+        amountMinor: true,
+        currencyCode: true,
+      },
+    })
+    const paid = invoices.find((invoice) => invoice.status === 'paid')
+    if (paid) {
+      throw new ConflictException(
+        `Invoice ${paid.number} is paid — changing its PO or supporting receipts requires a return/refund workflow`,
+      )
+    }
+    const ids = invoices.map((row) => row.id)
+    if (ids.length > 0) {
+      const claim = await tx.paymentRunLine.findFirst({
+        where: {
+          invoiceId: { in: ids },
+          OR: [
+            { status: 'paid' },
+            { status: 'planned', run: { status: { not: 'voided' } } },
+          ],
+        },
+        include: { run: { select: { runNumber: true, status: true } } },
+        orderBy: { id: 'asc' },
+      })
+      if (claim) {
+        const invoice = invoices.find((row) => row.id === claim.invoiceId)
+        throw new ConflictException(
+          claim.status === 'paid'
+            ? `Invoice ${invoice?.number ?? claim.invoiceId} has a paid line on payment run ${claim.run.runNumber} — a return/refund workflow is required`
+            : `Invoice ${invoice?.number ?? claim.invoiceId} is claimed by payment run ${claim.run.runNumber} (${claim.run.status}) — resolve the run before changing its PO or supporting receipts`,
+        )
+      }
+    }
+    return invoices
+  }
+
+  /**
+   * Re-evaluate matches after PO/receipt cancellation. Callers hold the PO
+   * lock; the shared guard holds invoice locks through eligibility updates.
+   * Paid invoices or live payment reservations refuse the correction.
    */
   async reevaluateMatchedForPo(
     poId: string,
     tx: Prisma.TransactionClient,
   ): Promise<ReevaluateSummary> {
-    const matched = await tx.invoice.findMany({
-      where: { poId, status: 'matched' },
-      orderBy: { receivedAt: 'asc' },
-    })
-    const ids = matched.map((row) => row.id)
-    if (ids.length > 0) {
-      // Same active-reservation definition as payment-run creation: a
-      // planned line on a live run. Released claims (voided runs,
-      // terminally reconciled lines) do not block corrections.
-      const claimed = await tx.paymentRunLine.findMany({
-        where: {
-          invoiceId: { in: ids },
-          status: 'planned',
-          run: { status: { not: 'voided' } },
-        },
-        include: { run: { select: { runNumber: true, status: true } } },
-      })
-      if (claimed.length > 0) {
-        const first = claimed[0]
-        if (!first) throw new ConflictException('Payment claim changed')
-        const invoice = matched.find((row) => row.id === first.invoiceId)
-        throw new ConflictException(
-          `Invoice ${invoice?.number ?? first.invoiceId} is claimed by payment run ${first.run.runNumber} (${first.run.status}) — resolve the run before changing its supporting receipts`,
-        )
-      }
-    }
-
+    const invoices = await this.assertPoCorrectionAllowed(poId, tx)
+    const matched = invoices.filter((invoice) => invoice.status === 'matched')
     const summary: ReevaluateSummary = {
       considered: matched.length,
       kept: 0,

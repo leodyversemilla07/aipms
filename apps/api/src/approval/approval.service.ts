@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { db, type Prisma } from '@workspace/db'
+import { InvoiceService } from '../invoice/invoice.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import {
+  assertDatabaseInt,
+  normalizeCurrencyCode,
+} from '../shared/money/minor-units'
 
 export type DecideVerdict = 'approve' | 'reject' | 'override'
 
@@ -26,7 +31,10 @@ export interface DecideResult {
  */
 @Injectable()
 export class ApprovalService {
-  constructor(private readonly events: EventEmitterService) {}
+  constructor(
+    private readonly events: EventEmitterService,
+    private readonly invoice: InvoiceService,
+  ) {}
   async pendingList() {
     return db.approval.findMany({
       where: { status: 'pending' },
@@ -123,9 +131,14 @@ export class ApprovalService {
       )
 
       // --- PO cancellation gate (§10.1) --------------------------------
-      if (approval.kind === 'poCancellation' && approval.poId) {
+      if (approval.kind === 'poCancellation') {
         if (verdict === 'reject') {
           return { approval: updated, outcome: 'KEPT' }
+        }
+        if (!approval.poId) {
+          throw new ConflictException(
+            'PO cancellation approval has no purchase order',
+          )
         }
         await tx.$queryRaw`
           SELECT id FROM "purchaseOrder"
@@ -152,15 +165,32 @@ export class ApprovalService {
             `PO is ${poBefore.status} — only issued/confirmed POs can be cancelled`,
           )
         }
+        if (approval.requisitionId !== poBefore.requisitionId) {
+          throw new ConflictException(
+            'Cancellation approval does not match the purchase order requisition',
+          )
+        }
+        await this.invoice.assertPoCorrectionAllowed(poBefore.id, tx)
+        const receipt = await tx.receipt.findFirst({
+          where: { poId: poBefore.id, status: 'recorded' },
+          select: { receiptNumber: true },
+        })
+        if (receipt) {
+          throw new ConflictException(
+            `PO has recorded receipt ${receipt.receiptNumber} — resolve its receipts before cancellation`,
+          )
+        }
         const po = await tx.purchaseOrder.update({
           where: { id: approval.poId },
           data: { status: 'cancelled' },
           include: { lines: true },
         })
+        await this.invoice.reevaluateMatchedForPo(po.id, tx)
         await this.releaseCommittedBudget(
           tx,
-          approval.requisitionId,
+          po.requisitionId,
           po.totalMinor,
+          po.currencyCode,
         )
         await this.events.emit(
           {
@@ -264,27 +294,44 @@ export class ApprovalService {
     return db.$transaction(run)
   }
 
-  /** Release the committed amount when a PO is cancelled (floor at 0). */
+  /** Only unpaid, unclaimed POs reach here: release their full unspent commit. */
   private async releaseCommittedBudget(
     tx: Prisma.TransactionClient,
     requisitionId: string | null,
     amountMinor: number,
+    currencyCode: string,
   ) {
+    assertDatabaseInt(amountMinor, 'Purchase order commitment')
     if (!requisitionId) return
     const req = await tx.requisition.findUnique({
       where: { id: requisitionId },
       select: { budgetId: true },
     })
-    if (!req?.budgetId) return
+    if (!req)
+      throw new NotFoundException('Purchase order requisition not found')
+    if (!req.budgetId) {
+      throw new ConflictException('Purchase order requisition has no budget')
+    }
     await tx.$queryRaw`
       SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
     `
     const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
-    if (!budget) return
+    if (!budget) throw new NotFoundException('Purchase order budget not found')
+    if (
+      normalizeCurrencyCode(budget.currencyCode, 'Budget currency') !==
+      normalizeCurrencyCode(currencyCode, 'Purchase order currency')
+    ) {
+      throw new ConflictException('Purchase order and budget currencies differ')
+    }
+    if (budget.committedMinor < amountMinor) {
+      throw new ConflictException(
+        'Budget commitment is inconsistent — reconcile it before cancelling the purchase order',
+      )
+    }
     await tx.budget.update({
       where: { id: req.budgetId },
       data: {
-        committedMinor: Math.max(0, budget.committedMinor - amountMinor),
+        committedMinor: { decrement: amountMinor },
       },
     })
   }

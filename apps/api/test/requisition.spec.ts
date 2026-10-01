@@ -3,6 +3,7 @@ import { db } from '@workspace/db'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ApprovalService } from '../src/approval/approval.service'
 import { BudgetService } from '../src/budget/budget.service'
+import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
 import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
@@ -30,7 +31,10 @@ const requisitionService = new RequisitionService(
   new PolicyService(),
   new EventEmitterService(),
 )
-const approvalService = new ApprovalService(new EventEmitterService())
+const approvalService = new ApprovalService(
+  new EventEmitterService(),
+  new InvoiceService(new PolicyService(), new EventEmitterService()),
+)
 const budgetService = new BudgetService()
 const policyService = new PolicyService()
 

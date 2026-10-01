@@ -19,6 +19,7 @@ import {
   readBeneficiarySnapshot,
 } from './beneficiary-snapshot'
 import { buildPain001, resolveDebtor } from './pain001'
+import { assertLiveInvoicePurchaseOrders } from './payment-eligibility'
 
 /**
  * §8.6 approved payment run (hand-off to finance, not bank-file execution).
@@ -92,13 +93,15 @@ export class PaymentRunService {
 
     // §8.6 race-hardened create: invoice eligibility is re-checked inside the
     // transaction under FOR UPDATE row locks (serializes concurrent creates
-    // claiming the same invoices), and the run number is minted in the same
+    // claiming the same invoices). Lock IDs in order, like PO/receipt
+    // corrections, to avoid cycles across overlapping multi-invoice plans.
+    // The run number is minted in the same
     // transaction — a runNumber collision retries with a fresh number.
     // With an outer (idempotent/atomic) transaction a collision aborts the
     // whole transaction, so attempt once and let the caller retry the key.
     const attempt = async (tx: Prisma.TransactionClient) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
-        Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) FOR UPDATE`,
+        Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) ORDER BY id FOR UPDATE`,
       )
       if (locked.length !== uniqueIds.length) {
         throw new NotFoundException('One or more invoices do not exist')
@@ -120,6 +123,7 @@ export class PaymentRunService {
           )
         }
       }
+      await assertLiveInvoicePurchaseOrders(fresh, tx)
       const freshVendorIds = [
         ...new Set(fresh.map((invoice) => invoice.vendorId)),
       ].sort()

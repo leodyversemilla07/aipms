@@ -229,8 +229,8 @@ export class ReceiptService {
    * Cancel a receipt. Recorded history is preserved; no delete path exists.
    * Cancellation and invoice eligibility change in one transaction: matched
    * invoices on the PO are re-evaluated (demoted when their goods cover
-   * evaporates), and the cancel is refused while a matched invoice is
-   * claimed by a live payment run.
+   * evaporates). Invoice locks serialize with payment planning/settlement;
+   * paid invoices or live payment reservations refuse the correction.
    */
   async cancel(
     id: string,

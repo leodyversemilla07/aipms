@@ -23,7 +23,13 @@ Completed in `942abf2fe2dc09b0dfe5dfa8b9c07bce4d72601b`:
 
 Follow-up validation: 46 API unit tests across four files; 70 agent tests; seven tax tests; eight environment tests; full workspace typecheck; lint/format; new regression-file TypeScript checks; release/operations self-tests; and diff checks all passed. Seven new real-HTTP regression cases were added, but execution was blocked by the unchanged disposable-database guard. PostgreSQL integration/concurrency, browser E2E, production builds, and live-provider validation remain pending.
 
-The financial cancellation, commitment accounting, and concurrency findings remain open and are the next priority.
+Financial correction follow-up:
+
+- **Findings 3–4:** cancellation now refuses paid invoices/paid lines, live payment reservations, and recorded receipts. Supported cancellations invalidate stale matched invoices and release the unpaid PO's exact commitment from its authoritative budget link; inconsistent balances/links/currencies fail closed instead of being floored to zero. New planning also rechecks linked PO lifecycle, including stale legacy matches.
+- **Finding 5:** a shared correction guard now locks all PO invoices before checking payment state. Planning uses the same ID ordering. Receipt correction also refuses paid obligations.
+- Added 32 financial unit regressions (78 API unit tests total across six files) and nine PostgreSQL rollback/race cases. The PostgreSQL cases are typechecked but not executed locally; the unchanged database guard still blocks them, and Docker remains unavailable.
+
+These source-level fixes do not establish production readiness. Per-PO settlement accounting, tolerance/partial-payment behavior, historical inconsistencies, and return/refund workflows remain open. See `docs/financial-corrections.md` for the supported correction contract.
 
 ## Executive assessment
 
@@ -107,6 +113,8 @@ The shipped list tool currently formats only identifiers/statuses, so this is no
 
 ### 3. High — PO cancellation leaves matched invoices and live payment runs eligible
 
+**Follow-up status:** supported cancellation now refuses live payment claims/paid obligations and recorded receipts, and invalidates stale matched invoices atomically. New planning rejects missing/non-live linked POs even with a stale match. PostgreSQL rollback/race validation and reconciliation of older inconsistent runs remain pending.
+
 References: `apps/api/src/approval/approval.service.ts:126–175`; `apps/api/src/payment-run/payment-run.service.ts:110–122`, `:224–278`; `apps/api/src/receipt/receipt.service.ts:235–253`.
 
 The PO-cancellation approval changes the PO status and releases its budget, but does not reevaluate matched invoices or check live payment claims. Payment-run creation trusts stored invoice status, and approval/execution only check run lifecycle. Thus an invoice previously matched to a now-cancelled PO can remain payable. A pre-existing draft/approved run is not invalidated either.
@@ -116,6 +124,8 @@ Receipt cancellation already has a dependent-invoice/payment-claim check; PO can
 **Action:** Define cancellation rules for received, invoiced, reserved, executed, and paid orders. Block incompatible cancellation, or atomically compensate invoice eligibility and reservations under a consistent lock order. Revalidate eligibility before financial approval/execution as appropriate.
 
 ### 4. High — cancelling a paid PO can release unrelated budget commitments
+
+**Follow-up status:** the paid-order over-release path is blocked, and unpaid cancellation uses an exact decrement with fail-closed budget-link, currency, and balance checks. The per-PO commitment/settlement ledger and broader settlement-variance accounting are not implemented by this fix.
 
 References: `apps/api/src/payment-run/payment-run.service.ts:431–474`; `apps/api/src/approval/approval.service.ts:160`, `:268–289`.
 
@@ -132,6 +142,8 @@ The floor at zero hides the over-release; it does not preserve the other order's
 **Action:** Introduce per-PO commitment accounting or a reservation/settlement ledger. Release only the unconsumed commitment, and forbid or explicitly compensate cancellation of paid/executed obligations. Add paid-PO-plus-other-PO tests.
 
 ### 5. High — receipt cancellation and payment planning do not share a serialization boundary
+
+**Follow-up status:** correction now locks all PO invoices before payment checks and holds them through reevaluation. Planning locks overlapping invoice IDs in the same order. Synthetic ordering tests pass; deterministic PostgreSQL race cases are added but remain unexecuted locally.
 
 References: `apps/api/src/receipt/receipt.service.ts:246–253`; `apps/api/src/invoice/invoice.service.ts:497–560`; `apps/api/src/payment-run/payment-run.service.ts:99–167`.
 
