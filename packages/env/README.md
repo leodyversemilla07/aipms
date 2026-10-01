@@ -34,6 +34,15 @@ const vars = parseEnv(source);
 - `parseEnv` is a dependency-free `.env` parser exported for tooling (e.g. the
   `require-local-db` guard in `@workspace/db`).
 
+## Disposable database guard
+
+API integration and browser E2E import `@workspace/env/test-database` and call
+its default export before running. It requires explicit, identical
+`DATABASE_URL` / `AIPMS_TEST_DATABASE_URL` PostgreSQL URLs with a database name
+ending in `_test`. It does not connect to the database or bypass any production
+permission checks. The guard lives in `src`, so build-time typechecking does not
+depend on test directories excluded from production images.
+
 ## Tests
 
 ```bash

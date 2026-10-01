@@ -18,6 +18,7 @@
     "@trpc/server": "^11.18.0",
     "@trpc/tanstack-react-query": "^11.18.0",
     "@workspace/auth": "workspace:*",
+    "@workspace/env": "workspace:*",
     "@workspace/ui": "workspace:*",
     "api": "workspace:*",
     "lucide-react": "^1.30.0",

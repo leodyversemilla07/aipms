@@ -86,7 +86,8 @@ jobs:
           pnpm --filter api test:unit
           pnpm --filter api test
           pnpm --filter agent test
-          pnpm --filter tax test
+          pnpm --filter @workspace/tax test
+          pnpm --filter @workspace/env test
           pnpm audit --prod
 
   build-and-push:

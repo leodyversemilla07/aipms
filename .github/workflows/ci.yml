@@ -88,7 +88,10 @@ jobs:
         run: pnpm --filter agent test
 
       - name: Tax engine tests
-        run: pnpm --filter tax test
+        run: pnpm --filter @workspace/tax test
+
+      - name: Environment and test-database guard tests
+        run: pnpm --filter @workspace/env test
 
   release-smoke:
     name: Production image smoke

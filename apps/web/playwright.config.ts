@@ -1,5 +1,5 @@
 import { defineConfig, devices } from "@playwright/test"
-import requireIsolatedTestDatabase from "../api/test/test-db.guard"
+import requireIsolatedTestDatabase from "@workspace/env/test-database"
 
 // Browser specs mutate financial records too; use the same fail-closed guard
 // as API integration tests, before starting either application server.
