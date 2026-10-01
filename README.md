@@ -366,6 +366,9 @@ pnpm --filter api test:unit
 # AIPMS_TEST_DATABASE_URL pointing to a disposable *_test database)
 pnpm --filter api test
 
+# Browser E2E (same disposable-database URL contract as API integration)
+pnpm --filter web e2e
+
 # Database
 pnpm db:generate   # Generate Prisma client
 pnpm db:migrate    # Apply migrations
@@ -376,7 +379,10 @@ pnpm db:studio     # Prisma Studio UI
 The unit lane selects only `test/unit/**/*.spec.ts` and the pure intake projection
 spec. Its database mock fails on any default-client access. The normal API suite
 still runs the fail-closed disposable-database guard; the unit lane is not a way
-to run integration tests against a development database.
+to run integration tests against a development database. Browser E2E enforces
+that same guard before starting either server. Migrate and seed the explicitly
+selected disposable database before running E2E; the audit pagination spec
+appends isolated legacy fixtures and never removes append-only audit history.
 
 ---
 

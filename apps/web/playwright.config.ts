@@ -1,10 +1,16 @@
 import { defineConfig, devices } from "@playwright/test"
+import requireIsolatedTestDatabase from "../api/test/test-db.guard"
+
+// Browser specs mutate financial records too; use the same fail-closed guard
+// as API integration tests, before starting either application server.
+requireIsolatedTestDatabase()
 
 /**
  * End-to-end suite over the real stack: Next.js desk + NestJS tRPC API on
- * local Postgres. Both servers are booted here; the database must already
- * be migrated and seeded (CI does this in job steps; locally run
- * `pnpm db:deploy && pnpm db:seed` first) and the API needs demo identities
+ * disposable Postgres (matching DATABASE_URL / AIPMS_TEST_DATABASE_URL,
+ * database name ending in _test). Both servers are booted here; the database
+ * must already be migrated and seeded (CI does this in job steps; locally run
+ * `pnpm db:deploy && pnpm db:seed` with both test URLs explicitly set first) and the API needs demo identities
  * (AUTH_SEED_DEMO=1) for sign-in.
  */
 export default defineConfig({
