@@ -793,6 +793,9 @@ model Message {
   @@map("message")
   @@index([vendorId])
   @@index([status])
+  @@index([status, createdAt, id])
+  @@index([status, updatedAt])
+  @@index([status, dispatchStartedAt])
   @@index([threadId])
 }
 

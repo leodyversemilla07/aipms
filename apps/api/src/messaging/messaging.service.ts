@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
+import { stagedMessageWhere } from './message-dispatch-policy'
 
 /**
  * §8.3 vendor messaging relay. Agents NEVER send to vendors directly: every
@@ -240,8 +241,8 @@ export class MessagingService {
     ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
-  async detail(id: string) {
-    const message = await db.message.findUnique({ where: { id } })
+  async detail(id: string, client: typeof db = db) {
+    const message = await client.message.findUnique({ where: { id } })
     if (!message) throw new NotFoundException(`Message ${id} not found`)
     return message
   }
@@ -263,10 +264,9 @@ export class MessagingService {
   ): Promise<{ message: object }> {
     // Creation + outbox + audit commit atomically via the caller's
     // idempotent transaction. The transport send happens after commit
-    // through dispatchIfQueued, which only transitions queued → sent, so a
-    // retry after a crash can never double-send (residual risk: a crash
-    // between the provider accepting the email and the status update —
-    // same window as any send-then-record pipeline; the outbox records it).
+    // through a durable queued → sending claim. Staged rows can be safely
+    // recovered by the dispatcher; sending/failed outcomes cannot be replayed
+    // without provider evidence. This is not an exactly-once delivery claim.
     const run = async (tx: Prisma.TransactionClient) => {
       const vendor = await tx.vendor.findUnique({
         where: { id: input.vendorId },
@@ -421,8 +421,8 @@ export class MessagingService {
   }
 
   /** Post-commit release for an approved draft. */
-  async releaseApproved(id: string): Promise<object> {
-    return this.claimAndDispatch(id, 'approved')
+  async releaseApproved(id: string, client: typeof db = db): Promise<object> {
+    return this.claimAndDispatch(id, 'approved', client)
   }
 
   /** Human rejection of a gated draft, with a recorded reason. */
@@ -556,8 +556,8 @@ export class MessagingService {
   }
 
   /** Release an auto-tier queued message after its staging transaction. */
-  async dispatchIfQueued(id: string): Promise<object> {
-    return this.claimAndDispatch(id, 'queued')
+  async dispatchIfQueued(id: string, client: typeof db = db): Promise<object> {
+    return this.claimAndDispatch(id, 'queued', client)
   }
 
   /**
@@ -570,19 +570,54 @@ export class MessagingService {
   private async claimAndDispatch(
     id: string,
     expected: 'queued' | 'approved',
+    client: typeof db = db,
   ): Promise<object> {
-    const message = await this.detail(id)
-    if (message.status !== expected) return message
+    // Lock the message before reading content, then its vendor. The claim,
+    // integrity check and current contact authorization commit before SMTP.
+    const claim = await client.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "message" WHERE id = ${id} FOR UPDATE`
+      const message = await tx.message.findUnique({ where: { id } })
+      if (!message) throw new NotFoundException(`Message ${id} not found`)
+      const claimed = await tx.message.updateMany({
+        where: { ...stagedMessageWhere(), id, status: expected },
+        data: {
+          status: 'sending',
+          dispatchStartedAt: new Date(),
+          failedReason: null,
+        },
+      })
+      if (claimed.count !== 1) return { claimed: false, message }
 
-    const claimed = await db.message.updateMany({
-      where: { id: message.id, status: expected },
-      data: {
-        status: 'sending',
-        dispatchStartedAt: new Date(),
-        failedReason: null,
-      },
+      await tx.$queryRaw`SELECT id FROM "vendor" WHERE id = ${message.vendorId} FOR UPDATE`
+      const vendor = await tx.vendor.findUnique({
+        where: { id: message.vendorId },
+      })
+      const blocked =
+        canonicalBodyHash(message) !== message.bodyHash
+          ? 'Message content no longer matches its canonical body hash'
+          : !vendor
+            ? 'Message vendor no longer exists'
+            : vendor.status === 'blacklisted'
+              ? 'Message vendor is blacklisted at dispatch'
+              : !verifiedEmails(vendor.contactChannels).includes(
+                    message.recipient,
+                  )
+                ? 'Message recipient is no longer a verified vendor contact'
+                : null
+      if (blocked) {
+        await tx.message.updateMany({
+          where: { id, status: 'sending' },
+          data: { status: 'failed', failedReason: blocked },
+        })
+        return {
+          claimed: false,
+          message: await tx.message.findUniqueOrThrow({ where: { id } }),
+        }
+      }
+      return { claimed: true, message }
     })
-    if (claimed.count !== 1) return this.detail(message.id)
+    if (!claim.claimed) return claim.message
+    const { message } = claim
 
     try {
       const delivery = await this.transport.send({
@@ -591,7 +626,7 @@ export class MessagingService {
         subject: message.subject,
         body: message.body,
       })
-      await db.$transaction(async (tx) => {
+      await client.$transaction(async (tx) => {
         const updated = await tx.message.updateMany({
           where: { id: message.id, status: 'sending' },
           data: {
@@ -615,16 +650,16 @@ export class MessagingService {
           )
         }
       })
-      return this.detail(message.id)
+      return this.detail(message.id, client)
     } catch (error) {
-      await db.message.updateMany({
+      await client.message.updateMany({
         where: { id: message.id, status: 'sending' },
         data: {
           status: 'failed',
           failedReason: error instanceof Error ? error.message : String(error),
         },
       })
-      return this.detail(message.id)
+      return this.detail(message.id, client)
     }
   }
 }

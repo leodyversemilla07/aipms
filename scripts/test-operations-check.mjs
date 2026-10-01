@@ -4,7 +4,16 @@ import { spawn } from "node:child_process"
 import { createServer } from "node:http"
 
 const token = "monitoring-test-token"
-let deadLetters = 0
+const exceptions = {
+  deadLetters: 0,
+  relayClaims: 0,
+  staleRelayClaims: 0,
+  staleAgentRuns: 0,
+  failedMessages: 0,
+  staleStagedMessages: 0,
+  staleSendingMessages: 0,
+  ambiguousErpDispatches: 0,
+}
 const server = createServer((request, response) => {
   response.setHeader("content-type", "application/json")
   if (request.url === "/health/ready") {
@@ -19,12 +28,7 @@ const server = createServer((request, response) => {
       JSON.stringify({
         status: "observed",
         exceptions: {
-          deadLetters,
-          relayClaims: 0,
-          staleRelayClaims: 0,
-          staleAgentRuns: 0,
-          failedMessages: 0,
-          ambiguousErpDispatches: 0,
+          ...exceptions,
           checkedAt: new Date().toISOString(),
         },
       })
@@ -66,13 +70,31 @@ try {
   if (healthy.code !== 0 || !JSON.parse(healthy.output).ok) {
     throw new Error("operations check rejected healthy gauges")
   }
-  deadLetters = 1
-  const unhealthy = await run()
+  for (const name of [
+    "deadLetters",
+    "staleStagedMessages",
+    "staleSendingMessages",
+    "ambiguousErpDispatches",
+  ]) {
+    exceptions[name] = 1
+    const unhealthy = await run()
+    if (
+      unhealthy.code === 0 ||
+      !JSON.parse(unhealthy.output).failures.includes(`${name}_threshold`)
+    ) {
+      throw new Error(`operations check accepted an exception: ${name}`)
+    }
+    exceptions[name] = 0
+  }
+  delete exceptions.staleSendingMessages
+  const incomplete = await run()
   if (
-    unhealthy.code === 0 ||
-    !JSON.parse(unhealthy.output).failures.includes("deadLetters_threshold")
+    incomplete.code === 0 ||
+    !JSON.parse(incomplete.output).failures.includes(
+      "invalid_staleSendingMessages"
+    )
   ) {
-    throw new Error("operations check accepted a dead letter")
+    throw new Error("operations check accepted missing dispatch gauges")
   }
   process.stdout.write("Operations check self-test passed.\n")
 } finally {

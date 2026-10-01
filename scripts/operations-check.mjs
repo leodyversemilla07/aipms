@@ -28,6 +28,8 @@ const thresholdNames = [
   "staleRelayClaims",
   "staleAgentRuns",
   "failedMessages",
+  "staleStagedMessages",
+  "staleSendingMessages",
   "ambiguousErpDispatches",
 ]
 const thresholds = Object.fromEntries(

@@ -31,6 +31,29 @@ Financial correction follow-up:
 
 These source-level fixes do not establish production readiness. Per-PO settlement accounting, tolerance/partial-payment behavior, historical inconsistencies, and return/refund workflows remain open. See `docs/financial-corrections.md` for the supported correction contract.
 
+Outbound dispatch follow-up:
+
+- **Finding 6 (partial):** registered a bounded dispatcher for safely unsent
+  auto queued and durably approved rows, using the same exclusive delivery claim
+  as interactive releases. Prior dispatch history and ambiguous states are
+  never automatically replayed.
+- Delivery claims now validate canonical content integrity and current vendor
+  blacklist/contact authorization before external transport.
+- Operational gauges/probe now detect aged staged/sending messages and
+  abandoned unresolved QBO claims even without a recorded failure. Authorized
+  message lists accept the `sending` filter.
+- Added 35 database-blocked regressions (116 API unit tests total) and 12 guarded
+  PostgreSQL cases. The PostgreSQL cases are typechecked; local execution remains
+  blocked by the disposable-database contract. CI provides the isolated runtime.
+- Stale-sending operator resolution remains open; no unsafe manual reset or
+  automatic retry was introduced. See [dispatch recovery](message-dispatch-recovery.md).
+
+The earlier financial/HTTP validation limitation was removed **in CI** at
+`80912129f68a8ce19bd3f1cd90206867fd7fb6b6`: 383 API tests, 20 browser tests,
+and the production image/backup/restore smoke passed in run
+[36851448070](https://github.com/leodyversemilla07/aipms/actions/runs/36851448070).
+This does not imply local database availability or live-provider correctness.
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.

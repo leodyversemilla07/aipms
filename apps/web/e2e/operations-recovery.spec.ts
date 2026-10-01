@@ -5,11 +5,13 @@ import { db } from "../../../packages/db/src/index"
 const createdEventIds: string[] = []
 const createdRunIds: string[] = []
 const createdMessageIds: string[] = []
+const createdVendorIds: string[] = []
 
 test.afterAll(async () => {
   await db.domainEvent.deleteMany({ where: { id: { in: createdEventIds } } })
   await db.agentRun.deleteMany({ where: { id: { in: createdRunIds } } })
   await db.message.deleteMany({ where: { id: { in: createdMessageIds } } })
+  await db.vendor.deleteMany({ where: { id: { in: createdVendorIds } } })
 })
 
 test("finance operator reviews and requeues a dead-lettered event", async ({
@@ -77,17 +79,25 @@ test("finance operator reviews and requeues a dead-lettered event", async ({
 test("finance operator retries only after provider-confirmed non-delivery", async ({
   page,
 }) => {
-  const vendor = await db.vendor.findFirstOrThrow({
-    where: { status: "active" },
+  const recipient = `billing-${randomUUID()}@recovery.example`
+  const vendor = await db.vendor.create({
+    data: {
+      name: `E2E recovery ${randomUUID()}`,
+      status: "active",
+      contactChannels: { verifiedEmails: [recipient] },
+    },
   })
+  createdVendorIds.push(vendor.id)
   const marker = `E2E failed delivery ${randomUUID()}`
   const message = await db.message.create({
     data: {
       vendorId: vendor.id,
-      recipient: "billing@acme.example",
+      recipient,
       subject: marker,
       body: "Recovery probe",
-      bodyHash: createHash("sha256").update("Recovery probe").digest("hex"),
+      bodyHash: createHash("sha256")
+        .update(`${recipient}\n${marker}\nRecovery probe`)
+        .digest("hex"),
       tier: "auto",
       status: "failed",
       failedReason: "E2E transport timeout after dispatch",

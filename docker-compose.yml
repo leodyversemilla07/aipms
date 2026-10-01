@@ -79,6 +79,7 @@ services:
       # §8.3 outbound relay. Production never uses the simulated log transport;
       # missing/invalid SMTP configuration fails each dispatch closed.
       AIPMS_MESSAGING_TRANSPORT: ${AIPMS_MESSAGING_TRANSPORT:-smtp}
+      AIPMS_MESSAGING_DISPATCHER_ENABLED: ${AIPMS_MESSAGING_DISPATCHER_ENABLED:-1}
       AIPMS_SMTP_HOST: ${AIPMS_SMTP_HOST:-}
       AIPMS_SMTP_PORT: ${AIPMS_SMTP_PORT:-587}
       AIPMS_SMTP_SECURE: ${AIPMS_SMTP_SECURE:-false}

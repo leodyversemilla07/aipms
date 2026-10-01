@@ -386,6 +386,12 @@ appends isolated legacy fixtures and never removes append-only audit history.
 
 ---
 
+Outbound messaging now has a bounded dispatcher for safely unsent staged rows.
+It never automatically retries ambiguous sending/failed outcomes; the operations
+probe alerts on aged messages and abandoned QBO claims. See
+[`docs/message-dispatch-recovery.md`](docs/message-dispatch-recovery.md) for
+configuration, delivery-time checks, and the remaining stale-sending workflow.
+
 ## Roadmap
 
 | Phase | Status | Focus |

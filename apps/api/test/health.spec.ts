@@ -32,6 +32,8 @@ describe('operational health probes', () => {
         staleRelayClaims: expect.any(Number),
         staleAgentRuns: expect.any(Number),
         failedMessages: expect.any(Number),
+        staleStagedMessages: expect.any(Number),
+        staleSendingMessages: expect.any(Number),
         ambiguousErpDispatches: expect.any(Number),
       },
     })

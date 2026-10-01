@@ -70,7 +70,7 @@ const resolveFailedInput = z.object({
 
 const listInputWithFilters = listInput.extend({
   status: z
-    .enum(['queued', 'approved', 'rejected', 'sent', 'failed'])
+    .enum(['queued', 'approved', 'sending', 'rejected', 'sent', 'failed'])
     .optional(),
   tier: z.enum(['auto', 'gated']).optional(),
 })
