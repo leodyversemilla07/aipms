@@ -4,6 +4,7 @@ import { auth } from '@workspace/auth'
 import { toNodeHandler } from 'better-auth/node'
 import type { RequestHandler } from 'express'
 import { AppModule } from './app.module'
+import { listenApi } from './listen-api'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
@@ -23,9 +24,7 @@ async function bootstrap() {
   // the web app proxies /api/auth/* here via a Next rewrite.
   app.use('/api/auth', toNodeHandler(auth) as Parameters<typeof app.use>[1])
 
-  const port = Number(process.env.PORT ?? 3001)
-  const host = process.env.API_BIND_HOST ?? '0.0.0.0'
-  await app.listen(port, host)
+  const { port, host } = await listenApi(app)
   console.log(`API listening on http://${host}:${port}/api/trpc`)
 }
 bootstrap()
