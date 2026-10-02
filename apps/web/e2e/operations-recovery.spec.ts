@@ -98,7 +98,9 @@ test("finance operator retries only after provider-confirmed non-delivery", asyn
       bodyHash: createHash("sha256")
         .update(`${recipient}\n${marker}\nRecovery probe`)
         .digest("hex"),
-      tier: "auto",
+      tier: "gated",
+      approvedBy: "e2e-independent-message-checker",
+      approvedAt: new Date(),
       status: "failed",
       failedReason: "E2E transport timeout after dispatch",
       dispatchStartedAt: new Date(Date.now() - 20 * 60 * 1000),

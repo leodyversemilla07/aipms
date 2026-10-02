@@ -768,6 +768,8 @@ model Message {
   body           String
   bodyHash       String // sha256 over canonical {recipient,subject,body}
   templateId     String? // transactional template, null = free-form (gated)
+  templateVersion Int?   // null legacy auto rows require review, never blind replay
+  templateParams Json?  // validated source references, not caller-authored prose
   tier           MessageTier
   status         MessageStatus @default(queued)
   agentId        String? // composing principal (User.kind = agent), null = human

@@ -20,8 +20,11 @@ Selection alone grants no permission to send. Interactive callers and all API
 replicas use the same claim. The service locks the message, conditionally
 changes an eligible row to `sending`, locks its vendor, and checks the canonical
 recipient/subject/body hash, current blacklist status, and current verified
-recipient. Blocked content/contact checks retain a failed row without contacting
-the provider. Those failures are not automatically replayed.
+recipient. Automatic rows also require supported versioned provenance and an
+exact match with server-rendered canonical business facts; see
+[automatic messaging](automatic-messaging.md) for legacy handling and template
+contracts. Blocked content/contact/provenance checks retain a failed row without
+contacting the provider. Those failures are not automatically replayed.
 
 Message → vendor is the dispatch transaction's lock order. The transaction
 commits **before** provider contact; no database lock is held across SMTP.

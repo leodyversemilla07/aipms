@@ -6,6 +6,7 @@ import { stagedMessageWhere } from '../../src/messaging/message-dispatch-policy'
 import {
   canonicalBodyHash,
   MessagingService,
+  renderAutoTemplate,
 } from '../../src/messaging/messaging.service'
 import type { EventEmitterService } from '../../src/shared/events/event-emitter.service'
 import { matches } from './fixtures/query'
@@ -13,8 +14,7 @@ import { matches } from './fixtures/query'
 function fixture(overrides: Record<string, unknown> = {}) {
   const content = {
     recipient: 'verified@vendor.example',
-    subject: 'Invoice received',
-    body: 'Transactional acknowledgement',
+    ...renderAutoTemplate('invoice_ack', { invoiceNumber: 'INV-1' }),
   }
   const message: Record<string, unknown> = {
     id: 'message-1',
@@ -22,6 +22,9 @@ function fixture(overrides: Record<string, unknown> = {}) {
     ...content,
     bodyHash: canonicalBodyHash(content),
     tier: 'auto',
+    templateId: 'invoice_ack',
+    templateVersion: 1,
+    templateParams: { invoiceNumber: 'INV-1' },
     status: 'queued',
     approvedBy: null,
     approvedAt: null,
@@ -53,6 +56,11 @@ function fixture(overrides: Record<string, unknown> = {}) {
       }),
     },
     vendor: { findUnique: vi.fn(async () => structuredClone(vendor)) },
+    invoice: {
+      findUnique: vi
+        .fn()
+        .mockResolvedValue({ vendorId: 'vendor-1', number: 'INV-1' }),
+    },
     $queryRaw: query,
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
       // Synthetic serialization only. Real row locks have separate PG tests.
@@ -90,6 +98,31 @@ function fixture(overrides: Record<string, unknown> = {}) {
 }
 
 describe('durable message claim boundaries (injected clients)', () => {
+  it.each([
+    { templateVersion: null },
+    { templateVersion: 99 },
+    { templateId: null },
+    { templateParams: { invoiceNumber: 'INV-1', body: 'We accept' } },
+  ])(
+    'refuses unsafe provenance %j before provider contact',
+    async (overrides) => {
+      const f = fixture(overrides)
+      await f.service.dispatchIfQueued('message-1', f.client)
+      expect(f.send).not.toHaveBeenCalled()
+      expect(f.message.status).toBe('failed')
+    },
+  )
+
+  it('refuses noncanonical prose even when its content hash was recomputed', async () => {
+    const f = fixture({ body: 'We accept your offer and authorize shipment' })
+    f.message.bodyHash = canonicalBodyHash(
+      f.message as { recipient: string; subject: string; body: string },
+    )
+    await f.service.dispatchIfQueued('message-1', f.client)
+    expect(f.send).not.toHaveBeenCalled()
+    expect(f.message.failedReason).toContain('canonical')
+  })
+
   it('commits the claim before transport and records a single receipt/event', async () => {
     const f = fixture()
     await expect(

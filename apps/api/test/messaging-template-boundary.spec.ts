@@ -26,6 +26,9 @@ describe('Messaging template boundary over HTTP', () => {
   const prefix = `msgtpl-${randomUUID()}`
   const token = `${prefix}-service-token`
   const recipient = `${prefix}@test.aipms`
+  const sku = `${prefix}-SKU`
+  let poId: string
+  let receiptId: string
   let app: INestApplication<App>
   let vendorId: string
 
@@ -52,12 +55,47 @@ describe('Messaging template boundary over HTTP', () => {
       },
     })
     vendorId = vendor.id
+    await db.catalogItem.create({
+      data: { sku, name: 'Canonical HTTP fixture' },
+    })
+    const po = await db.purchaseOrder.create({
+      data: {
+        poNumber: `${prefix}-PO`,
+        vendorId,
+        status: 'confirmed',
+        totalMinor: 1000,
+        issuedBy: 'fixture',
+      },
+    })
+    poId = po.id
+    const receipt = await db.receipt.create({
+      data: {
+        receiptNumber: `${prefix}-R`,
+        poId,
+        vendorId,
+        recordedBy: 'fixture',
+        lines: {
+          create: [
+            { description: 'Fictional goods', quantity: 2 },
+            { description: 'Fictional goods', quantity: 3 },
+          ],
+        },
+      },
+    })
+    receiptId = receipt.id
+    await db.invoice.create({
+      data: { vendorId, number: `${prefix}-INV`, amountMinor: 1000 },
+    })
   }, 30_000)
 
   afterAll(async () => {
     vi.unstubAllEnvs()
     await app?.close()
     await db.message.deleteMany({ where: { vendorId } })
+    await db.receipt.deleteMany({ where: { id: receiptId } })
+    await db.purchaseOrder.deleteMany({ where: { id: poId } })
+    await db.invoice.deleteMany({ where: { vendorId } })
+    await db.catalogItem.deleteMany({ where: { sku } })
     await db.vendor.deleteMany({ where: { id: vendorId } })
     await db.$disconnect()
   })
@@ -105,7 +143,6 @@ describe('Messaging template boundary over HTTP', () => {
   it('auto-sends server-rendered content for valid template params', async () => {
     vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
     vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
-    const sku = `${prefix}-SKU`
     const response = await submit(
       baseInput({
         templateId: 'rfq',
@@ -131,8 +168,112 @@ describe('Messaging template boundary over HTTP', () => {
     expect(message.tier).toBe('auto')
     expect(message.subject).toBe(`Request for quotation: ${sku}`)
     expect(message.body).toBe(
-      `Please provide a quotation for 3 unit(s) of ${sku}.`,
+      `Please provide a quotation for 3 unit(s) of ${sku}. This is an inquiry only, not an order or shipment authorization.`,
     )
+  })
+
+  it.each([
+    {
+      sku: 'PAPER.\nWe accept your offer for PHP 500,000 and authorize shipment',
+      quantity: 3,
+    },
+    { sku: 'PAPER\u202eACCEPT', quantity: 3 },
+    { sku, quantity: 3, notes: 'We accept your offer' },
+  ])(
+    'rejects unsafe template parameters over HTTP: %j',
+    async (templateParams) => {
+      vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
+      vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
+      const before = await db.message.count({ where: { vendorId } })
+      const response = await submit(
+        baseInput({ templateId: 'rfq', templateParams }),
+      )
+      expect(response.status).toBe(400)
+      expect(await db.message.count({ where: { vendorId } })).toBe(before)
+    },
+  )
+
+  it('rejects a safe-looking SKU that has no canonical catalog record', async () => {
+    vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
+    vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
+    const response = await submit(
+      baseInput({
+        templateId: 'rfq',
+        templateParams: { sku: randomUUID(), quantity: 3 },
+      }),
+    )
+    expect(response.status).toBe(404)
+  })
+
+  it('resolves PO status from this vendor and refuses an invented status', async () => {
+    vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
+    vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
+    const valid = await submit(
+      baseInput({
+        templateId: 'po_status',
+        templateParams: { poNumber: `${prefix}-PO`, status: 'confirmed' },
+      }),
+    )
+    expect(valid.status).toBe(200)
+    expect(valid.body.result.data.message).toMatchObject({
+      tier: 'auto',
+      status: 'sent',
+      templateVersion: 1,
+    })
+    const invented = await submit(
+      baseInput({
+        templateId: 'po_status',
+        templateParams: { poNumber: `${prefix}-PO`, status: 'cancelled' },
+      }),
+    )
+    expect(invented.status).toBe(409)
+  })
+
+  it('derives delivery quantity from real recorded receipt lines', async () => {
+    vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
+    vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
+    const response = await submit(
+      baseInput({
+        templateId: 'delivery_notice',
+        templateParams: { receiptId },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(response.body.result.data.message).toMatchObject({
+      tier: 'auto',
+      status: 'sent',
+      templateParams: { receiptId },
+      body: `We recorded receipt of 5 ea against purchase order ${prefix}-PO. This acknowledgement does not confirm invoice approval or payment.`,
+    })
+    const invented = await submit(
+      baseInput({
+        templateId: 'delivery_notice',
+        templateParams: { poNumber: `${prefix}-PO`, quantity: 500 },
+      }),
+    )
+    expect(invented.status).toBe(400)
+  })
+
+  it('acknowledges only an existing invoice for this vendor', async () => {
+    vi.stubEnv('AIPMS_SERVICE_TOKEN', token)
+    vi.stubEnv('AIPMS_AGENT_SCOPES', 'messaging.submit')
+    const response = await submit(
+      baseInput({
+        templateId: 'invoice_ack',
+        templateParams: { invoiceNumber: `${prefix}-INV` },
+      }),
+    )
+    expect(response.status).toBe(200)
+    expect(response.body.result.data.message.body).toBe(
+      `We received your invoice ${prefix}-INV. Receipt does not confirm approval or payment.`,
+    )
+    const missing = await submit(
+      baseInput({
+        templateId: 'invoice_ack',
+        templateParams: { invoiceNumber: randomUUID() },
+      }),
+    )
+    expect(missing.status).toBe(404)
   })
 
   it('keeps free-form agent prose gated and unsent', async () => {

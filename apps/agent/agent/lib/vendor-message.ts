@@ -31,7 +31,14 @@ const templatedMessageInput = z.object({
 const resultSchema = z.object({
   message: z.object({
     id: z.string().min(1),
-    status: z.enum(["queued", "approved", "rejected", "sent", "failed"]),
+    status: z.enum([
+      "queued",
+      "approved",
+      "sending",
+      "rejected",
+      "sent",
+      "failed",
+    ]),
     tier: z.enum(["auto", "gated"]),
   }),
 })
@@ -111,7 +118,8 @@ export async function requestQuote(
       callId
     )
   }
-  // No free prose: the backend renders this template from validated params.
+  // The backend resolves the active catalog SKU and renders non-binding
+  // content. Unknown/unsafe identifiers fail; never retry them as auto prose.
   return submitTemplatedMessage(
     {
       vendorId: quote.vendorId,

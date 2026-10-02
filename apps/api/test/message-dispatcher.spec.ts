@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { db } from '@workspace/db'
+import { db, Prisma } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { MessageDispatcherService } from '../src/messaging/message-dispatcher.service'
 import { MessagingService } from '../src/messaging/messaging.service'
@@ -7,6 +7,8 @@ import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
 const ids: string[] = []
 const vendorIds: string[] = []
+const poIds: string[] = []
+const receiptIds: string[] = []
 const recipient = `dispatch-${randomUUID()}@vendor.example`
 
 afterAll(async () => {
@@ -14,6 +16,9 @@ afterAll(async () => {
     where: { entityId: { in: ids }, entityType: 'Message' },
   })
   await db.message.deleteMany({ where: { id: { in: ids } } })
+  await db.receipt.deleteMany({ where: { id: { in: receiptIds } } })
+  await db.purchaseOrder.deleteMany({ where: { id: { in: poIds } } })
+  await db.invoice.deleteMany({ where: { vendorId: { in: vendorIds } } })
   await db.vendor.deleteMany({ where: { id: { in: vendorIds } } })
   await db.$disconnect()
 })
@@ -27,6 +32,13 @@ async function fixture() {
     },
   })
   vendorIds.push(vendor.id)
+  const invoice = await db.invoice.create({
+    data: {
+      vendorId: vendor.id,
+      number: `INV-${randomUUID()}`,
+      amountMinor: 1000,
+    },
+  })
   const sends: string[] = []
   const service = new MessagingService(new EventEmitterService(), {
     send: async ({ id }) => {
@@ -50,7 +62,7 @@ async function fixture() {
               }
             : {
                 templateId: 'invoice_ack',
-                templateParams: { invoiceNumber: `INV-${randomUUID()}` },
+                templateParams: { invoiceNumber: invoice.number },
               }),
         },
         tx,
@@ -62,6 +74,7 @@ async function fixture() {
   }
   return {
     vendor,
+    invoice,
     service,
     sends,
     stage,
@@ -70,6 +83,153 @@ async function fixture() {
 }
 
 describe('staged message crash recovery (PostgreSQL)', () => {
+  it('retains unsafe legacy auto rows without contacting the provider', async () => {
+    const f = await fixture()
+    const id = await f.stage()
+    await db.message.update({
+      where: { id },
+      data: { templateVersion: null, templateParams: Prisma.DbNull },
+    })
+    await f.dispatcher.poll()
+    expect(f.sends).toHaveLength(0)
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject(
+      { status: 'failed', failedReason: expect.stringContaining('provenance') },
+    )
+  })
+
+  it('refuses an invoice removed between staging and dispatch', async () => {
+    const f = await fixture()
+    const id = await f.stage()
+    await db.invoice.delete({ where: { id: f.invoice.id } })
+    await f.service.dispatchIfQueued(id)
+    expect(f.sends).toHaveLength(0)
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject(
+      { status: 'failed', failedReason: expect.stringContaining('Invoice') },
+    )
+  })
+
+  it('refuses a PO status changed after composition without rewriting the message', async () => {
+    const f = await fixture()
+    const po = await db.purchaseOrder.create({
+      data: {
+        poNumber: `PO-${randomUUID()}`,
+        vendorId: f.vendor.id,
+        status: 'confirmed',
+        totalMinor: 1000,
+        issuedBy: 'fixture',
+      },
+    })
+    poIds.push(po.id)
+    const staged = await db.$transaction((tx) =>
+      f.service.submit(
+        {
+          vendorId: f.vendor.id,
+          recipient,
+          templateId: 'po_status',
+          templateParams: { poNumber: po.poNumber, status: 'confirmed' },
+        },
+        tx,
+      ),
+    )
+    const id = (staged.message as { id: string }).id
+    ids.push(id)
+    await db.purchaseOrder.update({
+      where: { id: po.id },
+      data: { status: 'cancelled' },
+    })
+    await f.service.dispatchIfQueued(id)
+    expect(f.sends).toHaveLength(0)
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject(
+      {
+        status: 'failed',
+        subject: `Purchase order ${po.poNumber}: confirmed`,
+        failedReason: expect.stringContaining('canonical'),
+      },
+    )
+  })
+
+  it('refuses a receipt cancelled after staging its acknowledgement', async () => {
+    const f = await fixture()
+    const po = await db.purchaseOrder.create({
+      data: {
+        poNumber: `PO-${randomUUID()}`,
+        vendorId: f.vendor.id,
+        status: 'confirmed',
+        totalMinor: 1000,
+        issuedBy: 'fixture',
+      },
+    })
+    poIds.push(po.id)
+    const receipt = await db.receipt.create({
+      data: {
+        receiptNumber: `R-${randomUUID()}`,
+        poId: po.id,
+        vendorId: f.vendor.id,
+        recordedBy: 'fixture',
+        lines: { create: { description: 'Synthetic goods', quantity: 3 } },
+      },
+    })
+    receiptIds.push(receipt.id)
+    const staged = await db.$transaction((tx) =>
+      f.service.submit(
+        {
+          vendorId: f.vendor.id,
+          recipient,
+          templateId: 'delivery_notice',
+          templateParams: { receiptId: receipt.id },
+        },
+        tx,
+      ),
+    )
+    const id = (staged.message as { id: string }).id
+    ids.push(id)
+    await db.receipt.update({
+      where: { id: receipt.id },
+      data: { status: 'cancelled' },
+    })
+    await f.service.dispatchIfQueued(id)
+    expect(f.sends).toHaveLength(0)
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject(
+      {
+        status: 'failed',
+        failedReason: expect.stringContaining('recorded receipt'),
+      },
+    )
+  })
+
+  it('rolls back the delivery claim on canonical-reader infrastructure failure', async () => {
+    const f = await fixture()
+    const id = await f.stage()
+    const failure = new Error('canonical reader unavailable')
+    const client = new Proxy(db, {
+      get(target, key) {
+        if (key === '$transaction')
+          return (
+            callback: (tx: Prisma.TransactionClient) => Promise<unknown>,
+          ) =>
+            db.$transaction((tx) =>
+              callback(
+                new Proxy(tx, {
+                  get(inner, field) {
+                    if (field === 'invoice')
+                      return { findUnique: () => Promise.reject(failure) }
+                    return Reflect.get(inner, field)
+                  },
+                }),
+              ),
+            )
+        return Reflect.get(target, key)
+      },
+    })
+    await expect(f.service.dispatchIfQueued(id, client)).rejects.toBe(failure)
+    expect(f.sends).toHaveLength(0)
+    expect(await db.message.findUniqueOrThrow({ where: { id } })).toMatchObject(
+      { status: 'queued', dispatchStartedAt: null },
+    )
+    // This deliberately still-eligible row must not enter the next test's poll.
+    await db.message.delete({ where: { id } })
+  })
+
   it('recovers committed auto submissions when the caller never releases', async () => {
     const f = await fixture()
     const id = await f.stage()
@@ -124,7 +284,7 @@ describe('staged message crash recovery (PostgreSQL)', () => {
             vendorId: f.vendor.id,
             recipient,
             templateId: 'invoice_ack',
-            templateParams: { invoiceNumber: 'UNCOMMITTED' },
+            templateParams: { invoiceNumber: f.invoice.number },
           },
           tx,
         )

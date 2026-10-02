@@ -76,6 +76,14 @@ describe("vendor messaging contract", () => {
   it("does not claim that a queued message was sent", () => {
     expect(describeMessage(response)).toContain("not sent")
   })
+  it("accepts a competing durable sending claim without claiming completion", async () => {
+    vi.mocked(trpcMutate).mockResolvedValue({
+      message: { id: "message", tier: "auto", status: "sending" },
+    })
+    const result = await requestQuote(input, "call")
+    expect(describeMessage(result)).toContain("status: sending")
+    expect(describeMessage(result)).not.toContain("status: sent")
+  })
   it("requires a recipient and defaults quantity", () => {
     expect(() =>
       quoteInput.parse({ vendorId: "v", catalogItemSku: "s" })

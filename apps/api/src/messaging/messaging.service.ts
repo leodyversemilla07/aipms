@@ -3,16 +3,25 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
 import { db, type MessageStatus, type MessageTier, Prisma } from '@workspace/db'
-import { z } from 'zod'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
+import {
+  AUTO_TEMPLATE_VERSION,
+  AUTO_TEMPLATES,
+  assertAutoTemplateContent,
+  resolveAutoTemplate,
+} from './auto-template'
 import { stagedMessageWhere } from './message-dispatch-policy'
+
+export type { AutoTemplateId, AutoTemplateParams } from './auto-template'
+export { AUTO_TEMPLATES, renderAutoTemplate } from './auto-template'
 
 /**
  * §8.3 vendor messaging relay. Agents NEVER send to vendors directly: every
@@ -33,80 +42,6 @@ import { stagedMessageWhere } from './message-dispatch-policy'
  * The transport is a pluggable seam. Production selects the TLS SMTP relay
  * and fails closed when it is unconfigured; stdout simulation is test/dev only.
  */
-
-/** §8.3 low-risk / transactional templates eligible for auto-send. */
-export const AUTO_TEMPLATES = [
-  'rfq',
-  'po_status',
-  'delivery_notice',
-  'invoice_ack',
-] as const
-
-export type AutoTemplateId = (typeof AUTO_TEMPLATES)[number]
-
-/**
- * §8.3 server-owned auto templates. `auto` tier content is rendered here from
- * validated data-only parameters — callers never supply free-form subject or
- * body for an allowlisted templateId, so a caller cannot smuggle binding
- * commercial language past human review by labelling it transactional.
- */
-const AUTO_TEMPLATE_SCHEMAS = {
-  rfq: z.object({
-    sku: z.string().min(1).max(120),
-    quantity: z.number().int().min(1).max(999_999),
-  }),
-  po_status: z.object({
-    poNumber: z.string().min(1).max(60),
-    status: z.enum(['issued', 'confirmed', 'cancelled']),
-  }),
-  delivery_notice: z.object({
-    poNumber: z.string().min(1).max(60),
-    quantity: z.number().int().min(1).max(999_999),
-  }),
-  invoice_ack: z.object({
-    invoiceNumber: z.string().min(1).max(60),
-  }),
-} satisfies Record<AutoTemplateId, z.ZodType>
-
-export type AutoTemplateParams = {
-  [K in AutoTemplateId]: z.infer<(typeof AUTO_TEMPLATE_SCHEMAS)[K]>
-}
-
-export function renderAutoTemplate(
-  templateId: AutoTemplateId,
-  params: AutoTemplateParams[AutoTemplateId],
-): { subject: string; body: string } {
-  switch (templateId) {
-    case 'rfq': {
-      const p = params as AutoTemplateParams['rfq']
-      return {
-        subject: `Request for quotation: ${p.sku}`,
-        body: `Please provide a quotation for ${p.quantity} unit(s) of ${p.sku}.`,
-      }
-    }
-    case 'po_status': {
-      const p = params as AutoTemplateParams['po_status']
-      return {
-        subject: `Purchase order ${p.poNumber}: ${p.status}`,
-        body: `This is a status update for purchase order ${p.poNumber}. Current status: ${p.status}.`,
-      }
-    }
-    case 'delivery_notice': {
-      const p = params as AutoTemplateParams['delivery_notice']
-      return {
-        subject: `Delivery notice for ${p.poNumber}`,
-        body: `Please expect delivery of ${p.quantity} unit(s) against purchase order ${p.poNumber}.`,
-      }
-    }
-    case 'invoice_ack': {
-      const p = params as AutoTemplateParams['invoice_ack']
-      return {
-        subject: `Invoice ${p.invoiceNumber} received`,
-        body: `We received your invoice ${p.invoiceNumber}. It is queued for matching against the purchase order and goods receipts.`,
-      }
-    }
-  }
-}
 
 /** DI token for the delivery seam. */
 export const MESSAGE_TRANSPORT = Symbol('MESSAGE_TRANSPORT')
@@ -292,26 +227,26 @@ export class MessagingService {
 
       let tier: MessageTier
       let rendered: { subject: string; body: string }
+      let templateParams: Prisma.InputJsonValue | undefined
       if (
         input.templateId &&
         (AUTO_TEMPLATES as readonly string[]).includes(input.templateId)
       ) {
-        const templateId = input.templateId as AutoTemplateId
+        const templateId = input.templateId
         if (input.subject !== undefined || input.body !== undefined) {
           throw new BadRequestException(
             `subject/body must be omitted when templateId "${templateId}" is set — the server renders them from templateParams`,
           )
         }
-        const parsed = AUTO_TEMPLATE_SCHEMAS[templateId].safeParse(
+        const canonical = await resolveAutoTemplate(
+          templateId,
           input.templateParams ?? {},
+          vendor.id,
+          tx,
         )
-        if (!parsed.success) {
-          throw new BadRequestException(
-            `Invalid parameters for template "${templateId}": ${parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')}`,
-          )
-        }
         tier = 'auto'
-        rendered = renderAutoTemplate(templateId, parsed.data)
+        rendered = canonical
+        templateParams = canonical.params
       } else {
         if (!input.subject || !input.body) {
           throw new BadRequestException(
@@ -333,6 +268,8 @@ export class MessagingService {
             ...rendered,
           }),
           templateId: input.templateId ?? null,
+          templateVersion: tier === 'auto' ? AUTO_TEMPLATE_VERSION : null,
+          templateParams,
           tier,
           status: 'queued',
           agentId: input.agentId ?? null,
@@ -592,7 +529,7 @@ export class MessagingService {
       const vendor = await tx.vendor.findUnique({
         where: { id: message.vendorId },
       })
-      const blocked =
+      let blocked =
         canonicalBodyHash(message) !== message.bodyHash
           ? 'Message content no longer matches its canonical body hash'
           : !vendor
@@ -604,6 +541,17 @@ export class MessagingService {
                   )
                 ? 'Message recipient is no longer a verified vendor contact'
                 : null
+      if (!blocked && message.tier === 'auto') {
+        try {
+          await assertAutoTemplateContent(message, tx)
+        } catch (error) {
+          // Validation/lifecycle refusals retain the row without contacting
+          // transport. Database/infrastructure errors roll back the claim.
+          if (!(error instanceof HttpException) || error.getStatus() >= 500)
+            throw error
+          blocked = error.message
+        }
+      }
       if (blocked) {
         await tx.message.updateMany({
           where: { id, status: 'sending' },

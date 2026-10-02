@@ -389,6 +389,10 @@ It never automatically retries ambiguous sending/failed outcomes; the operations
 probe alerts on aged messages and abandoned QBO claims. See
 [`docs/message-dispatch-recovery.md`](docs/message-dispatch-recovery.md) for
 configuration, delivery-time checks, and the remaining stale-sending workflow.
+Automatic templates now resolve canonical business records and retain versioned
+provenance; legacy auto drafts require review. See
+[`docs/automatic-messaging.md`](docs/automatic-messaging.md) for parameter shapes,
+rollout requirements, and the receipt-based delivery acknowledgement change.
 
 ## Roadmap
 

@@ -19,6 +19,8 @@ const messageIds: string[] = []
 
 afterAll(async () => {
   await db.message.deleteMany({ where: { id: { in: messageIds } } })
+  await db.invoice.deleteMany({ where: { vendorId: { in: vendorIds } } })
+  await db.catalogItem.deleteMany({ where: { sku: `A4-PAPER-${suffix}` } })
   await db.vendor.deleteMany({ where: { id: { in: vendorIds } } })
   await db.$disconnect()
 })
@@ -83,6 +85,16 @@ describe('MessagingService (§8.3 relay)', () => {
     })
     noContactVendorId = silent.id
     vendorIds.push(silent.id)
+    await db.catalogItem.create({
+      data: { sku: `A4-PAPER-${suffix}`, name: 'Relay fixture' },
+    })
+    await db.invoice.createMany({
+      data: ['INV', 'INV-RECOVERY', 'INV-CONFIRMED'].map((prefix) => ({
+        vendorId: activeVendorId,
+        number: `${prefix}-${suffix}`,
+        amountMinor: 1000,
+      })),
+    })
   })
 
   it('blocks sends to vendors without verified contact channels', async () => {
@@ -137,7 +149,7 @@ describe('MessagingService (§8.3 relay)', () => {
     // Content is server-rendered from validated params, not caller prose.
     expect(message).toMatchObject({
       subject: `Request for quotation: A4-PAPER-${suffix}`,
-      body: `Please provide a quotation for 10 unit(s) of A4-PAPER-${suffix}.`,
+      body: `Please provide a quotation for 10 unit(s) of A4-PAPER-${suffix}. This is an inquiry only, not an order or shipment authorization.`,
     })
     expect(message).toHaveProperty('sentAt')
     expect(transport.sent.at(-1)?.to).toBe(recipient)
@@ -188,7 +200,7 @@ describe('MessagingService (§8.3 relay)', () => {
     const rendered = {
       recipient,
       subject: `Invoice INV-${suffix} received`,
-      body: `We received your invoice INV-${suffix}. It is queued for matching against the purchase order and goods receipts.`,
+      body: `We received your invoice INV-${suffix}. Receipt does not confirm approval or payment.`,
     }
     const { message } = await svc.submit({
       vendorId: activeVendorId,
@@ -334,8 +346,8 @@ describe('MessagingService (§8.3 relay)', () => {
     const { message } = await svc.submit({
       vendorId: activeVendorId,
       recipient,
-      templateId: 'delivery_notice',
-      templateParams: { poNumber: `PO-${suffix}`, quantity: 5 },
+      templateId: 'rfq',
+      templateParams: { sku: `A4-PAPER-${suffix}`, quantity: 5 },
     })
     messageIds.push((message as { id: string }).id)
     expect(message).toMatchObject({

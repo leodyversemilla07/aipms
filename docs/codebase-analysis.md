@@ -54,6 +54,26 @@ and the production image/backup/restore smoke passed in run
 [36851448070](https://github.com/leodyversemilla07/aipms/actions/runs/36851448070).
 This does not imply local database availability or live-provider correctness.
 
+Automatic message follow-up:
+
+- **Finding 7:** automatic template identifiers are now restricted data tokens,
+  resolved against canonical catalog/PO/receipt/invoice records. Delivery
+  acknowledgements derive quantities and units from recorded receipts; invoice
+  acknowledgement no longer falsely claims matching or payment state.
+- Strict parameter schemas reject caller prose and extra fields. Free-form
+  content continues to require review.
+- New rows retain versioned source references, and the shared delivery claim
+  rechecks exact canonical content before provider contact. Legacy automatic
+  rows without provenance fail closed; metadata is not backfilled.
+- Local validation passed 499 API tests on a newly provisioned disposable
+  `*_test` database, including the real HTTP and PostgreSQL regressions; the
+  owned test container/anonymous volume was then removed. The separate unit
+  lane passed 173 tests, agent tests passed 71, and typecheck/lint/supporting
+  environment/tax/demo/release/operations checks passed. No development/demo
+  database was selected for integration tests and no live provider was contacted.
+- See [automatic messaging](automatic-messaging.md) for the compatibility change,
+  rollout/legacy handling, verification scope, and claim-boundary limitations.
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.
