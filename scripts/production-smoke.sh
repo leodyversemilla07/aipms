@@ -25,7 +25,7 @@ export AIPMS_SERVICE_TOKEN="${AIPMS_SERVICE_TOKEN:-release-smoke-service-token}"
 export AIPMS_AGENT_SIGNING_SECRET="${AIPMS_AGENT_SIGNING_SECRET:-release-smoke-agent-signing-secret-32-bytes}"
 export AIPMS_AGENT_ID="${AIPMS_AGENT_ID:-release-smoke-agent-1}"
 # Fixed isolated smoke controls: prove the image sees non-default limits/scopes.
-export AIPMS_AGENT_SCOPES="invoice.ingest,events.read"
+export AIPMS_AGENT_SCOPES="invoice.ingest,requisition.read,vendor.read,audit.read"
 export AIPMS_AGENT_RATE_LIMIT="1"
 export AIPMS_AGENT_CONCURRENCY="2"
 export OPERATIONS_MONITORING_TOKEN="${OPERATIONS_MONITORING_TOKEN:-release-smoke-monitoring-token}"
@@ -123,7 +123,7 @@ fi
 # shared quota must refuse the next envelope with HTTP 429.
 compose exec --no-TTY api node -e '
   const assert = require("node:assert/strict");
-  assert.equal(process.env.AIPMS_AGENT_SCOPES, "invoice.ingest,events.read");
+  assert.equal(process.env.AIPMS_AGENT_SCOPES, "invoice.ingest,requisition.read,vendor.read,audit.read");
   assert.equal(process.env.AIPMS_AGENT_RATE_LIMIT, "1");
   assert.equal(process.env.AIPMS_AGENT_CONCURRENCY, "2");
 '
@@ -145,6 +145,7 @@ for ((attempt = 0; attempt < 2; attempt++)); do
   [ "$batch_status" = "429" ] && break
 done
 [ "$batch_status" = "429" ] || { printf 'Shared machine quota was not enforced: %s\n' "$batch_status" >&2; exit 1; }
+printf 'Authenticated shared agent quota verified.\n'
 
 CAPACITY_BASE_URL="http://localhost:${API_PORT}" \
 CAPACITY_ALLOW_INSECURE=1 \
