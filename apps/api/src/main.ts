@@ -24,7 +24,8 @@ async function bootstrap() {
   app.use('/api/auth', toNodeHandler(auth) as Parameters<typeof app.use>[1])
 
   const port = Number(process.env.PORT ?? 3001)
-  await app.listen(port)
-  console.log(`API listening on http://localhost:${port}/api/trpc`)
+  const host = process.env.API_BIND_HOST ?? '0.0.0.0'
+  await app.listen(port, host)
+  console.log(`API listening on http://${host}:${port}/api/trpc`)
 }
 bootstrap()

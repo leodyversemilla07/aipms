@@ -34,6 +34,16 @@ const vars = parseEnv(source);
 - `parseEnv` is a dependency-free `.env` parser exported for tooling (e.g. the
   `require-local-db` guard in `@workspace/db`).
 
+## Exclusive environment selection
+
+Set `AIPMS_ENV_FILE` in the process environment to load exactly one file
+(relative to the workspace root, or absolute), instead of root `.env` /
+`.env.local`. A missing/unreadable selected file fails closed. Existing process
+values retain precedence. The local demo launcher selects its own file and
+sanitizes inherited database/provider settings before starting child processes.
+This selector governs `@workspace/env`, not Next.js's independent app-local
+dotenv loader; the demo also passes its required web values explicitly.
+
 ## Disposable database guard
 
 API integration and browser E2E import `@workspace/env/test-database` and call

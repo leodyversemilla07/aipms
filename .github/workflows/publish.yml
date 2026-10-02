@@ -82,6 +82,7 @@ jobs:
           ./scripts/test-production-smoke-guard.sh
           pnpm release:gate:test
           pnpm operations:check:test
+          pnpm demo:test
           pnpm typecheck
           pnpm --filter api test:unit
           pnpm --filter api test

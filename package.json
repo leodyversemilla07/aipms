@@ -5,6 +5,13 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "demo:setup": "node scripts/local-demo.mjs setup",
+    "demo:api": "node scripts/local-demo.mjs api",
+    "demo:web": "node scripts/local-demo.mjs web",
+    "demo:status": "node scripts/local-demo.mjs status",
+    "demo:stop": "node scripts/local-demo.mjs stop",
+    "demo:test": "node --test scripts/test-local-demo.mjs",
+    "demo:smoke": "node scripts/test-local-demo-stack.mjs",
     "check": "biome check .",
     "lint": "biome lint .",
     "format": "biome check --write .",

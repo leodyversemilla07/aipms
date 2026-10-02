@@ -1,0 +1,26 @@
+# Isolated, non-production PostgreSQL. Never uses the deployment Compose file.
+name: aipms-demo
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: aipms-demo-postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_DB: aipms_demo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run pnpm demo:setup first}
+    labels:
+      aipms.demo.owner: ${AIPMS_DEMO_ID:?Run pnpm demo:setup first}
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d aipms_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  postgres-data:
+    name: aipms-demo-postgres-data
+    labels:
+      aipms.demo.owner: ${AIPMS_DEMO_ID:?Run pnpm demo:setup first}

@@ -10,6 +10,7 @@ node_modules
 .gitignore
 .env
 .env.local
+.env.demo
 **/.env
 **/.env.local
 *.log

@@ -74,6 +74,7 @@ jobs:
           ./scripts/test-production-smoke-guard.sh
           pnpm release:gate:test
           pnpm operations:check:test
+          pnpm demo:test
 
       - name: Typecheck (turbo)
         run: pnpm typecheck
@@ -92,6 +93,20 @@ jobs:
 
       - name: Environment and test-database guard tests
         run: pnpm --filter @workspace/env test
+
+  local-demo:
+    name: Local demo bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Bootstrap isolated demo and verify authenticated web/API access
+        run: pnpm demo:smoke
 
   release-smoke:
     name: Production image smoke

@@ -2,6 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalPassThroughEnv": [
+    "AIPMS_ENV_FILE",
+    "ComSpec",
+    "API_BIND_HOST",
     "AIPMS_SERVICE_TOKEN",
     "AIPMS_MESSAGING_DISPATCHER_ENABLED",
     "CAPACITY_AGENT_BOOTSTRAP_TOKEN",

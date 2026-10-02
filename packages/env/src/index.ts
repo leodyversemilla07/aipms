@@ -76,22 +76,30 @@ export function parseEnv(source: string): Record<string, string> {
 
 export function loadRootEnv(): void {
   if (loaded) return
-  loaded = true
 
   const root = findWorkspaceRoot(process.cwd())
-  if (!root) return
+  const selected = process.env.AIPMS_ENV_FILE?.trim()
+  if (!root && !selected) return
 
+  // Explicit environments are exclusive: never fall back to development or
+  // production root credentials when a local demo selects its own file.
   const merged: Record<string, string> = {}
+  const files = selected
+    ? [resolve(root ?? process.cwd(), selected)]
+    : FILES.map((file) => join(root ?? process.cwd(), file))
 
-  for (const file of FILES) {
-    const path = join(root, file)
-    if (!existsSync(path)) continue
-
-    try {
+  for (const path of files) {
+    if (selected) {
       Object.assign(merged, parseEnv(readFileSync(path, "utf8")))
-    } catch {}
+    } else {
+      if (!existsSync(path)) continue
+      try {
+        Object.assign(merged, parseEnv(readFileSync(path, "utf8")))
+      } catch {}
+    }
   }
 
+  loaded = true
   for (const [key, value] of Object.entries(merged)) {
     if (process.env[key] === undefined) process.env[key] = value
   }

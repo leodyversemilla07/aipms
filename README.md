@@ -163,59 +163,57 @@ locking contract, and remaining accounting limitations.
 
 ## Getting Started
 
-### Prerequisites
-- Node.js 24.x
-- pnpm 12.7.0+
-- Docker (for PostgreSQL)
+### Isolated local demo (recommended)
 
-### Install Dependencies
-```bash
-pnpm install
+Prerequisites: Node.js **24.x**, pnpm **12.7.0**, Docker and its Compose plugin.
+Start Docker Desktop's Linux engine on Windows.
+
+From the repository root:
+
+```sh
+pnpm demo:setup
 ```
 
-### Setup Database
-```bash
-# First copy .env.example to .env and fill the required Compose values.
-# Start PostgreSQL
-docker compose up -d postgres
+This creates a separate ignored `.env.demo` and an owned loopback PostgreSQL
+database on port **55433**, installs frozen dependencies, generates Prisma,
+applies migrations, then seeds master data. Existing root env files and
+non-demo databases are not selected or reset.
 
-# Generate Prisma client
-pnpm db:generate
+Start these in separate terminals, then open http://localhost:3000:
 
-# Run seed (demo data)
-pnpm db:seed
+```sh
+pnpm demo:api
+pnpm demo:web
 ```
 
-### Development
-```bash
-# Start API (http://localhost:3001)
-pnpm dev --filter api
+Check availability with `pnpm demo:status`. Demo sign-in:
+`maker@demo.aipms` / `demo-maker-123`, and
+`checker@demo.aipms` / `demo-checker-123`. These identities are local-only.
+The agent, unattended automation and real email are not enabled.
 
-# Start Web (http://localhost:3000)
-pnpm dev --filter web
+Follow [the guided procurement-to-payment demo](docs/local-demo.md), including
+matching, independent payment approval, simulated hand-off/reconciliation,
+ERP export and audit checks. Stop the app terminals and use `pnpm demo:stop`
+to stop PostgreSQL while preserving its volume.
 
-# Start Agent (eve runtime)
-pnpm dev --filter agent
-```
+### Custom development environment
+
+For an independently configured root `.env` and PostgreSQL, run
+`pnpm install --frozen-lockfile`, `pnpm db:generate`, `pnpm db:deploy`,
+and only then `pnpm db:seed`. Start API/web separately with
+`pnpm --filter api dev` / `pnpm --filter web dev`.
+The deployment Compose file requires its complete deployment environment even
+when selecting only PostgreSQL; it is not the minimal local-demo bootstrap.
 
 For local agent development without an API key, set `AIPMS_LLM_KIND=chatgpt`,
-start the agent, then sign in through eve `/login`. This mode is rejected in
-production or when `AIPMS_LLM_GATE` is set; deployments must use `cloud` or
-`offline` provider-gated modes.
+start `pnpm --filter agent dev`, then sign in through eve `/login`.
+This mode is rejected in production or when `AIPMS_LLM_GATE` is set;
+deployments use cloud or offline provider-gated modes.
 
-### Seed Data
-The seed creates:
-- Budget `IT-PROD` 2026-01: ₱5,000,000
-- Vendor: "Acme Office Supplies, Inc." (verified BDO bank)
-- 2 catalog items
-- Threshold: auto-approve up to ₱50,000
-
-### Demo Mode
-Enable demo identities (maker/checker) for §16.4 testing:
-```bash
-# In .env
-AUTH_SEED_DEMO=1
-```
+Seed master data includes budget IT-PROD / 2026-01 (₱5,000,000), Acme Office
+Supplies with a fictional verified bank account, two catalog items, and a
+₱50,000 requisition threshold. For custom local demo identities, set
+`AUTH_SEED_DEMO=1`; they are never seeded in production.
 
 ---
 
