@@ -394,6 +394,12 @@ provenance; legacy auto drafts require review. See
 [`docs/automatic-messaging.md`](docs/automatic-messaging.md) for parameter shapes,
 rollout requirements, and the receipt-based delivery acknowledgement change.
 
+Policy selection now shares version/scope precedence across requisitions,
+event wakes, sourcing, and tax configuration. Publication serializes revision
+allocation and audits retired predecessors. See
+[`docs/policy-resolution.md`](docs/policy-resolution.md) for configuration shapes,
+legacy ambiguity, draft/supersession behavior, and rollout requirements.
+
 ## Roadmap
 
 | Phase | Status | Focus |

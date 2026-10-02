@@ -10,6 +10,13 @@ import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
+
 /**
  * @workspace purchase-order service — issue (budget commit + vendor gate),
  * confirm, cancellation with budget release. Against local Postgres.
@@ -76,6 +83,7 @@ afterAll(async () => {
   await db.budget.deleteMany({ where: { id: { in: created.budget } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
+  await restorePolicies()
   await db.$disconnect()
 })
 

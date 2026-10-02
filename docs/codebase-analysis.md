@@ -74,6 +74,29 @@ Automatic message follow-up:
 - See [automatic messaging](automatic-messaging.md) for the compatibility change,
   rollout/legacy handling, verification scope, and claim-boundary limitations.
 
+Policy consistency follow-up:
+
+- **Finding 9:** one resolver now selects the highest enabled revision within
+  the applicable exact cost-center scope, then global scope. Requisitions,
+  event wakes, sourcing, and tax configuration no longer use different
+  unordered/edit-time precedence. Ambiguous enabled legacy heads fail closed.
+- New publication uses a per-kind transaction lock and monotonic allocation;
+  supersession validates kind/scope/current head, enabled replacements retire
+  same-scope predecessors, and audit/idempotency record the retirement.
+- Operational schemas validate authoring and selected legacy configuration;
+  configured missing preferred vendors no longer silently fall back. Decisions,
+  sourcing results/events, and configured tax computations retain revision traces.
+- Seeding preserves any existing threshold history, including disabled rules.
+  The migration adds an index without renumbering or erasing legacy versions.
+- Local validation passed 549 API tests on a newly provisioned disposable
+  `*_test` database, including parallel publication, rollback, audit replay,
+  and workflow-consistency regressions. The separate database-blocked lane
+  passed 211 tests. All nine workspace typechecks, targeted test typechecks,
+  lint, Prisma validation, and supporting agent/env/tax/demo/release/operations
+  checks passed; the owned disposable container/volume was removed afterward.
+- See [policy resolution](policy-resolution.md) for compatibility, verification,
+  rollout and decision-time—not continuous workflow locking—limitations.
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.

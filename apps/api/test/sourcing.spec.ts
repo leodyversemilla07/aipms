@@ -5,6 +5,13 @@ import { PolicyService } from '../src/policy/policy.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { SourcingService } from '../src/sourcing/sourcing.service'
 
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
+
 /**
  * §8.1 structured quoting — RFQ open → offer receive → deterministic compare
  * (lowestCost default / bestValue via evaluationCriterion policy) → exclusive
@@ -31,6 +38,7 @@ afterAll(async () => {
   })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
+  await restorePolicies()
   await db.$disconnect()
 })
 
@@ -138,7 +146,9 @@ describe('sourcing quotes (§8.1)', () => {
     const comparison = await sourcing.compare(requisition.id)
     expect(comparison.criterion).toBe('bestValue')
     expect(comparison.ranking).toHaveLength(2)
-    const byId = new Map(comparison.ranking.map((r) => [r.quoteId, r.score]))
+    const byId = new Map<string, number | null>(
+      comparison.ranking.map((r) => [r.quoteId, r.score] as const),
+    )
     const cheapScore = byId.get(cheapQuote.id)
     const priceyScore = byId.get(priceyQuote.id)
     if (cheapScore == null || priceyScore == null) {

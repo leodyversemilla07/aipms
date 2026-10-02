@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common'
 import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
+import { resolveEffectivePolicy } from '../policy/policy-resolver'
 import { EventRelayService } from '../shared/events/event-relay.service'
 import { AgentCommandService } from './agent-command.service'
 
@@ -81,8 +82,8 @@ export class AgentWakeService implements OnModuleInit {
         (sum, l) => sum + l.lineTotalMinor,
         0,
       )
-      const thresholdPolicy = await db.policy.findFirst({
-        where: { kind: 'threshold', enabled: true },
+      const thresholdPolicy = await resolveEffectivePolicy('threshold', {
+        costCenter: requisition.costCenter,
       })
       let budgetRemainingMinor: number | undefined
       if (requisition.budgetId) {
@@ -130,14 +131,20 @@ export class AgentWakeService implements OnModuleInit {
           where: { id: awardedQuote.vendorId },
         })
       }
-      const prefPolicy = await db.policy.findFirst({
-        where: { kind: 'preferredVendor', enabled: true },
-      })
+      const prefPolicy = vendor
+        ? null
+        : await resolveEffectivePolicy('preferredVendor', {
+            costCenter: requisition.costCenter,
+          })
       if (!vendor && prefPolicy?.config) {
         const cfg = prefPolicy.config as PreferredVendorConfig
         const vendorId = cfg.vendorId ?? cfg.vendor_id
         if (vendorId) {
           vendor = await db.vendor.findUnique({ where: { id: vendorId } })
+          if (!vendor)
+            throw new Error(
+              'Configured preferred vendor is unavailable; refusing arbitrary fallback',
+            )
         }
       }
       if (!vendor) {
@@ -167,6 +174,9 @@ export class AgentWakeService implements OnModuleInit {
           finishedAt: new Date(),
           meta: {
             ...(run.meta as Prisma.InputJsonObject),
+            decision: asJson(decision),
+            preferredVendorPolicyId: prefPolicy?.id ?? null,
+            preferredVendorPolicyVersion: prefPolicy?.version ?? null,
             result:
               result.outcome === 'ISSUED'
                 ? {

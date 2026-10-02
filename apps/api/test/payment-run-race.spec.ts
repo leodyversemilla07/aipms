@@ -9,6 +9,13 @@ import { DocumentNumberService } from '../src/shared/document-number/document-nu
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { VendorService } from '../src/vendor/vendor.service'
 
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
+
 /**
  * @workspace payment-run concurrency (§8.6) — claim checks and the run-number
  * mint now happen inside the transaction under FOR UPDATE row locks: two
@@ -47,6 +54,7 @@ afterAll(async () => {
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
+  await restorePolicies()
   await db.$disconnect()
 })
 

@@ -1,10 +1,17 @@
 import { db } from '@workspace/db'
-import { afterAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
 import { ReceiptService } from '../src/receipt/receipt.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
+
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
 
 /**
  * @workspace invoice service — deterministic §8.4 tax foot + §9 three-way
@@ -40,6 +47,7 @@ afterAll(async () => {
   await db.purchaseOrder.deleteMany({ where: { id: { in: created.po } } })
   await db.vendor.deleteMany({ where: { id: { in: created.vendor } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
+  await restorePolicies()
   await db.$disconnect()
 })
 
@@ -80,15 +88,17 @@ describe('Deterministic tax (§8.4)', () => {
   })
 
   it('honours a configured taxRule policy (config-over-fork)', async () => {
-    await policyService.create({
+    const policy = await policyService.create({
       name: `Tax ${suffix}`,
       kind: 'taxRule',
       updatedBy: actorId,
       config: { vatRateBps: 1200, ewtRatesBps: { goods: 100, services: 300 } },
     })
+    created.policy.push(policy.id)
     const comp = await invoiceService.compute({ lines: [line] })
     expect(comp.vatMinor).toBe(12_000)
     expect(comp.ewtMinor).toBe(1_000)
+    expect(comp.taxPolicyVersion).toBe(`policy:${policy.id}@v${policy.version}`)
   })
 })
 

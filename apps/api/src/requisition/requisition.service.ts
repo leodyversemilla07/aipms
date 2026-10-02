@@ -250,7 +250,11 @@ export class RequisitionService {
         'Requisition lines',
       )
 
-      const thresholdPolicy = await this.policy.latest('threshold')
+      const thresholdPolicy = await this.policy.resolve(
+        'threshold',
+        { costCenter: requisition.costCenter },
+        tx,
+      )
       let budgetRemainingMinor: number | undefined
       if (requisition.budgetId) {
         const budget = await tx.budget.findUnique({

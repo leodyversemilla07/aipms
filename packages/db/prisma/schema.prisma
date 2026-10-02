@@ -230,6 +230,7 @@ model Policy {
 
   @@map("policy")
   @@index([kind, enabled])
+  @@index([kind, enabled, version])
 }
 
 // Append-only audit trail (§9 constraints). No update/delete path exposed.

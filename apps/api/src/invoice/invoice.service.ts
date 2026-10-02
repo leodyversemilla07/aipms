@@ -127,14 +127,13 @@ export class InvoiceService {
     input: RegisterInvoiceInput,
     outerTx?: Prisma.TransactionClient,
   ): Promise<{ invoice: unknown; match: MatchResult | null }> {
-    const taxConfig = await this.policy.taxConfig()
-    const computation = computeTax(input.lines, taxConfig)
-    this.assertPersistableComputation(computation)
-
     // Match and create atomically: the PO row lock serializes concurrent
     // registrations against the same PO so two invoices cannot consume the
     // same receipt/PO capacity (see matchAgainstPo allocation).
     const run = async (client: Prisma.TransactionClient) => {
+      const taxConfig = await this.policy.taxConfig(client)
+      const computation = computeTax(input.lines, taxConfig)
+      this.assertPersistableComputation(computation)
       if (input.poId != null) {
         await client.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId} FOR UPDATE`
       }

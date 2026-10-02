@@ -9,6 +9,13 @@ import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
+
 /**
  * @workspace requisition service — §11 gate outcomes on submit
  * (auto-approve becomes approved; above-threshold / budget-override route to a
@@ -66,6 +73,7 @@ afterAll(async () => {
   })
   await db.budget.deleteMany({ where: { id: { in: created.budget } } })
   await db.policy.deleteMany({ where: { id: { in: created.policy } } })
+  await restorePolicies()
   await db.$disconnect()
 })
 

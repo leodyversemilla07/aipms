@@ -16,6 +16,13 @@ import {
   requireRole,
 } from '../src/trpc/authorize'
 
+import { capturePolicyActivation } from './policy-activation.fixture'
+
+let restorePolicies = async () => {}
+beforeAll(async () => {
+  restorePolicies = await capturePolicyActivation()
+})
+
 /**
  * @workspace authorization — §10 roles and approval-route enforcement.
  * Any authenticated human used to be able to decide any pending gate; now the
@@ -106,6 +113,7 @@ afterAll(async () => {
   await db.user.deleteMany({
     where: { id: { in: Object.values(users) } },
   })
+  await restorePolicies()
   await db.$disconnect()
 })
 

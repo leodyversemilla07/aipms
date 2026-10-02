@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
+import { resolveEffectivePolicy } from '../policy/policy-resolver'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import {
   assertSingleCurrency,
@@ -49,6 +50,8 @@ export interface ReceiveQuoteInput {
 interface EvaluationConfig {
   criterion?: 'lowestCost' | 'bestValue'
   priceWeight?: number // 0..1, bestValue only (default 0.6)
+  policyId?: string
+  policyVersion?: number
 }
 
 const asJson = (value: unknown): Prisma.InputJsonValue =>
@@ -214,7 +217,7 @@ export class SourcingService {
       }
     }
 
-    const config = await this.evaluationCriterion()
+    const config = await this.evaluationCriterion(requisition.costCenter)
     const ranked = [...quotes].sort((a, b) => {
       if ((a.totalMinor ?? Infinity) !== (b.totalMinor ?? Infinity)) {
         return (a.totalMinor ?? Infinity) - (b.totalMinor ?? Infinity)
@@ -261,6 +264,8 @@ export class SourcingService {
 
     return {
       criterion: config.criterion ?? 'lowestCost',
+      policyId: config.policyId ?? null,
+      policyVersion: config.policyVersion ?? null,
       priceWeight: appliedPriceWeight,
       recommendedQuoteId:
         config.criterion === 'bestValue'
@@ -300,10 +305,12 @@ export class SourcingService {
       )
     }
 
-    const criterion =
-      (await this.evaluationCriterion()).criterion ?? 'lowestCost'
-
     const run = async (tx: Prisma.TransactionClient) => {
+      const evaluation = await this.evaluationCriterion(
+        requisition.costCenter,
+        tx,
+      )
+      const criterion = evaluation.criterion ?? 'lowestCost'
       // Serialize awards per requisition: without this lock two concurrent
       // awards for sibling quotes could both accept (exclusivity violated).
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`award:${quote.requisitionId}`}))`
@@ -348,6 +355,8 @@ export class SourcingService {
             vendorId: current.vendorId,
             totalMinor: current.totalMinor,
             criterion,
+            policyId: evaluation.policyId ?? null,
+            policyVersion: evaluation.policyVersion ?? null,
             awardedBy,
           },
         },
@@ -390,19 +399,25 @@ export class SourcingService {
   }
 
   /** Latest enabled evaluationCriterion policy, or default lowestCost. */
-  private async evaluationCriterion(): Promise<EvaluationConfig> {
-    const policy = await db.policy.findFirst({
-      where: { kind: 'evaluationCriterion', enabled: true },
-      orderBy: [{ updatedAt: 'desc' }, { version: 'desc' }],
-    })
+  private async evaluationCriterion(
+    costCenter: string,
+    tx: Prisma.TransactionClient = db,
+  ): Promise<EvaluationConfig> {
+    const policy = await resolveEffectivePolicy(
+      'evaluationCriterion',
+      { costCenter },
+      tx,
+    )
     return asRecord(policy)
   }
 }
 
 function asRecord(policy: unknown): EvaluationConfig {
-  const p = policy as { config?: unknown } | null
+  const p = policy as { id?: string; version?: number; config?: unknown } | null
   const cfg = (p?.config ?? {}) as Partial<EvaluationConfig>
   return {
+    policyId: p?.id,
+    policyVersion: p?.version,
     criterion:
       cfg.criterion === 'bestValue'
         ? 'bestValue'

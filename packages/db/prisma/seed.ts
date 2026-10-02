@@ -1,4 +1,5 @@
 import { db } from "../src/client"
+import { ensureDefaultThreshold } from "../src/seed-policy"
 
 /**
  * Idempotent enterprise demo master data. Seeds the supervisory & finance
@@ -93,24 +94,7 @@ async function main() {
   }
   console.log("seeded catalog")
 
-  const threshold = await db.policy.findFirst({
-    where: { kind: "threshold", enabled: true },
-  })
-  if (!threshold) {
-    await db.policy.create({
-      data: {
-        name: "Requisition threshold (default)",
-        kind: "threshold",
-        enabled: true,
-        version: 1,
-        config: {
-          autoApproveUpTo: 50_00000, // ₱50,000 auto-approve
-          budgetRequired: false,
-        },
-        updatedBy: "seed",
-      },
-    })
-  }
+  await db.$transaction(ensureDefaultThreshold)
   console.log("seeded policy")
 }
 
