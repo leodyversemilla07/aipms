@@ -10,6 +10,7 @@ import {
 import { IntakeService } from '../src/intake/intake.service'
 import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { IntakeImapService } from '../src/intake/intake-imap.service'
+import { AgentQuotaService } from '../src/shared/agent-quota/agent-quota.service'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
@@ -27,6 +28,7 @@ const intakeService = new IntakeService(new EventEmitterService())
 const intakeCommands = new IntakeCommandService(
   intakeService,
   new AuditService(),
+  new AgentQuotaService(),
 )
 const imapService = new IntakeImapService(intakeCommands)
 

@@ -163,6 +163,15 @@ if (["agent", "agent-operator", "demo"].includes(agentId)) {
   fail("AIPMS_AGENT_ID", "must identify this deployed agent uniquely")
 }
 
+for (const name of ["AIPMS_AGENT_RATE_LIMIT", "AIPMS_AGENT_CONCURRENCY"]) {
+  const value = values[name]
+  if (value === undefined || value === "") continue
+  const limit = Number(value)
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 2_147_483_647) {
+    fail(name, "must be a positive database-range integer")
+  }
+}
+
 if (![undefined, "", "0", "false"].includes(values.AUTH_SEED_DEMO)) {
   fail("AUTH_SEED_DEMO", "must be disabled outside development")
 }

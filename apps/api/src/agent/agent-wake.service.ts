@@ -4,6 +4,7 @@ import { evaluateThresholdGate } from '../policy/policy-engine'
 import { resolveEffectivePolicy } from '../policy/policy-resolver'
 import { EventRelayService } from '../shared/events/event-relay.service'
 import { AgentCommandService } from './agent-command.service'
+import { configuredAgentId } from './agent-principal'
 
 /** Shape the relay hands to handlers (§13 outbox rows). */
 interface RelayedEvent {
@@ -155,7 +156,7 @@ export class AgentWakeService implements OnModuleInit {
       const result = await this.commands.issuePurchaseOrder(
         { requisitionId: requisition.id, vendorId: vendor.id, terms: {} },
         {
-          id: 'agent:operator',
+          id: configuredAgentId(),
           kind: 'agent',
           runId: run.id,
           idempotencyKey: `event:${event.id}`,
@@ -217,7 +218,7 @@ export class AgentWakeService implements OnModuleInit {
     try {
       if (event.type === 'intake.received') {
         const result = await this.commands.processDocument(event.entityId, {
-          id: 'agent:operator',
+          id: configuredAgentId(),
           kind: 'agent',
           runId: run.id,
           idempotencyKey: `event:${event.id}`,

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { db, type Prisma, type UserKind, type UserRole } from '@workspace/db'
+import { AgentQuotaService } from '../shared/agent-quota/agent-quota.service'
 import { AuditService } from '../shared/audit/audit.service'
 import {
   assertAgentCapability,
@@ -15,6 +16,7 @@ export interface IntakeCommandActor {
   scopes?: readonly string[]
   source: 'trpc' | 'imap'
   idempotencyKey?: string
+  runId?: string
 }
 
 /** Shared authorization/audit boundary for interactive and IMAP ingestion. */
@@ -23,6 +25,7 @@ export class IntakeCommandService {
   constructor(
     private readonly intake: IntakeService,
     private readonly audit: AuditService,
+    private readonly quotas: AgentQuotaService,
   ) {}
 
   async ingest(
@@ -31,6 +34,16 @@ export class IntakeCommandService {
     outerTx?: Prisma.TransactionClient,
   ) {
     await this.authorize(actor)
+    return this.quotas.run(actor, 'intake.ingest', () =>
+      this.ingestAuthorized(input, actor, outerTx),
+    )
+  }
+
+  private async ingestAuthorized(
+    input: IngestInput,
+    actor: IntakeCommandActor,
+    outerTx?: Prisma.TransactionClient,
+  ) {
     const run = async (tx: Prisma.TransactionClient) => {
       const doc = await this.intake.ingest(input, tx)
       await this.audit.record(
@@ -38,6 +51,7 @@ export class IntakeCommandService {
           actorId: actor.id,
           actorKind: actor.kind,
           action: 'intake.ingest',
+          runId: actor.runId,
           entity: 'IntakeDocument',
           entityId: doc.id,
           input: {
@@ -59,6 +73,7 @@ export class IntakeCommandService {
         actorId: actor.id,
         actorKind: actor.kind,
         action: 'intake.ingest.failed',
+        runId: actor.runId,
         entity: 'IntakeDocument',
         entityId: null,
         input: {
@@ -88,6 +103,7 @@ export class IntakeCommandService {
         actorId: actor.id,
         actorKind: actor.kind,
         action: 'intake.ingest.denied',
+        runId: actor.runId,
         entity: 'Authorization',
         entityId: 'intake.ingest',
         input: {

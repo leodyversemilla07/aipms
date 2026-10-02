@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common'
 import { AutomationLeaseService } from '../shared/automation/automation-lease.service'
 import { AgentCommandService } from './agent-command.service'
+import { configuredAgentId } from './agent-principal'
 
 /**
  * §3 optional drain loop — periodically runs `agent.batch` so the intake
@@ -51,7 +52,7 @@ export class AgentScheduler implements OnModuleInit, OnModuleDestroy {
     try {
       const leased = await this.leases.runExclusive('agent-drain', () =>
         this.commands.processPending(batchSize, {
-          id: 'agent:scheduler',
+          id: configuredAgentId(),
           kind: 'agent',
           idempotencyKey: `scheduler:${Math.floor(Date.now() / this.intervalMs)}`,
           source: 'scheduler',
@@ -64,7 +65,7 @@ export class AgentScheduler implements OnModuleInit, OnModuleDestroy {
       const result = leased.value
       if (result.documents > 0) {
         this.logger.log(
-          `agent drain: ${result.succeeded}/${result.documents} processed, ${result.failed.length} failed`,
+          `agent drain: ${result.succeeded}/${result.documents} processed, ${result.failed.length} failed, ${result.deferred} deferred`,
         )
       }
     } catch (error) {

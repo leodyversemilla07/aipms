@@ -15,6 +15,7 @@ import { InvoiceService } from '../src/invoice/invoice.service'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { IdempotencyService } from '../src/shared/idempotency/idempotency.service'
+import { SharedModule } from '../src/shared/shared.module'
 import { TrpcModule } from '../src/trpc/trpc.module'
 
 /** Real HTTP/context/authorization/storage; only invoice matching is unused. */
@@ -48,7 +49,7 @@ describe('agent-safe intake responses over HTTP', () => {
       scopes: ['intake.read', 'intake.ingest', 'audit.read'],
     }).accessToken
     const module = await Test.createTestingModule({
-      imports: [TrpcModule],
+      imports: [TrpcModule, SharedModule],
       providers: [
         IntakeRouter,
         AuditRouter,

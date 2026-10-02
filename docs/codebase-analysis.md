@@ -97,6 +97,26 @@ Policy consistency follow-up:
 - See [policy resolution](policy-resolution.md) for compatibility, verification,
   rollout and decision-time—not continuous workflow locking—limitations.
 
+Agent admission follow-up:
+
+- **Finding 10:** one service now gates tRPC mutations and authorized REST,
+  scheduler, event-wake and IMAP commands. Persistent atomic counters are shared
+  across API instances; in-flight root slots are shared across paths within one
+  API process, not across replicas.
+- Batches bill the envelope plus each attempted document, return explicit
+  deferral metadata, leave unattempted work pending and do not mark partial runs
+  succeeded. Nested adapters reuse admission without trusting source flags.
+- Verified REST scopes/run IDs and signed tRPC run IDs reach command auditing;
+  built-in automation uses one configured principal instead of separate aliases.
+- **Finding 11 (partial):** Compose now forwards scopes/rate/concurrency,
+  preserving explicitly empty deny-all scope sets. Signing-key mounts remain
+  a separate deployment task.
+- Local validation passed 591 API tests on fresh owned disposable PostgreSQL,
+  243 database-blocked tests, 73 agent tests, workspace/targeted typechecks,
+  lint and supporting env/tax/demo/release/operations/Prisma checks.
+- See [agent admission](agent-quotas.md) for accounting, rollout and the
+  process-local concurrency / existing event-retry limitations.
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.

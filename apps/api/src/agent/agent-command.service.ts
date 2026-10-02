@@ -4,6 +4,10 @@ import {
   type IssueInput,
   PurchaseOrderService,
 } from '../purchase-order/purchase-order.service'
+import {
+  AgentQuotaExceededError,
+  AgentQuotaService,
+} from '../shared/agent-quota/agent-quota.service'
 import { AuditService } from '../shared/audit/audit.service'
 import {
   assertAgentCapability,
@@ -33,6 +37,7 @@ export class AgentCommandService {
     private readonly agent: AgentService,
     private readonly purchaseOrders: PurchaseOrderService,
     private readonly audit: AuditService,
+    private readonly quotas: AgentQuotaService,
   ) {}
 
   async processDocument(
@@ -41,6 +46,16 @@ export class AgentCommandService {
     outerTx?: Prisma.TransactionClient,
   ) {
     await this.authorize(actor, 'agent.process', 'intake.registerInvoice')
+    return this.quotas.run(actor, 'agent.process', () =>
+      this.processAuthorizedDocument(docId, actor, outerTx),
+    )
+  }
+
+  private async processAuthorizedDocument(
+    docId: string,
+    actor: CommandActor,
+    outerTx?: Prisma.TransactionClient,
+  ) {
     const run = async (tx: Prisma.TransactionClient) => {
       const result = await this.agent.classifyAndRegister(docId, tx)
       await this.audit.record(
@@ -100,6 +115,12 @@ export class AgentCommandService {
       )
       throw error
     }
+    return this.quotas.run(actor, 'agent.batch', () =>
+      this.processAuthorizedPending(limit, actor),
+    )
+  }
+
+  private async processAuthorizedPending(limit: number, actor: CommandActor) {
     const ownedRun = actor.runId
       ? null
       : await db.agentRun.create({
@@ -122,16 +143,29 @@ export class AgentCommandService {
         select: { id: true },
       })
       let succeeded = 0
+      let deferred = 0
+      let quotaLimited = false
       const failed: Array<{ docId: string; error: string }> = []
       for (const doc of docs) {
         try {
           await this.processDocument(doc.id, effectiveActor)
           succeeded += 1
         } catch (error) {
+          if (error instanceof AgentQuotaExceededError) {
+            deferred = docs.length - succeeded - failed.length
+            quotaLimited = true
+            break
+          }
           failed.push({ docId: doc.id, error: this.errorMessage(error) })
         }
       }
-      const result = { documents: docs.length, succeeded, failed }
+      const result = {
+        documents: docs.length,
+        succeeded,
+        failed,
+        deferred,
+        quotaLimited,
+      }
       await this.audit.record({
         runId: effectiveActor.runId,
         actorId: effectiveActor.id,
@@ -150,7 +184,8 @@ export class AgentCommandService {
         await db.agentRun.update({
           where: { id: ownedRun.id },
           data: {
-            status: failed.length === 0 ? 'succeeded' : 'failed',
+            status:
+              failed.length === 0 && !quotaLimited ? 'succeeded' : 'failed',
             finishedAt: new Date(),
             meta: {
               source: actor.source,
@@ -159,6 +194,8 @@ export class AgentCommandService {
               documents: docs.length,
               succeeded,
               failed: failed.length,
+              deferred,
+              quotaLimited,
             },
           },
         })
@@ -194,6 +231,15 @@ export class AgentCommandService {
 
   async issuePurchaseOrder(input: IssueInput, actor: CommandActor) {
     await this.authorize(actor, 'purchaseOrder.issue', 'purchaseOrder.issue')
+    return this.quotas.run(actor, 'purchaseOrder.issue', () =>
+      this.issueAuthorizedPurchaseOrder(input, actor),
+    )
+  }
+
+  private async issueAuthorizedPurchaseOrder(
+    input: IssueInput,
+    actor: CommandActor,
+  ) {
     try {
       return await db.$transaction(async (tx) => {
         const result = await this.purchaseOrders.issue(input, actor.id, tx)

@@ -6,6 +6,7 @@ import {
 import { db } from '@workspace/db'
 import { ImapFlow } from 'imapflow'
 import { simpleParser } from 'mailparser'
+import { configuredAgentId } from '../agent/agent-principal'
 import {
   buildRawPayload,
   contentHashFor,
@@ -186,7 +187,7 @@ export class IntakeImapService implements OnModuleInit, OnModuleDestroy {
         raw,
       },
       {
-        id: 'agent:imap-intake',
+        id: configuredAgentId(),
         kind: 'agent',
         source: 'imap',
         idempotencyKey: `email:${contentHash}`,

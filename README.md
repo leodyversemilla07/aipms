@@ -295,7 +295,9 @@ Key environment variables:
 | `AUTH_SEED_DEMO` | Seed demo users (maker/checker) |
 | `AGENT_AUTORUN` | Enable the unattended intake drain loop |
 | `AIPMS_AGENT_WAKE` | Enable event-driven agent wakes |
-| `AIPMS_AGENT_SCOPES` | Replace the default automation capability grants |
+| `AIPMS_AGENT_SCOPES` | Replace default automation grants; explicitly empty denies all (forwarded by Compose) |
+| `AIPMS_AGENT_RATE_LIMIT` | Shared admissions/minute per agent, default 60; batch envelope + each document |
+| `AIPMS_AGENT_CONCURRENCY` | Root commands in flight per agent **per API process**, default 4 |
 | `AUTOMATION_LEASE_TIMEOUT_MS` | Cross-replica scheduler lease timeout |
 | `EVENT_RELAY_CLAIM_TTL_MS` | Recovery window for abandoned outbox claims |
 
@@ -397,7 +399,9 @@ rollout requirements, and the receipt-based delivery acknowledgement change.
 Policy selection now shares version/scope precedence across requisitions,
 event wakes, sourcing, and tax configuration. Publication serializes revision
 allocation and audits retired predecessors. See
-[`docs/policy-resolution.md`](docs/policy-resolution.md) for configuration shapes,
+[`docs/agent-quotas.md`](docs/agent-quotas.md) for shared admission accounting,
+partial-batch responses, run attribution and process-local concurrency limits.
+See [`docs/policy-resolution.md`](docs/policy-resolution.md) for configuration shapes,
 legacy ambiguity, draft/supersession behavior, and rollout requirements.
 
 ## Roadmap

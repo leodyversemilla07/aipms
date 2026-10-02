@@ -12,7 +12,8 @@ export default defineTool({
   description:
     "Run deterministic structured intake over up to `limit` pending documents. " +
     "Unstructured/binary documents require get_intake_document plus OCR or human review. Returns how many were " +
-    "processed and any failures. Requires configured aipms machine credentials.",
+    "processed, failures, and work deferred by shared quotas. On quota exhaustion, " +
+    "back off; do not assume the queue was drained. Requires configured aipms machine credentials.",
   inputSchema: z.object({
     limit: z.number().int().min(1).max(100).default(25),
   }),
@@ -46,7 +47,10 @@ export default defineTool({
       type: "text",
       value:
         `Processed ${output.succeeded}/${output.documents} pending intake documents` +
-        (output.failed?.length ? `; ${output.failed.length} failed` : ""),
+        (output.failed?.length ? `; ${output.failed.length} failed` : "") +
+        (output.quotaLimited
+          ? `; ${output.deferred} deferred by quota — back off and retry later; queue is not drained`
+          : ""),
     }
   },
 })

@@ -120,6 +120,7 @@ export class IntakeRouter {
                 )
               : undefined,
             source: 'trpc',
+            runId: (ctx.user as { runId?: string }).runId,
             idempotencyKey,
           },
           tx,

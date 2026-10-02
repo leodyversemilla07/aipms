@@ -6,6 +6,7 @@ import { extractStructuredInvoice } from '../src/agent/extract'
 import { IntakeService } from '../src/intake/intake.service'
 import { InvoiceService } from '../src/invoice/invoice.service'
 import { PolicyService } from '../src/policy/policy.service'
+import { AgentQuotaService } from '../src/shared/agent-quota/agent-quota.service'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 
@@ -23,7 +24,12 @@ const events = new EventEmitterService()
 const invoice = new InvoiceService(policy, events)
 const intake = new IntakeService(events)
 const agent = new AgentService(intake, invoice, extractStructuredInvoice)
-const commands = new AgentCommandService(agent, {} as never, new AuditService())
+const commands = new AgentCommandService(
+  agent,
+  {} as never,
+  new AuditService(),
+  new AgentQuotaService(),
+)
 
 beforeEach(() => {
   invoiceIds = []

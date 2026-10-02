@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common'
+import { AgentQuotaService } from './agent-quota/agent-quota.service'
 import { AuditService } from './audit/audit.service'
 import { AutomationLeaseService } from './automation/automation-lease.service'
 import { DocumentNumberService } from './document-number/document-number.service'
@@ -7,6 +8,7 @@ import { SigningService } from './signing/signing.service'
 
 @Module({
   providers: [
+    AgentQuotaService,
     IdempotencyService,
     AuditService,
     AutomationLeaseService,
@@ -14,6 +16,7 @@ import { SigningService } from './signing/signing.service'
     SigningService,
   ],
   exports: [
+    AgentQuotaService,
     IdempotencyService,
     AuditService,
     AutomationLeaseService,

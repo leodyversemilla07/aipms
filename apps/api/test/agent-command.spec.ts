@@ -16,6 +16,13 @@ function subject() {
       { classifyAndRegister } as never,
       { issue } as never,
       { record } as never,
+      {
+        run: async (
+          _actor: unknown,
+          _operation: string,
+          task: () => Promise<unknown>,
+        ) => task(),
+      } as never,
     ),
     classifyAndRegister,
     issue,

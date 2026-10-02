@@ -53,6 +53,7 @@ function commandActor(ctx: AuthedTrpcContext, idempotencyKey?: string) {
       ? rawScopes.filter((scope): scope is string => typeof scope === 'string')
       : undefined,
     idempotencyKey,
+    runId: (ctx.user as { runId?: string }).runId,
     source: 'trpc' as const,
   }
 }

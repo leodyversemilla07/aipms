@@ -24,6 +24,10 @@ export AIPMS_TOKEN_ENCRYPTION_SECRET="${AIPMS_TOKEN_ENCRYPTION_SECRET:-release-s
 export AIPMS_SERVICE_TOKEN="${AIPMS_SERVICE_TOKEN:-release-smoke-service-token}"
 export AIPMS_AGENT_SIGNING_SECRET="${AIPMS_AGENT_SIGNING_SECRET:-release-smoke-agent-signing-secret-32-bytes}"
 export AIPMS_AGENT_ID="${AIPMS_AGENT_ID:-release-smoke-agent-1}"
+# Fixed isolated smoke controls: prove the image sees non-default limits/scopes.
+export AIPMS_AGENT_SCOPES="invoice.ingest,events.read"
+export AIPMS_AGENT_RATE_LIMIT="1"
+export AIPMS_AGENT_CONCURRENCY="2"
 export OPERATIONS_MONITORING_TOKEN="${OPERATIONS_MONITORING_TOKEN:-release-smoke-monitoring-token}"
 export APP_URL="${APP_URL:-http://localhost:${WEB_PORT}}"
 export AUTH_TRUSTED_ORIGINS="${AUTH_TRUSTED_ORIGINS:-${APP_URL}}"
@@ -113,6 +117,34 @@ if [[ "$monitoring_payload" != *'"deadLetters":0'* ]]; then
   printf 'Unexpected monitoring payload: %s\n' "$monitoring_payload" >&2
   exit 1
 fi
+
+# Validate effective container settings, including narrowed scopes; no AI or
+# external provider is started. One empty queue envelope is admitted, then the
+# shared quota must refuse the next envelope with HTTP 429.
+compose exec --no-TTY api node -e '
+  const assert = require("node:assert/strict");
+  assert.equal(process.env.AIPMS_AGENT_SCOPES, "invoice.ingest,events.read");
+  assert.equal(process.env.AIPMS_AGENT_RATE_LIMIT, "1");
+  assert.equal(process.env.AIPMS_AGENT_CONCURRENCY, "2");
+'
+exchange=$(curl --silent --show-error --fail --max-time 10 \
+  -H "Authorization: Bearer ${AIPMS_SERVICE_TOKEN}" \
+  -H 'Content-Type: application/json' -d '{}' \
+  "http://localhost:${API_PORT}/api/service/agent/token")
+access_token=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).accessToken)' "$exchange")
+batch_status=$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' \
+  -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' \
+  -d '{"limit":1}' "http://localhost:${API_PORT}/api/service/agent/batch")
+[ "$batch_status" = "201" ] || { printf 'First machine batch was not admitted: %s\n' "$batch_status" >&2; exit 1; }
+# A minute boundary between requests resets the bucket. Make a bounded third
+# attempt if that occurred instead of weakening the refusal assertion.
+for ((attempt = 0; attempt < 2; attempt++)); do
+  batch_status=$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' \
+    -H "Authorization: Bearer ${access_token}" -H 'Content-Type: application/json' \
+    -d '{"limit":1}' "http://localhost:${API_PORT}/api/service/agent/batch")
+  [ "$batch_status" = "429" ] && break
+done
+[ "$batch_status" = "429" ] || { printf 'Shared machine quota was not enforced: %s\n' "$batch_status" >&2; exit 1; }
 
 CAPACITY_BASE_URL="http://localhost:${API_PORT}" \
 CAPACITY_ALLOW_INSECURE=1 \

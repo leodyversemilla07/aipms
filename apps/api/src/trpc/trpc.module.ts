@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common'
 import { TRPCModule } from 'nestjs-trpc'
+import { SharedModule } from '../shared/shared.module'
 import { formatTrpcError } from './error-formatter'
 import { AgentQuotaMiddleware } from './middlewares/agent-quota.middleware'
 import { AuthMiddleware } from './middlewares/auth.middleware'
@@ -10,6 +11,7 @@ import { TrpcErrorHandler } from './trpc-error.handler'
 
 @Module({
   imports: [
+    SharedModule,
     TRPCModule.forRoot({
       basePath: '/api/trpc',
       context: TrpcContext,

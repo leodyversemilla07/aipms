@@ -15,15 +15,8 @@ import {
   AgentAccessTokenGuard,
 } from './agent-access-token.guard'
 import { AgentCommandService } from './agent-command.service'
+import { configuredAgentId } from './agent-principal'
 import { ServiceTokenGuard } from './service-token.guard'
-
-function configuredAgentId() {
-  const id = process.env.AIPMS_AGENT_ID?.trim() || 'agent-operator'
-  if (!/^[a-zA-Z0-9:_-]{1,128}$/.test(id)) {
-    throw new Error('AIPMS_AGENT_ID contains invalid characters')
-  }
-  return id
-}
 
 /**
  * Machine-facing REST surface for the §3 agent runtime (and cron/integrations).
@@ -76,6 +69,8 @@ export class AgentController {
     return this.commands.processPending(body.limit ?? 25, {
       id: claims.sub,
       kind: 'agent',
+      scopes: claims.scopes,
+      runId: claims.runId,
       idempotencyKey: body.idempotencyKey,
       source: 'service-api',
     })

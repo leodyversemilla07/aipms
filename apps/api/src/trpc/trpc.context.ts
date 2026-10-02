@@ -5,6 +5,7 @@ import { fromNodeHeaders } from 'better-auth/node'
 import type { Request } from 'express'
 import type { ContextOptions, TRPCContext } from 'nestjs-trpc'
 import { verifyAgentAccessToken } from '../agent/agent-access-token'
+import { configuredAgentId } from '../agent/agent-principal'
 import { resolveAgentScopes } from './agent-capabilities'
 import type { BaseTrpcContext } from './context.types'
 
@@ -42,7 +43,14 @@ function resolveServiceTokenSession(req: Request | undefined): Session | null {
 
   const claims = verifyAgentAccessToken(token)
   if (claims) {
-    return agentSession(req, token, claims.sub, claims.scopes, claims.exp)
+    return agentSession(
+      req,
+      token,
+      claims.sub,
+      claims.scopes,
+      claims.exp,
+      claims.runId,
+    )
   }
 
   if (process.env.NODE_ENV === 'production') return null
@@ -53,7 +61,7 @@ function resolveServiceTokenSession(req: Request | undefined): Session | null {
   return agentSession(
     req,
     token,
-    AGENT_PRINCIPAL_ID,
+    configuredAgentId(),
     resolveAgentScopes(),
     Math.floor(Date.now() / 1000) + 3600,
   )
@@ -65,6 +73,7 @@ function agentSession(
   principalId: string,
   scopes: string[],
   expiresAtSeconds: number,
+  runId?: string,
 ): Session {
   const now = new Date()
   return {
@@ -88,6 +97,7 @@ function agentSession(
       role: 'user',
       scopes,
       quotas: null,
+      ...(runId ? { runId } : {}),
       createdAt: now,
       updatedAt: now,
     },

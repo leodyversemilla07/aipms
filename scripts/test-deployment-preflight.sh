@@ -42,6 +42,47 @@ isolated_preflight() {
 write_valid
 isolated_preflight | grep -q '"ok": true'
 
+# Compose must inherit configured scopes, preserve empty denial, and leave
+# genuinely unset scopes absent. config does not start/contact any container.
+check_compose_scopes() {
+  env -i PATH="$PATH" HOME="${HOME:-/tmp}" \
+    docker compose --env-file "$ENV_FILE" config --format json | \
+    node --input-type=module -e '
+      import assert from "node:assert/strict"
+      let input = ""
+      for await (const chunk of process.stdin) input += chunk
+      const environment = JSON.parse(input).services.api.environment
+      const expected = process.argv[1]
+      if (expected === "UNSET") {
+        assert.ok(environment.AIPMS_AGENT_SCOPES == null)
+      } else {
+        assert.equal(environment.AIPMS_AGENT_SCOPES, expected)
+      }
+      assert.equal(environment.AIPMS_AGENT_RATE_LIMIT, "2")
+      assert.equal(environment.AIPMS_AGENT_CONCURRENCY, "1")
+    ' "$1"
+}
+printf 'AIPMS_AGENT_RATE_LIMIT="2"\nAIPMS_AGENT_CONCURRENCY="1"\n' >> "$ENV_FILE"
+check_compose_scopes "UNSET"
+cp "$ENV_FILE" "$ENV_FILE.valid"
+printf 'AIPMS_AGENT_SCOPES=""\n' >> "$ENV_FILE"
+check_compose_scopes ""
+mv "$ENV_FILE.valid" "$ENV_FILE"
+printf 'AIPMS_AGENT_SCOPES="intake.read"\n' >> "$ENV_FILE"
+check_compose_scopes "intake.read"
+
+for name in AIPMS_AGENT_RATE_LIMIT AIPMS_AGENT_CONCURRENCY; do
+  cp "$ENV_FILE" "$ENV_FILE.valid"
+  printf '%s="0"\n' "$name" >> "$ENV_FILE"
+  if isolated_preflight > "$TEMP_DIR/quota.out" 2>&1; then
+    echo "deployment preflight accepted a zero machine quota" >&2
+    exit 1
+  fi
+  grep -q "\"check\": \"$name\"" "$TEMP_DIR/quota.out"
+  grep -q "must be a positive database-range integer" "$TEMP_DIR/quota.out"
+  mv "$ENV_FILE.valid" "$ENV_FILE"
+done
+
 # Only the bundled Compose hostname is trusted without an explicit allowlist.
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i 's|http://llm:11434/v1|http://external:11434/v1|' "$ENV_FILE"

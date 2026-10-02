@@ -11,7 +11,17 @@ function subject() {
   }))
   const record = vi.fn(async () => undefined)
   return {
-    command: new IntakeCommandService({ ingest } as never, { record } as never),
+    command: new IntakeCommandService(
+      { ingest } as never,
+      { record } as never,
+      {
+        run: async (
+          _actor: unknown,
+          _operation: string,
+          task: () => Promise<unknown>,
+        ) => task(),
+      } as never,
+    ),
     ingest,
     record,
   }

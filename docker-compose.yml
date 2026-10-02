@@ -53,6 +53,11 @@ services:
       AIPMS_SERVICE_TOKEN: ${AIPMS_SERVICE_TOKEN:?Set AIPMS_SERVICE_TOKEN in .env}
       AIPMS_AGENT_SIGNING_SECRET: ${AIPMS_AGENT_SIGNING_SECRET:?Set AIPMS_AGENT_SIGNING_SECRET in .env}
       AIPMS_AGENT_ID: ${AIPMS_AGENT_ID:?Set a unique AIPMS_AGENT_ID in .env}
+      # Null mapping inherits shell/--env-file when present, and remains absent
+      # otherwise. Explicit empty scopes must stay empty (deny all).
+      AIPMS_AGENT_SCOPES:
+      AIPMS_AGENT_RATE_LIMIT: ${AIPMS_AGENT_RATE_LIMIT:-60}
+      AIPMS_AGENT_CONCURRENCY: ${AIPMS_AGENT_CONCURRENCY:-4}
       OPERATIONS_MONITORING_TOKEN: ${OPERATIONS_MONITORING_TOKEN:?Set OPERATIONS_MONITORING_TOKEN in .env}
       # maker@/checker@demo.aipms demo identities (non-production)
       AUTH_SEED_DEMO: ${AUTH_SEED_DEMO:-0}
