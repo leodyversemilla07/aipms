@@ -120,16 +120,38 @@ export const PH_DEFAULT_POLICY: TaxPolicyConfig = {
 /**
  * Normalize a raw policy config (from a database Policy row) into a strict
  * TaxPolicyConfig, filling in PH defaults for any missing rate so an older or
- * partial policy degrades gracefully.
+ * partial policy degrades gracefully, and enforcing bounded integer basis points.
  */
 export function normalizeTaxPolicy(raw: unknown): TaxPolicyConfig {
   const input = (
     typeof raw === "object" && raw !== null ? raw : {}
   ) as Partial<TaxPolicyConfig>
-  const vatRateBps = normalizeInt(input.vatRateBps, 1200)
+  const vatRateBps = normalizeRate(input.vatRateBps, 1200)
+  const rawEwt =
+    typeof input.ewtRatesBps === "object" && input.ewtRatesBps !== null
+      ? (input.ewtRatesBps as Record<string, unknown>)
+      : {}
   const ewtRatesBps: TaxPolicyConfig["ewtRatesBps"] = {
-    ...PH_DEFAULT_POLICY.ewtRatesBps,
-    ...(input.ewtRatesBps ?? {}),
+    goods: normalizeRate(
+      rawEwt.goods,
+      PH_DEFAULT_POLICY.ewtRatesBps.goods ?? 100
+    ),
+    services: normalizeRate(
+      rawEwt.services,
+      PH_DEFAULT_POLICY.ewtRatesBps.services ?? 200
+    ),
+    professional: normalizeRate(
+      rawEwt.professional,
+      PH_DEFAULT_POLICY.ewtRatesBps.professional ?? 500
+    ),
+    rental: normalizeRate(
+      rawEwt.rental,
+      PH_DEFAULT_POLICY.ewtRatesBps.rental ?? 500
+    ),
+    other: normalizeRate(
+      rawEwt.other,
+      PH_DEFAULT_POLICY.ewtRatesBps.other ?? 0
+    ),
   }
   return {
     vatRateBps,
@@ -138,7 +160,10 @@ export function normalizeTaxPolicy(raw: unknown): TaxPolicyConfig {
   }
 }
 
-function normalizeInt(value: unknown, fallback: number): number {
+function normalizeRate(value: unknown, fallback: number): number {
+  if (value === undefined || value === null) return fallback
   const n = Number(value)
-  return Number.isFinite(n) && n >= 0 ? n : fallback
+  if (!Number.isFinite(n) || n < 0) return fallback
+  const rounded = Math.round(n)
+  return rounded >= 0 && rounded <= 10_000 ? rounded : fallback
 }

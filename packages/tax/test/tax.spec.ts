@@ -83,5 +83,21 @@ describe("normalizeTaxPolicy", () => {
   it("ignores garbage input safely", () => {
     const policy = normalizeTaxPolicy(undefined)
     assert.equal(policy.vatRateBps, 1200)
+    assert.equal(policy.ewtRatesBps.goods, 100)
+  })
+
+  it("enforces integer basis points and bounds [0, 10000] on VAT and EWT", () => {
+    const policy = normalizeTaxPolicy({
+      vatRateBps: 1200.4,
+      ewtRatesBps: {
+        goods: 150.8,
+        services: -20, // negative falls back to default 200
+        rental: 50_000, // over 100% falls back to default 500
+      },
+    })
+    assert.equal(policy.vatRateBps, 1200)
+    assert.equal(policy.ewtRatesBps.goods, 151)
+    assert.equal(policy.ewtRatesBps.services, 200)
+    assert.equal(policy.ewtRatesBps.rental, 500)
   })
 })

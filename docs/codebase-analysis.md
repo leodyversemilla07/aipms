@@ -338,7 +338,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 - Invoice/vendor, invoice/PO, payment-line/invoice, receipt/PO, approval/PO/vendor, and PO/requisition references are largely plain strings. Add foreign keys and deliberate deletion policies where historical preservation permits them.
 - Repeated export creation still rebuilds from current vendor metadata before checking the existing frozen artifact. Reading an artifact is stable; re-export behavior can conflict after a rename. Existing exports should have clearly specified replay behavior.
 - QBO acknowledgement checks claim state before a conditional update whose predicate only checks status. Review races between claim creation and manual acknowledgement; include the observed claim in the update predicate or use a common lock.
-- Tax policy input is untyped JSON. VAT normalization does not enforce integer/bounded basis points, and EWT rates are merged without comparable normalization. Persistence guards prevent some bad monetary results, but invalid policy data should be rejected when authored, not while registering invoices.
+- Tax policy authoring validates `taxRule` config via strict Zod schemas in `PolicyConfig`, and `normalizeTaxPolicy` enforces bounded integer basis points `[0, 10000]` on both VAT and every EWT class, preventing fractional or out-of-bounds rates from entering invoice computations.
 - BIR reports group invoice tax by receipt date without filtering lifecycle status. Whether that is the correct statutory recognition basis requires finance/legal review; this review does not assert a legal rule.
 
 ### Agent runtime and privacy
