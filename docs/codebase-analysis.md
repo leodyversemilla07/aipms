@@ -283,6 +283,8 @@ The resulting message had `tier=auto`, and the binding sentence appeared in its 
 
 ### 8. Medium — sibling approval decisions can leave stale requisition state
 
+**Follow-up status:** resolved; `ApprovalService.decide` locks the parent requisition row (`SELECT id FROM "requisition" WHERE id = ... FOR UPDATE`) before aggregating sibling gate decisions, ensuring concurrent sibling approvals never race or miscount pending gates. Covered by unit tests in `claim-serialization.spec.ts`.
+
 Reference: `apps/api/src/approval/approval.service.ts:98–116`, `:219–242`.
 
 Conditional updates protect an individual approval ticket. They do not serialize aggregate decisions across sibling tickets on the same requisition. Two transactions can each decide their own ticket, each count the other's uncommitted decision as pending, and both write `submitted`; no pending ticket remains to trigger the final approval. Similar stale reads can conflict with a concurrent rejection.
@@ -336,8 +338,8 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 - Partial and milestone invoicing is supported across the three-way matching engine: invoices can opt in via `allowPartial: true` or automatically inherit partial matching from PO terms (`billingType: 'milestone' | 'partial'`). Sequential multi-stage invoices match against unallocated PO and receipt capacity (`poRemainingMinor`, `remainingReceived`), over-billings are rejected as `amount_mismatch`, shortfall receipts park as `receipt_shortfall` / `awaiting_receipt`, and rematches/demotions preserve partial state. Wired into `InvoiceRouter`, `invoicePayloadSchema`, and `InvoiceRegister` desk with full unit test coverage in `partial-invoice.spec.ts`.
 - Quote `validUntil` is enforced across comparison, award, and PO issue: expired quotes are flagged and excluded from automated recommendation in `sourcing.compare`, rejected at commercial `sourcing.award`, and blocked from PO issuance in `purchaseOrder.issue` with full frontend badge/disable guards and agent tool reflection.
 - Invoice/vendor, invoice/PO, payment-line/invoice, receipt/PO, approval/PO/vendor, and PO/requisition references are largely plain strings. Add foreign keys and deliberate deletion policies where historical preservation permits them.
-- Repeated export creation still rebuilds from current vendor metadata before checking the existing frozen artifact. Reading an artifact is stable; re-export behavior can conflict after a rename. Existing exports should have clearly specified replay behavior.
-- QBO acknowledgement checks claim state before a conditional update whose predicate only checks status. Review races between claim creation and manual acknowledgement; include the observed claim in the update predicate or use a common lock.
+- Repeated export creation serves existing frozen artifacts directly (`existing.manifestJson`), preventing vendor renames after payment execution from falsely causing conflict exceptions on idempotent replays. Legacy rows gracefully fall back to re-derivation.
+- QBO acknowledgement and push claim operations serialize under the same advisory lock (`pg_advisory_xact_lock(hashtext('qbo-push:...'))`) and row-level lock (`SELECT ... FOR UPDATE`), and `updateMany` enforces `dispatchClaimId: row.dispatchClaimId` in its CAS predicate, preventing concurrent QBO push claims from racing manual acknowledgements.
 - Tax policy authoring validates `taxRule` config via strict Zod schemas in `PolicyConfig`, and `normalizeTaxPolicy` enforces bounded integer basis points `[0, 10000]` on both VAT and every EWT class, preventing fractional or out-of-bounds rates from entering invoice computations.
 - BIR reports group invoice tax by receipt date without filtering lifecycle status. Whether that is the correct statutory recognition basis requires finance/legal review; this review does not assert a legal rule.
 

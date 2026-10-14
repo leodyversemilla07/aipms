@@ -130,14 +130,45 @@ export class ErpService {
     exportedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
-    const built = await this.buildForRun(runId)
     // Pre-check first: runId is unique, and a violation would abort an
-    // outer transaction. A concurrent create racing the pre-check surfaces
-    // as P2002; the caller retries and the pre-check returns the winner.
+    // outer transaction. §13, Finding 339: If a frozen artifact exists, serve it
+    // directly so subsequent vendor master-data renames do not cause false hash conflicts.
     const existing = await tx.erpJournalExport.findUnique({
       where: { runId },
     })
     if (existing) {
+      if (existing.manifestJson != null) {
+        const manifest = JSON.parse(existing.manifestJson) as JournalManifest
+        const run = await tx.paymentRun.findUniqueOrThrow({
+          where: { id: runId },
+          select: {
+            id: true,
+            runNumber: true,
+            status: true,
+            currencyCode: true,
+            totalMinor: true,
+            executedAt: true,
+            updatedAt: true,
+          },
+        })
+        return {
+          export: existing,
+          created: false,
+          run: {
+            id: run.id,
+            runNumber: run.runNumber,
+            status: run.status,
+            currencyCode: run.currencyCode,
+            totalMinor: run.totalMinor,
+            executedAt: run.executedAt ?? run.updatedAt,
+          },
+          manifest,
+          json: existing.manifestJson,
+          csv: manifestToCsv(manifest),
+          hash: existing.manifestHash,
+        }
+      }
+      const built = await this.buildForRun(runId)
       if (existing.manifestHash !== built.hash) {
         throw new ConflictException(
           `Export for ${built.run.runNumber} already exists with a different manifest — investigate before re-exporting`,
@@ -145,6 +176,8 @@ export class ErpService {
       }
       return { export: existing, created: false, ...built }
     }
+
+    const built = await this.buildForRun(runId)
 
     const created = await tx.erpJournalExport.create({
       data: {
@@ -343,6 +376,11 @@ export class ErpService {
     acknowledgedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
+    // §13, Finding 340: serialize acknowledgement and QBO push claim operations under
+    // the same advisory lock and row lock to prevent claim creation from racing manual acknowledgement.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`qbo-push:${input.exportId}`}))`
+    await tx.$queryRaw`SELECT id FROM "erpJournalExport" WHERE id = ${input.exportId} FOR UPDATE`
+
     const row = await tx.erpJournalExport.findUnique({
       where: { id: input.exportId },
     })
@@ -380,9 +418,13 @@ export class ErpService {
       throw new ConflictException('A rejection reason is required')
     }
     // Conditional transition: concurrent ack attempts serialize — only the
-    // first moves exported → posted/rejected.
+    // first moves exported → posted/rejected, ensuring claim state has not diverged.
     const changed = await tx.erpJournalExport.updateMany({
-      where: { id: row.id, status: 'exported' },
+      where: {
+        id: row.id,
+        status: 'exported',
+        dispatchClaimId: row.dispatchClaimId,
+      },
       data: {
         status: input.status,
         externalRef: input.externalRef ?? null,

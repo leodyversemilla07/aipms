@@ -225,6 +225,12 @@ export class ApprovalService {
 
       // --- Requisition gates (threshold / budgetOverride / policyGate) -
       if (approval.requisitionId) {
+        // §10.1, Finding 8: serialize sibling approval decisions on this requisition
+        // so concurrent approvals on sibling gates never race or miscount pending gates.
+        await tx.$queryRaw`
+          SELECT id FROM "requisition" WHERE id = ${approval.requisitionId} FOR UPDATE
+        `
+
         if (verdict === 'reject') {
           const req = await tx.requisition.update({
             where: { id: approval.requisitionId },
