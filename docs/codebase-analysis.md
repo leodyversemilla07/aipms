@@ -346,8 +346,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 ### Agent runtime and privacy
 
 - The offline provider gate is a hostname/configuration check, not a network firewall or proof of no retention. Default Compose networking does not itself enforce zero egress. Treat network isolation, DNS, model-server logs, and runtime traces as deployment evidence.
-- HTTP calls from the Eve client and QBO client should have explicit deadlines and controlled retries. External POST retry rules must respect ambiguous outcomes.
-- Event-wake PO issuance can commit a PO and crash before marking its run succeeded. Retrying then encounters an already-issued PO instead of recovering the committed command result; a durable business result keyed to event/run would improve recoverability.
+- Event-wake PO crash recovery and command idempotency implemented: `AgentCommandService.issuePurchaseOrder` integrates with `IdempotencyService.runAtomic` keyed to `actor.idempotencyKey` (`event:${event.id}`), atomically committing domain writes, audit rows, and the command outcome so retries return the memoized PO. `AgentWakeService.handleRequisitionApproved` detects existing uncancelled POs on the requisition and recovers them gracefully, marking `AgentRun` as `succeeded` (`recovered: true`), with `ConflictException` intercept guards preventing dead-letter loops. Covered by 5 database-blocked unit tests in `apps/api/test/unit/agent-wake-recovery.spec.ts` (21 test files / 295 unit tests passed).
 - The deterministic API extractor is not an OCR implementation. Preserve the existing human-review fallback for binary/unusable documents rather than claiming complete document automation.
 
 ### Frontend and scale

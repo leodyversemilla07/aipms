@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common'
+import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common'
 import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
 import { resolveEffectivePolicy } from '../policy/policy-resolver'
@@ -33,10 +33,15 @@ const asJson = (value: unknown): Prisma.InputJsonObject =>
  */
 @Injectable()
 export class AgentWakeService implements OnModuleInit {
+  private readonly db: typeof db
+
   constructor(
     private readonly relay: EventRelayService,
     private readonly commands: AgentCommandService,
-  ) {}
+    dbClient?: typeof db,
+  ) {
+    this.db = dbClient ?? db
+  }
 
   onModuleInit() {
     const enabled =
@@ -71,11 +76,43 @@ export class AgentWakeService implements OnModuleInit {
     if (!started.shouldProcess) return
     const run = started.run
     try {
-      const requisition = await db.requisition.findUnique({
+      const requisition = await this.db.requisition.findUnique({
         where: { id: event.entityId },
         include: { lines: true },
       })
       if (!requisition) throw new Error('Requisition not found')
+
+      // Crash recovery: check if an uncancelled PO was already issued for this
+      // requisition during a prior interrupted wake attempt.
+      const existingPo = await this.db.purchaseOrder.findFirst({
+        where: {
+          requisitionId: requisition.id,
+          status: { not: 'cancelled' },
+        },
+      })
+      if (existingPo) {
+        console.log(
+          `[agent-wake] run ${run.id} recovered already-issued PO ${existingPo.poNumber}`,
+        )
+        await this.db.agentRun.update({
+          where: { id: run.id },
+          data: {
+            status: 'succeeded',
+            finishedAt: new Date(),
+            meta: {
+              ...(run.meta as Prisma.InputJsonObject),
+              recovered: true,
+              result: {
+                outcome: 'ISSUED',
+                purchaseOrderId: existingPo.id,
+                poNumber: existingPo.poNumber,
+              },
+            },
+          },
+        })
+        return
+      }
+
       // Threshold gate for auto-issue: reuse the same policy engine the
       // requisition submit path uses (§11). Conservative by default — no
       // applicable policy means human review, never silent auto-issue.
@@ -83,12 +120,16 @@ export class AgentWakeService implements OnModuleInit {
         (sum, l) => sum + l.lineTotalMinor,
         0,
       )
-      const thresholdPolicy = await resolveEffectivePolicy('threshold', {
-        costCenter: requisition.costCenter,
-      })
+      const thresholdPolicy = await resolveEffectivePolicy(
+        'threshold',
+        {
+          costCenter: requisition.costCenter,
+        },
+        this.db,
+      )
       let budgetRemainingMinor: number | undefined
       if (requisition.budgetId) {
-        const budget = await db.budget.findUnique({
+        const budget = await this.db.budget.findUnique({
           where: { id: requisition.budgetId },
         })
         if (budget) {
@@ -106,7 +147,7 @@ export class AgentWakeService implements OnModuleInit {
         console.log(
           `[agent-wake] run ${run.id} skipped auto PO: ${decision.reason}`,
         )
-        await db.agentRun.update({
+        await this.db.agentRun.update({
           where: { id: run.id },
           data: {
             status: 'succeeded',
@@ -124,24 +165,28 @@ export class AgentWakeService implements OnModuleInit {
       // A sourcing award is authoritative. Unsourced requisitions fall back
       // to preferred-vendor policy, then the active vendor pool.
       let vendor: Vendor | null = null
-      const awardedQuote = await db.quote.findFirst({
+      const awardedQuote = await this.db.quote.findFirst({
         where: { requisitionId: requisition.id, status: 'accepted' },
       })
       if (awardedQuote) {
-        vendor = await db.vendor.findUnique({
+        vendor = await this.db.vendor.findUnique({
           where: { id: awardedQuote.vendorId },
         })
       }
       const prefPolicy = vendor
         ? null
-        : await resolveEffectivePolicy('preferredVendor', {
-            costCenter: requisition.costCenter,
-          })
+        : await resolveEffectivePolicy(
+            'preferredVendor',
+            {
+              costCenter: requisition.costCenter,
+            },
+            this.db,
+          )
       if (!vendor && prefPolicy?.config) {
         const cfg = prefPolicy.config as PreferredVendorConfig
         const vendorId = cfg.vendorId ?? cfg.vendor_id
         if (vendorId) {
-          vendor = await db.vendor.findUnique({ where: { id: vendorId } })
+          vendor = await this.db.vendor.findUnique({ where: { id: vendorId } })
           if (!vendor)
             throw new Error(
               'Configured preferred vendor is unavailable; refusing arbitrary fallback',
@@ -150,7 +195,7 @@ export class AgentWakeService implements OnModuleInit {
       }
       if (!vendor) {
         // Fallback to first active vendor
-        vendor = await db.vendor.findFirst({ where: { status: 'active' } })
+        vendor = await this.db.vendor.findFirst({ where: { status: 'active' } })
       }
       if (!vendor) throw new Error('No active vendor found')
       const result = await this.commands.issuePurchaseOrder(
@@ -168,7 +213,7 @@ export class AgentWakeService implements OnModuleInit {
           ? result.purchaseOrder.poNumber
           : 'N/A'
       console.log(`[agent-wake] run ${run.id} issued PO ${poNumber}`)
-      await db.agentRun.update({
+      await this.db.agentRun.update({
         where: { id: run.id },
         data: {
           status: 'succeeded',
@@ -190,8 +235,43 @@ export class AgentWakeService implements OnModuleInit {
         },
       })
     } catch (err) {
+      if (
+        (err instanceof ConflictException ||
+          (err instanceof Error && err.name === 'ConflictException')) &&
+        typeof (err as Error).message === 'string' &&
+        (err as Error).message.includes('already has a purchase order')
+      ) {
+        const recoveredPo = await this.db.purchaseOrder.findFirst({
+          where: {
+            requisitionId: event.entityId,
+            status: { not: 'cancelled' },
+          },
+        })
+        if (recoveredPo) {
+          console.log(
+            `[agent-wake] run ${run.id} recovered already-issued PO ${recoveredPo.poNumber} on conflict retry`,
+          )
+          await this.db.agentRun.update({
+            where: { id: run.id },
+            data: {
+              status: 'succeeded',
+              finishedAt: new Date(),
+              meta: {
+                ...(run.meta as Prisma.InputJsonObject),
+                recovered: true,
+                result: {
+                  outcome: 'ISSUED',
+                  purchaseOrderId: recoveredPo.id,
+                  poNumber: recoveredPo.poNumber,
+                },
+              },
+            },
+          })
+          return
+        }
+      }
       console.error(`[agent-wake] run ${run.id} failed`, err)
-      await db.agentRun.update({
+      await this.db.agentRun.update({
         where: { id: run.id },
         data: {
           status: 'failed',
@@ -227,7 +307,7 @@ export class AgentWakeService implements OnModuleInit {
         console.log(
           `[agent-wake] run ${run.id} processed intake ${event.entityId}`,
         )
-        await db.agentRun.update({
+        await this.db.agentRun.update({
           where: { id: run.id },
           data: {
             status: 'succeeded',
@@ -244,13 +324,13 @@ export class AgentWakeService implements OnModuleInit {
         })
         return
       }
-      await db.agentRun.update({
+      await this.db.agentRun.update({
         where: { id: run.id },
         data: { status: 'succeeded', finishedAt: new Date() },
       })
     } catch (err) {
       console.error(`[agent-wake] run ${run.id} failed`, err)
-      await db.agentRun.update({
+      await this.db.agentRun.update({
         where: { id: run.id },
         data: {
           status: 'failed',
@@ -289,7 +369,7 @@ export class AgentWakeService implements OnModuleInit {
       },
     }
     try {
-      const run = await db.agentRun.create({ data })
+      const run = await this.db.agentRun.create({ data })
       console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
       return { run, shouldProcess: true as const }
     } catch (error) {
@@ -301,14 +381,14 @@ export class AgentWakeService implements OnModuleInit {
       }
     }
 
-    const existing = await db.agentRun.findUnique({
+    const existing = await this.db.agentRun.findUnique({
       where: { triggerEventId: event.id },
     })
     if (!existing) throw new Error(`Run for event ${event.id} disappeared`)
     if (existing.status === 'succeeded') {
       return { run: existing, shouldProcess: false as const }
     }
-    const run = await db.agentRun.update({
+    const run = await this.db.agentRun.update({
       where: { id: existing.id },
       data: { status: 'running', finishedAt: null, meta: data.meta },
     })

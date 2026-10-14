@@ -9,6 +9,7 @@ import {
   AgentQuotaService,
 } from '../shared/agent-quota/agent-quota.service'
 import { AuditService } from '../shared/audit/audit.service'
+import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import {
   assertAgentCapability,
   resolveAgentScopes,
@@ -33,12 +34,18 @@ export interface CommandActor {
  */
 @Injectable()
 export class AgentCommandService {
+  private readonly db: typeof db
+
   constructor(
     private readonly agent: AgentService,
     private readonly purchaseOrders: PurchaseOrderService,
     private readonly audit: AuditService,
     private readonly quotas: AgentQuotaService,
-  ) {}
+    private readonly idempotency?: IdempotencyService,
+    dbClient?: typeof db,
+  ) {
+    this.db = dbClient ?? db
+  }
 
   async processDocument(
     docId: string,
@@ -240,35 +247,54 @@ export class AgentCommandService {
     input: IssueInput,
     actor: CommandActor,
   ) {
-    try {
-      return await db.$transaction(async (tx) => {
-        const result = await this.purchaseOrders.issue(input, actor.id, tx)
-        await this.audit.record(
-          {
-            runId: actor.runId,
-            actorId: actor.id,
-            actorKind: actor.kind,
-            action: 'purchaseOrder.issue',
-            entity: 'Requisition',
-            entityId: input.requisitionId,
-            input: {
-              ...input,
-              source: actor.source,
-              idempotencyKey: actor.idempotencyKey,
-            },
-            after:
-              result.outcome === 'ISSUED'
-                ? {
-                    outcome: result.outcome,
-                    purchaseOrderId: result.purchaseOrder.id,
-                    poNumber: result.purchaseOrder.poNumber,
-                  }
-                : result,
+    const execute = async (tx: Prisma.TransactionClient) => {
+      const result = await this.purchaseOrders.issue(input, actor.id, tx)
+      await this.audit.record(
+        {
+          runId: actor.runId,
+          actorId: actor.id,
+          actorKind: actor.kind,
+          action:
+            result.outcome === 'ISSUED'
+              ? 'purchaseOrder.issue'
+              : 'purchaseOrder.vendorGate',
+          entity: 'PurchaseOrder',
+          entityId:
+            result.outcome === 'ISSUED'
+              ? result.purchaseOrder.id
+              : input.requisitionId,
+          input: {
+            ...input,
+            source: actor.source,
+            idempotencyKey: actor.idempotencyKey,
           },
-          tx,
+          after:
+            result.outcome === 'ISSUED'
+              ? {
+                  outcome: result.outcome,
+                  purchaseOrderId: result.purchaseOrder.id,
+                  poNumber: result.purchaseOrder.poNumber,
+                }
+              : result,
+        },
+        tx,
+      )
+      return result
+    }
+
+    try {
+      if (actor.idempotencyKey && this.idempotency) {
+        return await this.idempotency.runAtomic(
+          {
+            actorId: actor.id,
+            operation: 'purchaseOrder.issue',
+            key: actor.idempotencyKey,
+            input,
+          },
+          execute,
         )
-        return result
-      })
+      }
+      return await this.db.$transaction(execute)
     } catch (error) {
       await this.recordFailure(
         'purchaseOrder.issue',
