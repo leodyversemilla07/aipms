@@ -56,6 +56,7 @@ export function InvoiceRegister() {
   const [vendorId, setVendorId] = useState("")
   const [number, setNumber] = useState("")
   const [poId, setPoId] = useState("")
+  const [allowPartial, setAllowPartial] = useState(false)
 
   const confirmedPos = poRows.filter((po) => po.status === "confirmed")
   const vendorPos =
@@ -105,6 +106,7 @@ export function InvoiceRegister() {
         vendorId,
         number,
         poId: poId || undefined,
+        allowPartial: poId && allowPartial ? true : undefined,
         lines: parsedLines,
       })
       const inv = res.invoice as {
@@ -114,7 +116,7 @@ export function InvoiceRegister() {
         ewtMinor: number
       }
       const matchOutcome = res.match
-        ? ` · 3-way: ${res.match.outcome}`
+        ? ` · 3-way: ${res.match.outcome}${res.match.isPartial ? " (partial)" : ""}`
         : " · no PO to match"
       setResult(
         `Invoice ${number} → ${inv.status}${matchOutcome} — gross ${minorToPhp(
@@ -126,6 +128,7 @@ export function InvoiceRegister() {
       queryClient.invalidateQueries(trpc.invoice.pathFilter())
       setLines([emptyLine()])
       setNumber("")
+      setAllowPartial(false)
     } catch (e) {
       setError(`Could not register invoice: ${(e as Error).message}`)
     } finally {
@@ -190,6 +193,17 @@ export function InvoiceRegister() {
               <span className="text-muted-foreground text-xs">
                 No confirmed PO for this vendor
               </span>
+            ) : null}
+            {poId !== "" ? (
+              <label className="flex cursor-pointer items-center gap-1.5 pt-1 text-muted-foreground text-xs">
+                <input
+                  type="checkbox"
+                  checked={allowPartial}
+                  onChange={(e) => setAllowPartial(e.target.checked)}
+                  className="rounded border"
+                />
+                <span>Allow milestone / partial billing</span>
+              </label>
             ) : null}
           </label>
         </div>

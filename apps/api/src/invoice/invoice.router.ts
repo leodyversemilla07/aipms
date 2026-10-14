@@ -35,6 +35,7 @@ const registerInput = z.object({
   currencyCode: z.string().length(3).default('PHP'),
   lines: z.array(invoiceLineInput).min(1),
   receivedAt: z.coerce.date().optional(),
+  allowPartial: z.boolean().optional(),
 })
 
 const idInput = z.object({ id: z.string().min(1) })

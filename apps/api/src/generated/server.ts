@@ -342,6 +342,7 @@ const appRouter = t.router({
   currencyCode: z.string().length(3).default('PHP'),
   lines: z.array(invoiceLineInput).min(1),
   receivedAt: z.coerce.date().optional(),
+  allowPartial: z.boolean().optional(),
 }))
       .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<InvoiceRouter["register"]>>)
     }),

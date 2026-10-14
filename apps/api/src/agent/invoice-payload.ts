@@ -12,6 +12,7 @@ export const invoicePayloadSchema = z.object({
   number: z.string().min(1),
   poId: z.string().min(1).optional().nullable(),
   currencyCode: z.string().optional(),
+  allowPartial: z.boolean().optional(),
   lines: z
     .array(
       z.object({

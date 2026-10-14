@@ -27,6 +27,7 @@ export interface RegisterInvoiceInput {
   currencyCode?: string
   lines: RegisterInvoiceLineInput[]
   receivedAt?: Date
+  allowPartial?: boolean
 }
 
 export type MatchOutcome =
@@ -49,6 +50,8 @@ export type MatchResult = {
   vendorMatched: boolean
   amountMatched: boolean
   outcome: MatchOutcome
+  isPartial?: boolean
+  poRemainingMinor?: number | null
   /** §8.1 value of recorded receipts against the PO, at PO line prices. */
   receivedValueMinor: number | null
   /**
@@ -161,6 +164,7 @@ export class InvoiceService {
                 vendorId: input.vendorId,
                 totalMinor: computation.grossMinor,
                 currencyCode: input.currencyCode ?? 'PHP',
+                allowPartial: input.allowPartial,
               },
               client,
             )
@@ -225,6 +229,8 @@ export class InvoiceService {
    * is re-matched when a receipt lands); goods worth materially less than
    * the remaining invoice value is a `receipt_shortfall` exception; value
    * already consumed by other matched/paid invoices is `over_allocated`.
+   * Supports milestone/partial invoicing when explicitly requested or enabled
+   * on PO terms.
    */
   private async matchAgainstPo(
     input: {
@@ -232,6 +238,7 @@ export class InvoiceService {
       vendorId: string
       totalMinor: number
       currencyCode: string
+      allowPartial?: boolean
     },
     client: Prisma.TransactionClient | typeof db = db,
     opts: { excludeInvoiceId?: string } = {},
@@ -240,6 +247,7 @@ export class InvoiceService {
       poId,
       vendorId: invoiceVendorId,
       totalMinor: invoiceTotalMinor,
+      allowPartial,
     } = input
     const po = await client.purchaseOrder.findUnique({ where: { id: poId } })
     if (!po) {
@@ -252,10 +260,22 @@ export class InvoiceService {
         vendorMatched: false,
         amountMatched: false,
         outcome: 'po_not_found',
+        isPartial: false,
+        poRemainingMinor: null,
         receivedValueMinor: null,
         allocatedMinor: null,
       }
     }
+
+    const terms = (po.terms as Record<string, unknown> | null) ?? null
+    const poAllowsPartial =
+      terms != null &&
+      (terms.allowPartialInvoicing === true ||
+        terms.billingType === 'milestone' ||
+        terms.billingType === 'partial' ||
+        terms.milestones != null ||
+        terms.installments != null)
+    const isPartialAllowed = Boolean(allowPartial || poAllowsPartial)
 
     const poTotalMinor = po.totalMinor
     const varianceMinor = invoiceTotalMinor - poTotalMinor
@@ -264,8 +284,12 @@ export class InvoiceService {
         ? Math.round((Math.abs(varianceMinor) / poTotalMinor) * 10_000)
         : 0
 
-    const vendorMatched = po.vendorId === invoiceVendorId
-    const amountMatched = varianceBps <= MATCH_TOLERANCE_BPS
+    const isFullMatch = varianceBps <= MATCH_TOLERANCE_BPS
+    const isPartial =
+      isPartialAllowed && !isFullMatch && invoiceTotalMinor <= poTotalMinor
+    const amountMatched = isPartialAllowed
+      ? invoiceTotalMinor <= poTotalMinor || isFullMatch
+      : isFullMatch
 
     const base = {
       poId,
@@ -273,8 +297,10 @@ export class InvoiceService {
       invoiceTotalMinor,
       varianceMinor,
       varianceBps,
-      vendorMatched,
+      vendorMatched: po.vendorId === invoiceVendorId,
       amountMatched,
+      isPartial,
+      poRemainingMinor: null as number | null,
       receivedValueMinor: null as number | null,
       allocatedMinor: null as number | null,
     }
@@ -283,7 +309,7 @@ export class InvoiceService {
     if (po.status !== 'issued' && po.status !== 'confirmed') {
       return { ...base, outcome: 'po_not_live' }
     }
-    if (!vendorMatched) return { ...base, outcome: 'vendor_mismatch' }
+    if (!base.vendorMatched) return { ...base, outcome: 'vendor_mismatch' }
     if (po.currencyCode !== input.currencyCode) {
       return { ...base, outcome: 'currency_mismatch' }
     }
@@ -298,10 +324,14 @@ export class InvoiceService {
       opts.excludeInvoiceId,
     )
     const remainingReceived = receivedValueMinor - allocatedMinor
+    const poRemaining = poTotalMinor - allocatedMinor
+    const poRemainingMinor = Math.max(0, poRemaining - invoiceTotalMinor)
+
     const withReceipts = {
       ...base,
       receivedValueMinor,
       allocatedMinor,
+      poRemainingMinor,
     }
     if (receivedValueMinor === 0) {
       return { ...withReceipts, outcome: 'awaiting_receipt' }
@@ -310,27 +340,29 @@ export class InvoiceService {
       // Goods arrived but other invoices already consume their full value.
       return { ...withReceipts, outcome: 'over_allocated' }
     }
-    if (InvoiceService.overTolerance(invoiceTotalMinor, remainingReceived)) {
+    if (InvoiceService.exceedsCapacity(invoiceTotalMinor, remainingReceived)) {
       return { ...withReceipts, outcome: 'receipt_shortfall' }
     }
 
     // PO capacity leg: the same goods cannot also exceed what the PO still
     // has unreserved.
-    const poRemaining = poTotalMinor - allocatedMinor
-    if (InvoiceService.overTolerance(invoiceTotalMinor, poRemaining)) {
+    if (InvoiceService.exceedsCapacity(invoiceTotalMinor, poRemaining)) {
       return { ...withReceipts, outcome: 'over_allocated' }
     }
 
     return { ...withReceipts, outcome: 'matched' }
   }
 
-  /** True when `total` differs from `reference` beyond match tolerance. */
-  private static overTolerance(totalMinor: number, referenceMinor: number) {
+  /**
+   * True when `totalMinor` exceeds available `capacityMinor` beyond match tolerance.
+   * Tolerates minor centavo differences up to MATCH_TOLERANCE_BPS.
+   */
+  private static exceedsCapacity(totalMinor: number, capacityMinor: number) {
+    if (totalMinor <= capacityMinor) return false
+    const excessMinor = totalMinor - capacityMinor
     return (
-      Math.round(
-        (Math.abs(totalMinor - referenceMinor) / Math.max(totalMinor, 1)) *
-          10_000,
-      ) > MATCH_TOLERANCE_BPS
+      Math.round((excessMinor / Math.max(capacityMinor, 1)) * 10_000) >
+      MATCH_TOLERANCE_BPS
     )
   }
 
@@ -462,12 +494,15 @@ export class InvoiceService {
       exceptions: 0,
     }
     for (const invoice of open) {
+      const prevResult = invoice.matchResult as Record<string, unknown> | null
+      const allowPartial = prevResult?.isPartial === true
       const match = await this.matchAgainstPo(
         {
           poId,
           vendorId: invoice.vendorId,
           totalMinor: invoice.amountMinor,
           currencyCode: invoice.currencyCode,
+          allowPartial,
         },
         client,
       )
@@ -509,6 +544,7 @@ export class InvoiceService {
         vendorId: true,
         amountMinor: true,
         currencyCode: true,
+        matchResult: true,
       },
     })
     const paid = invoices.find((invoice) => invoice.status === 'paid')
@@ -559,12 +595,15 @@ export class InvoiceService {
       demoted: 0,
     }
     for (const invoice of matched) {
+      const prevResult = invoice.matchResult as Record<string, unknown> | null
+      const allowPartial = prevResult?.isPartial === true
       const match = await this.matchAgainstPo(
         {
           poId,
           vendorId: invoice.vendorId,
           totalMinor: invoice.amountMinor,
           currencyCode: invoice.currencyCode,
+          allowPartial,
         },
         tx,
         { excludeInvoiceId: invoice.id },
