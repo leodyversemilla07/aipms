@@ -237,7 +237,7 @@ export class AuditService {
         where,
         skip,
         take,
-        orderBy: { at: 'desc' },
+        orderBy: [{ at: 'desc' }, { seq: 'desc' }],
       }),
       db.auditEntry.count({ where }),
     ])

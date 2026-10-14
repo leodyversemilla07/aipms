@@ -24,6 +24,8 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'vendor.create': ['procurement'],
   'vendor.update': ['procurement'],
   'vendor.verifyBankAccount': ['finance'],
+  'vendor.verifyContact': ['procurement', 'finance'],
+  'vendor.revokeContact': ['procurement', 'finance'],
 
   'requisition.list': ['user', 'procurement', 'finance'],
   'requisition.detail': ['user', 'procurement', 'finance'],
@@ -66,6 +68,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'invoice.register': ['finance'],
 
   'intake.list': ['finance'],
+  'intake.page': ['finance'],
   'intake.detail': ['finance'],
   'intake.ingest': ['finance'],
   'intake.ingestStructured': ['finance'],
@@ -82,6 +85,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'messaging.resolveFailed': ['finance'],
 
   'paymentRun.list': ['finance'],
+  'paymentRun.page': ['finance'],
   'paymentRun.detail': ['finance'],
   'paymentRun.batch': ['finance'],
   'paymentRun.create': ['finance'],
@@ -118,6 +122,8 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
 
   'analytics.overview': ['procurement', 'finance'],
   'analytics.runTrace': ['procurement', 'finance'],
+  'analytics.retention': ['procurement', 'finance'],
+  'analytics.pruneRetention': ['admin'],
 
   'agent.process': ['admin'],
   'agent.batch': ['admin'],

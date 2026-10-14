@@ -17,8 +17,9 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { Textarea } from "@workspace/ui/components/textarea"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
+import { PageControls } from "@/components/page-controls"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -59,6 +60,8 @@ export function IntakeQueue() {
   const queryClient = useQueryClient()
 
   const [status, setStatus] = useState("")
+  const [q, setQ] = useState("")
+  const [page, setPage] = useState(1)
   const [channel, setChannel] = useState(CHANNELS[0] ?? "")
   const [contentHash, setContentHash] = useState("")
   const [raw, setRaw] = useState("")
@@ -66,15 +69,22 @@ export function IntakeQueue() {
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const PAGE_SIZE = 25
   const feed = useQuery(
-    trpc.intake.list.queryOptions({
-      q: "",
-      page: 1,
-      pageSize: 100,
+    trpc.intake.page.queryOptions({
+      q,
+      page,
+      pageSize: PAGE_SIZE,
       status: (status || undefined) as never,
     })
   )
-  const rows = (feed.data ?? []) as DocRow[]
+  const rows = (feed.data?.rows ?? []) as DocRow[]
+  const total = feed.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  useEffect(() => {
+    if (feed.data && page > totalPages) setPage(totalPages)
+  }, [feed.data, page, totalPages])
 
   const ingest = useMutation(trpc.intake.ingest.mutationOptions())
   const classify = useMutation(trpc.intake.classify.mutationOptions())
@@ -265,11 +275,26 @@ export function IntakeQueue() {
         ) : null}
       </div>
 
-      <div className="flex items-baseline justify-between">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Queue
-        </h2>
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            Queue
+          </h2>
+          <span className="text-muted-foreground text-xs">
+            {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+            {Math.min(page * PAGE_SIZE, total)} of {total}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={q}
+            onChange={(e) => {
+              setQ(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Search channel or hash…"
+            className="h-8 w-44 text-xs"
+          />
           <Button
             size="sm"
             variant="secondary"
@@ -280,7 +305,13 @@ export function IntakeQueue() {
           </Button>
           <Field>
             <Label htmlFor="status-filter">Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v ?? "")}>
+            <Select
+              value={status}
+              onValueChange={(v) => {
+                setStatus(v ?? "")
+                setPage(1)
+              }}
+            >
               <SelectTrigger className="h-8">
                 <SelectValue placeholder="All" />
               </SelectTrigger>
@@ -420,6 +451,16 @@ export function IntakeQueue() {
           ))}
         </ul>
       )}
+
+      {totalPages > 1 ? (
+        <div className="mt-2 flex justify-start">
+          <PageControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }

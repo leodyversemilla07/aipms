@@ -58,6 +58,11 @@ export class PaymentRunRouter {
     return this.runs.list(input)
   }
 
+  @Query({ input: listInputWithStatus })
+  async page(@Input() input: z.infer<typeof listInputWithStatus>) {
+    return this.runs.page(input)
+  }
+
   @Query({ input: runIdInput })
   async detail(@Input() input: z.infer<typeof runIdInput>) {
     return this.runs.detail(input.id)

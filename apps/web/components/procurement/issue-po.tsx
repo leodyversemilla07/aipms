@@ -26,6 +26,7 @@ type VendorRow = { id: string; name: string }
 type QuoteRow = {
   vendorId: string
   status: "requested" | "received" | "accepted" | "rejected"
+  validUntil: string | null
 }
 
 function rowTotal(req: ReqRow): number {
@@ -52,6 +53,10 @@ function RequisitionCard({
   )
   const acceptedQuote = ((quotes.data ?? []) as QuoteRow[]).find(
     (quote) => quote.status === "accepted"
+  )
+  const isQuoteExpired = Boolean(
+    acceptedQuote?.validUntil &&
+      new Date(acceptedQuote.validUntil).getTime() < Date.now()
   )
 
   useEffect(() => {
@@ -110,7 +115,7 @@ function RequisitionCard({
         </NativeSelect>
         <Button
           size="sm"
-          disabled={!vendorId || issue.isPending}
+          disabled={!vendorId || issue.isPending || isQuoteExpired}
           onClick={doIssue}
         >
           {issue.isPending ? "Issuing…" : "Issue PO"}
@@ -118,8 +123,16 @@ function RequisitionCard({
       </div>
 
       {acceptedQuote ? (
-        <p className="text-muted-foreground text-xs">
-          Vendor locked to the accepted sourcing award.
+        <p
+          className={`text-xs ${
+            isQuoteExpired
+              ? "font-medium text-destructive"
+              : "text-muted-foreground"
+          }`}
+        >
+          {isQuoteExpired && acceptedQuote.validUntil
+            ? `Accepted quote expired on ${new Date(acceptedQuote.validUntil).toLocaleDateString()} — re-quote required before PO issue.`
+            : "Vendor locked to the accepted sourcing award."}
         </p>
       ) : null}
 

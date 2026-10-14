@@ -84,6 +84,18 @@ export class IntakeRouter {
     return documents.map((document) => this.projectDocument(document, ctx))
   }
 
+  @Query({ input: listInputWithStatus })
+  async page(
+    @Input() input: z.infer<typeof listInputWithStatus>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    const result = await this.intake.page(input)
+    return {
+      rows: result.rows.map((document) => this.projectDocument(document, ctx)),
+      total: result.total,
+    }
+  }
+
   @Query({ input: idInput })
   async detail(
     @Input() input: z.infer<typeof idInput>,

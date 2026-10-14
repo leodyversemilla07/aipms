@@ -280,4 +280,55 @@ describe('sourcing quotes (§8.1)', () => {
     expect(comparison.criterion).toBe('lowestCost')
     expect(comparison.recommendedQuoteId).toBe(quotes[0].id)
   })
+
+  it('enforces quote expiration: excludes expired quotes from compare recommendations and rejects award', async () => {
+    const requisition = await makeApprovedRequisition('expiry')
+    const [cheapExpiredVendor, priceyValidVendor] = [
+      await makeVendor('CheapExpiredCo'),
+      await makeVendor('PriceyValidCo'),
+    ]
+    const quotes = await sourcing.request(
+      requisition.id,
+      [cheapExpiredVendor.id, priceyValidVendor.id],
+      actor,
+    )
+    for (const q of quotes) created.quote.push(q.id)
+
+    const cheapQuote = quotes.find((q) => q.vendorId === cheapExpiredVendor.id)
+    const priceyQuote = quotes.find((q) => q.vendorId === priceyValidVendor.id)
+    if (!cheapQuote || !priceyQuote) throw new Error('expected both quotes')
+
+    // Record cheap quote with past expiration date
+    await sourcing.receive(cheapQuote.id, {
+      totalMinor: 50_000,
+      validUntil: new Date(Date.now() - 10_000),
+    })
+
+    // Record pricey quote with future expiration date
+    await sourcing.receive(priceyQuote.id, {
+      totalMinor: 100_000,
+      validUntil: new Date(Date.now() + 86_400_000),
+    })
+
+    // compare should skip cheapQuote for recommendedQuoteId and flag expired
+    const comparison = await sourcing.compare(requisition.id)
+    expect(comparison.recommendedQuoteId).toBe(priceyQuote.id)
+    const cheapRank = comparison.ranking.find(
+      (r) => r.quoteId === cheapQuote.id,
+    )
+    const priceyRank = comparison.ranking.find(
+      (r) => r.quoteId === priceyQuote.id,
+    )
+    expect(cheapRank?.expired).toBe(true)
+    expect(priceyRank?.expired).toBe(false)
+
+    // award must reject the expired quote
+    await expect(sourcing.award(cheapQuote.id, actor)).rejects.toBeInstanceOf(
+      ConflictException,
+    )
+
+    // award succeeds for the valid quote
+    const awarded = await sourcing.award(priceyQuote.id, actor)
+    expect(awarded.status).toBe('accepted')
+  })
 })

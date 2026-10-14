@@ -57,6 +57,7 @@ function fixture() {
   }
   const intake = {
     list: vi.fn().mockResolvedValue([document]),
+    page: vi.fn().mockResolvedValue({ rows: [document], total: 1 }),
     detail: vi.fn().mockResolvedValue(document),
     ingest: vi.fn().mockResolvedValue(document),
     classify: vi.fn().mockResolvedValue(document),
@@ -197,6 +198,37 @@ describe('intake response projection at the router boundary', () => {
     )
     expect(result).toEqual([document])
     expect(result[0]).toBe(document)
+  })
+
+  it('redacts page results for agents while preserving total', async () => {
+    const { router, document, intake } = fixture()
+    const original = structuredClone(document)
+    intake.page.mockResolvedValue({
+      rows: [document, { ...document, id: 'intake-2' }],
+      total: 42,
+    })
+    const input = {
+      q: '',
+      sort: '',
+      dir: 'asc' as const,
+      page: 1,
+      pageSize: 25,
+    }
+    const result = await router.page(input, context('agent'))
+    expect(result.total).toBe(42)
+    expect(result.rows).toHaveLength(2)
+    expectSafeDocument(result.rows[0], original)
+    expectSafeDocument(result.rows[1], { ...original, id: 'intake-2' })
+  })
+
+  it('preserves full page payloads for humans', async () => {
+    const { router, document } = fixture()
+    const result = await router.page(
+      { q: '', sort: '', dir: 'asc', page: 1, pageSize: 25 },
+      context('human'),
+    )
+    expect(result.total).toBe(1)
+    expect(result.rows).toEqual([document])
   })
 
   it.each(['human', 'agent'] as const)(

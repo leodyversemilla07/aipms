@@ -75,7 +75,11 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["overview"]>>),
     runTrace: publicProcedure
       .input(z.object({ runId: z.string().min(1) }))
-      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["runTrace"]>>)
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["runTrace"]>>),
+    retention: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["retention"]>>),
+    pruneRetention: publicProcedure
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AnalyticsRouter["pruneRetention"]>>)
     }),
   approval: t.router({
     pendingList: publicProcedure
@@ -259,6 +263,20 @@ const appRouter = t.router({
     .optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["list"]>>),
+    page: publicProcedure
+      .input(listInput.extend({
+  status: z
+    .enum([
+      'new',
+      'classifying',
+      'extracted',
+      'matched',
+      'exception',
+      'dropped',
+    ])
+    .optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["page"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<IntakeRouter["detail"]>>),
@@ -331,7 +349,7 @@ const appRouter = t.router({
     list: publicProcedure
       .input(listInput.extend({
   status: z
-    .enum(['queued', 'approved', 'rejected', 'sent', 'failed'])
+    .enum(['queued', 'approved', 'sending', 'rejected', 'sent', 'failed'])
     .optional(),
   tier: z.enum(['auto', 'gated']).optional(),
 }))
@@ -410,6 +428,13 @@ const appRouter = t.router({
     .optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["list"]>>),
+    page: publicProcedure
+      .input(listInput.extend({
+  status: z
+    .enum(['draft', 'approved', 'executed', 'reconciled', 'voided'])
+    .optional(),
+}))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["page"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<PaymentRunRouter["detail"]>>),
@@ -744,7 +769,23 @@ const appRouter = t.router({
     message: 'accountNumber is required',
   }),
 }))
-      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>)
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyBankAccount"]>>),
+    verifyContact: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  email: z.string().email().max(254),
+  evidence: z.string().min(5).max(500),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["verifyContact"]>>),
+    revokeContact: publicProcedure
+      .input(z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  email: z.string().email().max(254),
+  reason: z.string().max(500).nullish(),
+}))
+      .mutation(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<VendorRouter["revokeContact"]>>)
     })
 });
 

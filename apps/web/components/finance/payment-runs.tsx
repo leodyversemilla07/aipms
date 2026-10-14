@@ -34,7 +34,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { PageControls } from "@/components/page-controls"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
@@ -48,9 +49,23 @@ export function PaymentRuns() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
 
-  const runs = useQuery(trpc.paymentRun.list.queryOptions({}))
+  const [runPage, setRunPage] = useState(1)
+  const RUN_PAGE_SIZE = 10
+  const runs = useQuery(
+    trpc.paymentRun.page.queryOptions({
+      page: runPage,
+      pageSize: RUN_PAGE_SIZE,
+    })
+  )
+
+  const [matchedPage, setMatchedPage] = useState(1)
+  const MATCHED_PAGE_SIZE = 10
   const matched = useQuery(
-    trpc.invoice.list.queryOptions({ status: "matched" })
+    trpc.invoice.page.queryOptions({
+      status: "matched",
+      page: matchedPage,
+      pageSize: MATCHED_PAGE_SIZE,
+    })
   )
   type PaymentRunRow = {
     id: string
@@ -73,8 +88,25 @@ export function PaymentRuns() {
     vatMinor: number
     ewtMinor: number
   }
-  const runRows = (runs.data ?? []) as PaymentRunRow[]
-  const matchedRows = (matched.data ?? []) as InvoiceRow[]
+  const runRows = (runs.data?.rows ?? []) as PaymentRunRow[]
+  const totalRuns = runs.data?.total ?? 0
+  const totalRunPages = Math.max(1, Math.ceil(totalRuns / RUN_PAGE_SIZE))
+
+  const matchedRows = (matched.data?.rows ?? []) as InvoiceRow[]
+  const totalMatched = matched.data?.total ?? 0
+  const totalMatchedPages = Math.max(
+    1,
+    Math.ceil(totalMatched / MATCHED_PAGE_SIZE)
+  )
+
+  useEffect(() => {
+    if (runs.data && runPage > totalRunPages) setRunPage(totalRunPages)
+  }, [runs.data, runPage, totalRunPages])
+
+  useEffect(() => {
+    if (matched.data && matchedPage > totalMatchedPages)
+      setMatchedPage(totalMatchedPages)
+  }, [matched.data, matchedPage, totalMatchedPages])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
@@ -219,7 +251,8 @@ export function PaymentRuns() {
           Payment runs
         </h2>
         <span className="text-muted-foreground text-xs">
-          {(runs.data ?? []).length} runs
+          {totalRuns === 0 ? 0 : (runPage - 1) * RUN_PAGE_SIZE + 1}–
+          {Math.min(runPage * RUN_PAGE_SIZE, totalRuns)} of {totalRuns} runs
         </span>
       </div>
 
@@ -237,7 +270,14 @@ export function PaymentRuns() {
       ) : null}
 
       <div className="rounded-xl border bg-card p-4 shadow-sm">
-        <p className="font-medium text-sm">New run</p>
+        <div className="flex items-center justify-between">
+          <p className="font-medium text-sm">New run</p>
+          <span className="text-muted-foreground text-xs">
+            {totalMatched === 0 ? 0 : (matchedPage - 1) * MATCHED_PAGE_SIZE + 1}
+            –{Math.min(matchedPage * MATCHED_PAGE_SIZE, totalMatched)} of{" "}
+            {totalMatched} payable ({selected.size} selected)
+          </span>
+        </div>
         <p className="mb-2 text-muted-foreground text-xs">
           Only matched invoices are payable. Pick invoices to plan a run.
         </p>
@@ -264,6 +304,15 @@ export function PaymentRuns() {
                 </span>
               </label>
             ))}
+            {totalMatchedPages > 1 ? (
+              <div className="mt-2">
+                <PageControls
+                  page={matchedPage}
+                  totalPages={totalMatchedPages}
+                  onPageChange={setMatchedPage}
+                />
+              </div>
+            ) : null}
             <Button
               size="sm"
               className="mt-2 self-start"
@@ -513,6 +562,16 @@ export function PaymentRuns() {
           </li>
         ))}
       </ul>
+
+      {totalRunPages > 1 ? (
+        <div className="mt-2 flex justify-start">
+          <PageControls
+            page={runPage}
+            totalPages={totalRunPages}
+            onPageChange={setRunPage}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }

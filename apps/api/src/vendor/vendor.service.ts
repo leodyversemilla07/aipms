@@ -26,6 +26,38 @@ export interface UpdateVendor {
   blacklistReason?: string | null
 }
 
+export interface VerifyContactInput {
+  email: string
+  evidence: string
+}
+
+export interface RevokeContactInput {
+  email: string
+  reason?: string | null
+}
+
+export interface VerifiedContactEntry {
+  email: string
+  verifiedAt: string
+  verifiedBy: string
+  evidence: string
+}
+
+export interface VendorContactChannels {
+  verifiedEmails: string[]
+  entries?: VerifiedContactEntry[]
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export function normalizeContactEmail(email: string): string {
+  const normalized = email.trim().toLowerCase()
+  if (!normalized || !EMAIL_REGEX.test(normalized) || normalized.length > 254) {
+    throw new BadRequestException(`Invalid contact email address: ${email}`)
+  }
+  return normalized
+}
+
 /**
  * Safe vendor DTO shared by every browser-facing vendor operation. Beneficiary
  * account numbers are intentionally absent; payment services read them through
@@ -77,7 +109,7 @@ export class VendorService {
         }
       : {}
 
-    const orderBy: Prisma.VendorOrderByWithRelationInput = (
+    const primaryOrderBy: Prisma.VendorOrderByWithRelationInput = (
       {
         name: { name: input.dir },
         status: { status: input.dir },
@@ -85,6 +117,10 @@ export class VendorService {
         createdAt: { createdAt: input.dir },
       } as Record<string, Prisma.VendorOrderByWithRelationInput>
     )[input.sort] ?? { createdAt: input.dir }
+    const orderBy: Prisma.VendorOrderByWithRelationInput[] = [
+      primaryOrderBy,
+      { id: 'asc' },
+    ]
 
     return Promise.all([
       db.vendor.findMany({
@@ -176,6 +212,144 @@ export class VendorService {
     return outerTx ? run(outerTx) : db.$transaction(run)
   }
 
+  /**
+   * §8.3 / §16: enroll and verify a contact channel (email) for outbound messaging.
+   * Requires human procurement or finance authority with verifiable evidence.
+   */
+  async verifyContact(
+    vendorId: string,
+    input: VerifyContactInput,
+    actorId: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<VendorView> {
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
+      if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
+
+      if (vendor.status === 'blacklisted') {
+        throw new ForbiddenException(
+          `Vendor ${vendor.name} is blacklisted — contact verification blocked`,
+        )
+      }
+
+      const email = normalizeContactEmail(input.email)
+      const evidence = input.evidence.trim()
+      if (!evidence || evidence.length < 5) {
+        throw new BadRequestException(
+          'Verification evidence must be at least 5 characters',
+        )
+      }
+
+      const existing = (vendor.contactChannels ??
+        {}) as Partial<VendorContactChannels>
+      const existingEmails = Array.isArray(existing.verifiedEmails)
+        ? existing.verifiedEmails.filter(
+            (e): e is string => typeof e === 'string',
+          )
+        : []
+      const existingEntries = Array.isArray(existing.entries)
+        ? existing.entries.filter((entry): entry is VerifiedContactEntry =>
+            Boolean(
+              entry &&
+                typeof entry === 'object' &&
+                typeof (entry as VerifiedContactEntry).email === 'string',
+            ),
+          )
+        : []
+
+      const now = new Date().toISOString()
+      const nextEmails = [...new Set([...existingEmails, email])]
+      const filteredEntries = existingEntries.filter(
+        (entry) => entry.email !== email,
+      )
+      const nextEntries: VerifiedContactEntry[] = [
+        ...filteredEntries,
+        {
+          email,
+          verifiedAt: now,
+          verifiedBy: actorId,
+          evidence,
+        },
+      ]
+
+      const nextChannels: VendorContactChannels = {
+        verifiedEmails: nextEmails,
+        entries: nextEntries,
+      }
+
+      return tx.vendor.update({
+        where: { id: vendorId },
+        data: {
+          contactChannels: nextChannels as unknown as Prisma.InputJsonValue,
+        },
+        select: vendorViewSelect,
+      })
+    }
+
+    return outerTx ? run(outerTx) : db.$transaction(run)
+  }
+
+  /**
+   * Revoke an enrolled contact channel with change invalidation.
+   */
+  async revokeContact(
+    vendorId: string,
+    input: RevokeContactInput,
+    _actorId: string,
+    outerTx?: Prisma.TransactionClient,
+  ): Promise<VendorView> {
+    const run = async (tx: Prisma.TransactionClient) => {
+      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
+      if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
+
+      const email = normalizeContactEmail(input.email)
+      const existing = (vendor.contactChannels ??
+        {}) as Partial<VendorContactChannels>
+      const existingEmails = Array.isArray(existing.verifiedEmails)
+        ? existing.verifiedEmails.filter(
+            (e): e is string => typeof e === 'string',
+          )
+        : []
+      const existingEntries = Array.isArray(existing.entries)
+        ? existing.entries.filter((entry): entry is VerifiedContactEntry =>
+            Boolean(
+              entry &&
+                typeof entry === 'object' &&
+                typeof (entry as VerifiedContactEntry).email === 'string',
+            ),
+          )
+        : []
+
+      if (!existingEmails.includes(email)) {
+        throw new NotFoundException(
+          `Contact email ${email} is not enrolled for ${vendor.name}`,
+        )
+      }
+
+      const nextEmails = existingEmails.filter((e) => e !== email)
+      const nextEntries = existingEntries.filter(
+        (entry) => entry.email !== email,
+      )
+
+      const nextChannels: VendorContactChannels = {
+        verifiedEmails: nextEmails,
+        entries: nextEntries,
+      }
+
+      return tx.vendor.update({
+        where: { id: vendorId },
+        data: {
+          contactChannels: nextChannels as unknown as Prisma.InputJsonValue,
+        },
+        select: vendorViewSelect,
+      })
+    }
+
+    return outerTx ? run(outerTx) : db.$transaction(run)
+  }
+
   create(input: CreateVendor, tx: Prisma.TransactionClient = db) {
     return tx.vendor.create({
       data: {
@@ -197,6 +371,10 @@ export class VendorService {
   ) {
     const existing = await tx.vendor.findUnique({ where: { id } })
     if (!existing) throw new NotFoundException(`Vendor ${id} not found`)
+    const isBlacklisting = input.status === 'blacklisted'
+    const nextChannels = isBlacklisting
+      ? { verifiedEmails: [], entries: [] }
+      : undefined
     return tx.vendor.update({
       where: { id },
       data: {
@@ -212,6 +390,9 @@ export class VendorService {
         ...(input.status !== undefined && { status: input.status }),
         ...(input.blacklistReason !== undefined && {
           blacklistReason: input.blacklistReason,
+        }),
+        ...(nextChannels !== undefined && {
+          contactChannels: nextChannels as unknown as Prisma.InputJsonValue,
         }),
       },
       select: vendorViewSelect,

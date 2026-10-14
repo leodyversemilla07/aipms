@@ -117,6 +117,14 @@ Agent admission follow-up:
 - See [agent admission](agent-quotas.md) for accounting, rollout and the
   process-local concurrency / existing event-retry limitations.
 
+Verified vendor contact enrollment follow-up:
+
+- **Finding 12:** implemented an auditable contact channel enrollment and revocation workflow in `VendorService` and `VendorRouter` (`vendor.verifyContact`, `vendor.revokeContact`), restricted to human procurement/finance roles and ungrantable to agents.
+- Normalizes email addresses, enforces evidence metadata (min 5 characters) with verifier and timestamp tracking on `contactChannels.entries`, deduplicates entries, and preserves `contactChannels.verifiedEmails` compatibility with outbound messaging and IMAP intake.
+- Enforces change invalidation: blacklisting a vendor automatically clears all existing verified contact channels, and contact verification is blocked for blacklisted vendors.
+- Added Next.js web cockpit management controls in `VendorsPanel` for adding, viewing, and revoking verified contacts.
+- Unit test suite `apps/api/test/unit/vendor-contact.spec.ts` covers email normalization, evidence validation, role authorization, agent rejection, revocation, and blacklisting invalidation without database dependencies (15 test files / 255 tests passed in the unit lane).
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.
@@ -313,6 +321,8 @@ An operator using the documented scope override can therefore retain default gra
 
 ### 12. Medium — verified vendor contact enrollment is missing
 
+**Follow-up status:** resolved; auditable verification/revocation workflow added to API, tRPC router, web cockpit, and unit/integration test suites.
+
 References: `apps/api/src/vendor/vendor.router.ts:40–60`; `apps/api/src/vendor/vendor.service.ts:178–218`; `apps/api/src/messaging/messaging.service.ts:279–292`.
 
 Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor create/update inputs and the master-data workflow do not provide a verification/enrollment operation. A newly created production vendor cannot use the advertised controlled messaging path without out-of-band database changes or an external setup mechanism.
@@ -324,7 +334,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 ### Finance and data integrity
 
 - Partial invoicing is not fully represented by the matching model: the first amount gate compares each invoice to the full PO total. Allocation guards prevent double use, but do not alone establish a supported installment/split-invoice workflow. Document whether this is intentionally out of scope.
-- Quote `validUntil` is stored but not used to exclude expired offers in comparison/award. Validate commercial expiry before award and PO issue.
+- Quote `validUntil` is enforced across comparison, award, and PO issue: expired quotes are flagged and excluded from automated recommendation in `sourcing.compare`, rejected at commercial `sourcing.award`, and blocked from PO issuance in `purchaseOrder.issue` with full frontend badge/disable guards and agent tool reflection.
 - Invoice/vendor, invoice/PO, payment-line/invoice, receipt/PO, approval/PO/vendor, and PO/requisition references are largely plain strings. Add foreign keys and deliberate deletion policies where historical preservation permits them.
 - Repeated export creation still rebuilds from current vendor metadata before checking the existing frozen artifact. Reading an artifact is stable; re-export behavior can conflict after a rename. Existing exports should have clearly specified replay behavior.
 - QBO acknowledgement checks claim state before a conditional update whose predicate only checks status. Review races between claim creation and manual acknowledgement; include the observed claim in the update predicate or use a common lock.
@@ -340,8 +350,8 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 
 ### Frontend and scale
 
-- Payment-run and matched-invoice selectors request default first pages with no page controls. Intake and several master-data/procurement views request only fixed first pages. Server-side limits improve safety but can make older records unreachable in the UI.
-- List sorting often lacks an ID tie-breaker. Add stable ordering and ensure supported search/sort inputs are actually honored.
+- Payment-run and matched-invoice selectors, Intake Queue, Master Data (Vendors), and PO list wired with `PageControls`, count-backed pages (`page` query procedures), search filters, and range counters, ensuring older records remain fully accessible across desks.
+- List sorting and queries across Intake, Payment Runs, Audit Trail, Sourcing, Vendors, and POs enforce stable deterministic ordering with primary sort + ID / sequence tie-breakers (`[{ receivedAt: 'desc' }, { id: 'desc' }]`, `[{ at: 'desc' }, { seq: 'desc' }]`, etc.).
 - Remaining broad reads include the requisition exception queue, policy history, run traces, certificate details, and IMAP vendor loading. Prioritize aggregation, bounded queries, and asynchronous exports where complete data is needed.
 - Add indexes matching query patterns, particularly PO requisition lookup and status/date ordering. Validate with representative query plans instead of assuming single-column indexes suffice.
 - Standardize error/empty/pending states and replace hand-maintained response assertions with shared/inferred DTOs where practical.
@@ -353,7 +363,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 - A hash chain without an independently stored head/checkpoint cannot prove that the tail was not truncated or the entire history rewritten by a sufficiently privileged actor. Embedded-key PO verification proves cryptographic consistency with that key, not external signer trust or legally qualified status. Keep claims aligned with this threat model.
 - `scripts/restore.sh:83` ignores failure to stop writers with `|| true`. A failed stop must not silently proceed to destructive restoration; verify writers are stopped and abort otherwise.
 - Docker runtime targets retain the full workspace/development dependencies and do not specify a non-root user. Reduce runtime contents and privileges while preserving required migration/runtime functionality.
-- Rate-limit and idempotency storage need an explicit retention/cleanup policy. Persistent per-minute agent buckets can accumulate indefinitely.
+- Rate-limit and idempotency storage retention/cleanup policy implemented via `RetentionService` (addressing unbounded database growth) guarded by cross-replica lease locks (`AutomationLeaseService`), exposed via `analytics.retention` / `analytics.pruneRetention` tRPC procedures with audit tracking and web cockpit controls.
 - API integration isolation is good. The local browser suite reuses running servers and lacks the same explicit disposable-database guard; establish a similarly safe E2E contract.
 - Most important missing tests are cross-domain concurrency/crash scenarios, not additional happy-path unit tests: PO cancellation versus payment, receipt cancellation versus planning, sibling approvals, crash-after-dispatch-claim, raw agent list projection, versioned wake policies, and effective Compose scope overrides.
 

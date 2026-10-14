@@ -37,6 +37,20 @@ const verifyBankAccountInput = z.object({
   bankAccount: bankAccountInput,
 })
 
+const verifyContactInput = z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  email: z.string().email().max(254),
+  evidence: z.string().min(5).max(500),
+})
+
+const revokeContactInput = z.object({
+  idempotencyKey: z.string().min(1),
+  vendorId: z.string().min(1),
+  email: z.string().email().max(254),
+  reason: z.string().max(500).nullish(),
+})
+
 const createVendorInput = z.object({
   idempotencyKey: z.string().min(1),
   name: z.string().min(1).max(200),
@@ -199,5 +213,105 @@ export class VendorRouter {
       )
       return vendor
     })
+  }
+
+  /** §8.3 / §16: verify an enrolled vendor contact channel with audit and idempotency. */
+  @Mutation({ input: verifyContactInput })
+  async verifyContact(
+    @Input() input: z.infer<typeof verifyContactInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    requireHumanRole(
+      ctx.user,
+      ctx.actorKind,
+      ['procurement', 'finance'],
+      'vendor.verifyContact',
+    )
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'vendor.verifyContact',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const before = await tx.vendor.findUnique({
+          where: { id: input.vendorId },
+          select: vendorViewSelect,
+        })
+        if (!before)
+          throw new NotFoundException(`Vendor ${input.vendorId} not found`)
+        const vendor = await this.vendor.verifyContact(
+          input.vendorId,
+          { email: input.email, evidence: input.evidence },
+          ctx.user.id,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'vendor.verifyContact',
+            entity: 'Vendor',
+            entityId: input.vendorId,
+            input,
+            before,
+            after: vendor,
+          },
+          tx,
+        )
+        return vendor
+      },
+    )
+  }
+
+  /** §8.3 / §16: revoke an enrolled vendor contact channel. */
+  @Mutation({ input: revokeContactInput })
+  async revokeContact(
+    @Input() input: z.infer<typeof revokeContactInput>,
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    requireHumanRole(
+      ctx.user,
+      ctx.actorKind,
+      ['procurement', 'finance'],
+      'vendor.revokeContact',
+    )
+    return this.idempotency.runAtomic(
+      {
+        actorId: ctx.user.id,
+        operation: 'vendor.revokeContact',
+        key: input.idempotencyKey,
+        input,
+      },
+      async (tx) => {
+        const before = await tx.vendor.findUnique({
+          where: { id: input.vendorId },
+          select: vendorViewSelect,
+        })
+        if (!before)
+          throw new NotFoundException(`Vendor ${input.vendorId} not found`)
+        const vendor = await this.vendor.revokeContact(
+          input.vendorId,
+          { email: input.email, reason: input.reason ?? null },
+          ctx.user.id,
+          tx,
+        )
+        await this.audit.record(
+          {
+            actorId: ctx.user.id,
+            actorKind: ctx.actorKind,
+            action: 'vendor.revokeContact',
+            entity: 'Vendor',
+            entityId: input.vendorId,
+            input,
+            before,
+            after: vendor,
+          },
+          tx,
+        )
+        return vendor
+      },
+    )
   }
 }

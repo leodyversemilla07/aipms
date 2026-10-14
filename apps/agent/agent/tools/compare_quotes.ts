@@ -10,6 +10,8 @@ const resultSchema = z.object({
     z.object({
       quoteId: z.string(),
       score: z.number().nullable(),
+      expired: z.boolean().optional(),
+      validUntil: z.coerce.date().nullable().optional(),
     })
   ),
 })
@@ -25,11 +27,12 @@ export default defineTool({
   toModelOutput(result) {
     const ranking = result.ranking.length
       ? result.ranking
-          .map((entry, index) =>
-            entry.score == null
-              ? `${index + 1}. ${entry.quoteId}`
-              : `${index + 1}. ${entry.quoteId} (score ${entry.score})`
-          )
+          .map((entry, index) => {
+            const exp = entry.expired ? " [EXPIRED]" : ""
+            return entry.score == null
+              ? `${index + 1}. ${entry.quoteId}${exp}`
+              : `${index + 1}. ${entry.quoteId} (score ${entry.score})${exp}`
+          })
           .join("\n")
       : "No received quotes are available."
     return {

@@ -55,6 +55,7 @@ type QuoteRow = {
   totalMinor: number | null
   currencyCode: string
   leadTimeDays: number | null
+  validUntil: string | null
   rejectedReason: string | null
 }
 
@@ -72,6 +73,7 @@ export function Sourcing() {
   const [vendorIds, setVendorIds] = useState<Set<string>>(new Set())
   const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [leadTimes, setLeadTimes] = useState<Record<string, string>>({})
+  const [validUntils, setValidUntils] = useState<Record<string, string>>({})
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -160,12 +162,21 @@ export function Sourcing() {
       setError("Lead time must be a positive whole number of days.")
       return
     }
+    const validUntilText = validUntils[quote.id]?.trim()
+    const validUntil = validUntilText
+      ? new Date(`${validUntilText}T23:59:59Z`)
+      : undefined
+    if (validUntil && Number.isNaN(validUntil.getTime())) {
+      setError("Enter a valid expiration date.")
+      return
+    }
     try {
       await receiveQuote.mutateAsync({
         id: quote.id,
         totalMinor,
         currencyCode: quote.currencyCode,
         leadTimeDays,
+        validUntil,
         idempotencyKey: `web-sourcing-receive-${crypto.randomUUID()}`,
       })
       setNotice("Structured vendor offer recorded.")
@@ -300,7 +311,10 @@ export function Sourcing() {
       ) : null}
 
       {quoteRows.map((quote) => {
-        const recommended = quote.id === recommendedQuoteId
+        const isExpired = Boolean(
+          quote.validUntil && new Date(quote.validUntil).getTime() < Date.now()
+        )
+        const recommended = quote.id === recommendedQuoteId && !isExpired
         return (
           <Card key={quote.id} size="sm">
             <CardHeader>
@@ -312,12 +326,16 @@ export function Sourcing() {
                 {quote.leadTimeDays
                   ? ` · ${quote.leadTimeDays} day lead time`
                   : ""}
+                {quote.validUntil
+                  ? ` · Valid until ${new Date(quote.validUntil).toLocaleDateString()}`
+                  : ""}
               </CardDescription>
-              {recommended ? (
-                <CardAction>
-                  <Badge>Recommended</Badge>
-                </CardAction>
-              ) : null}
+              <CardAction className="flex items-center gap-1">
+                {isExpired ? (
+                  <Badge variant="destructive">Expired</Badge>
+                ) : null}
+                {recommended ? <Badge>Recommended</Badge> : null}
+              </CardAction>
             </CardHeader>
             <CardContent>
               {quote.totalMinor != null ? (
@@ -359,6 +377,22 @@ export function Sourcing() {
                       }
                     />
                   </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`quote-valid-${quote.id}`}>
+                      Valid until (optional)
+                    </FieldLabel>
+                    <Input
+                      id={`quote-valid-${quote.id}`}
+                      type="date"
+                      value={validUntils[quote.id] ?? ""}
+                      onChange={(event) =>
+                        setValidUntils((current) => ({
+                          ...current,
+                          [quote.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  </Field>
                 </FieldGroup>
               )}
             </CardContent>
@@ -375,7 +409,7 @@ export function Sourcing() {
               {quote.status === "received" ? (
                 <Button
                   size="sm"
-                  disabled={awardQuote.isPending}
+                  disabled={awardQuote.isPending || isExpired}
                   onClick={() => void award(quote.id)}
                 >
                   Award quote

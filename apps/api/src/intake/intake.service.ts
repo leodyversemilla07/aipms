@@ -147,13 +147,47 @@ export class IntakeService {
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
     })
-    const where = input.status ? { status: input.status } : {}
+    const where: Prisma.IntakeDocumentWhereInput = {}
+    if (input.status) where.status = input.status
+    if (input.q) {
+      where.OR = [
+        { channel: { contains: input.q, mode: 'insensitive' } },
+        { contentHash: { contains: input.q, mode: 'insensitive' } },
+        { senderId: { contains: input.q, mode: 'insensitive' } },
+      ]
+    }
     return db.intakeDocument.findMany({
       where,
       skip,
       take,
-      orderBy: { receivedAt: 'desc' },
+      orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
     })
+  }
+
+  async page(input: Partial<ListInput> & { status?: IntakeStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where: Prisma.IntakeDocumentWhereInput = {}
+    if (input.status) where.status = input.status
+    if (input.q) {
+      where.OR = [
+        { channel: { contains: input.q, mode: 'insensitive' } },
+        { contentHash: { contains: input.q, mode: 'insensitive' } },
+        { senderId: { contains: input.q, mode: 'insensitive' } },
+      ]
+    }
+    const [rows, total] = await Promise.all([
+      db.intakeDocument.findMany({
+        where,
+        skip,
+        take,
+        orderBy: [{ receivedAt: 'desc' }, { id: 'desc' }],
+      }),
+      db.intakeDocument.count({ where }),
+    ])
+    return { rows, total }
   }
 
   async detail(id: string) {

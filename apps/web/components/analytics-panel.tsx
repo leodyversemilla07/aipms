@@ -1,6 +1,7 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Button } from "@workspace/ui/components/button"
 import {
   Card,
   CardContent,
@@ -25,10 +26,33 @@ import { useTRPC } from "@/lib/trpc/client"
  */
 export function AnalyticsPanel() {
   const trpc = useTRPC()
+  const queryClient = useQueryClient()
   const [months, setMonths] = useState("3")
+  const [pruneNotice, setPruneNotice] = useState<string | null>(null)
+  const [pruneError, setPruneError] = useState<string | null>(null)
+
   const overview = useQuery(
     trpc.analytics.overview.queryOptions({ months: Number(months) })
   )
+  const retentionQuery = useQuery(trpc.analytics.retention.queryOptions())
+  const pruneMutation = useMutation(
+    trpc.analytics.pruneRetention.mutationOptions()
+  )
+
+  async function handlePrune() {
+    setPruneNotice(null)
+    setPruneError(null)
+    try {
+      const res = await pruneMutation.mutateAsync()
+      setPruneNotice(
+        `Pruned ${res.prunedIdempotencyKeys} idempotency keys and ${res.prunedRateLimits} rate limit buckets in ${res.durationMs}ms.`
+      )
+      queryClient.invalidateQueries(trpc.analytics.retention.pathFilter())
+    } catch (e) {
+      setPruneError((e as Error).message)
+    }
+  }
+
   const d = overview.data
 
   return (
@@ -197,6 +221,76 @@ export function AnalyticsPanel() {
               </table>
             )}
           </MetricCard>
+
+          <Card size="sm" className="md:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle>Storage retention & hygiene</CardTitle>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pruneMutation.isPending}
+                onClick={() => void handlePrune()}
+              >
+                {pruneMutation.isPending ? "Pruning…" : "Prune expired rows"}
+              </Button>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {pruneNotice ? (
+                <p className="rounded bg-emerald-500/10 px-3 py-1.5 text-emerald-600 text-xs">
+                  {pruneNotice}
+                </p>
+              ) : null}
+              {pruneError ? (
+                <p className="rounded bg-destructive/10 px-3 py-1.5 text-destructive text-xs">
+                  {pruneError}
+                </p>
+              ) : null}
+              {retentionQuery.data ? (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-xs">
+                        Idempotency keys
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {retentionQuery.data.idempotency.retentionDays}-day
+                        retention
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span className="font-bold font-mono text-xl">
+                        {retentionQuery.data.idempotency.total}
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {retentionQuery.data.idempotency.expired} expired
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-xs">
+                        Rate limit buckets
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {retentionQuery.data.rateLimit.retentionDays}-day
+                        retention
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-baseline justify-between">
+                      <span className="font-bold font-mono text-xl">
+                        {retentionQuery.data.rateLimit.total}
+                      </span>
+                      <span className="text-muted-foreground text-xs">
+                        {retentionQuery.data.rateLimit.expired} expired
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <Empty>Loading retention telemetry…</Empty>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </section>

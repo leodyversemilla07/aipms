@@ -61,4 +61,63 @@ describe('VendorService', () => {
     expect(row).not.toHaveProperty('bankAccount')
     expect(detail.bankAccountVerifiedAt).toBeInstanceOf(Date)
   })
+
+  it('enrolls and revokes verified contact channels with change invalidation on blacklisting', async () => {
+    const v = await vendor.create({
+      name: `Contact Vendor ${suffix}`,
+      email: `contact-${suffix}@example.com`,
+      status: 'active',
+    })
+    vendorIds.push(v.id)
+
+    const verified = await vendor.verifyContact(
+      v.id,
+      {
+        email: `dispatch-${suffix}@example.com`,
+        evidence: 'Supplier onboarding confirmation packet',
+      },
+      'procurement-officer-1',
+    )
+    const channels = verified.contactChannels as {
+      verifiedEmails: string[]
+      entries: Array<{ email: string; evidence: string; verifiedBy: string }>
+    }
+    expect(channels.verifiedEmails).toContain(`dispatch-${suffix}@example.com`)
+    expect(channels.entries[0].evidence).toBe(
+      'Supplier onboarding confirmation packet',
+    )
+    expect(channels.entries[0].verifiedBy).toBe('procurement-officer-1')
+
+    const revoked = await vendor.revokeContact(
+      v.id,
+      { email: `dispatch-${suffix}@example.com`, reason: 'Rotated address' },
+      'procurement-officer-1',
+    )
+    const revokedChannels = revoked.contactChannels as {
+      verifiedEmails: string[]
+      entries: unknown[]
+    }
+    expect(revokedChannels.verifiedEmails).not.toContain(
+      `dispatch-${suffix}@example.com`,
+    )
+    expect(revokedChannels.entries).toHaveLength(0)
+
+    // Re-verify and then blacklist to test change invalidation
+    await vendor.verifyContact(
+      v.id,
+      {
+        email: `dispatch2-${suffix}@example.com`,
+        evidence: 'Second verification packet',
+      },
+      'procurement-officer-1',
+    )
+    const blacklisted = await vendor.update(v.id, {
+      status: 'blacklisted',
+      blacklistReason: 'Severe fraud detected',
+    })
+    const blacklistedChannels = blacklisted.contactChannels as {
+      verifiedEmails: string[]
+    }
+    expect(blacklistedChannels.verifiedEmails).toEqual([])
+  })
 })

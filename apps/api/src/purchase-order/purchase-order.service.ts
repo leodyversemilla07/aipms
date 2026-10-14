@@ -139,7 +139,7 @@ export class PurchaseOrderService {
         { vendorId: { contains: input.q, mode: 'insensitive' } },
       ]
     }
-    const orderBy: Prisma.PurchaseOrderOrderByWithRelationInput = (
+    const primaryOrderBy: Prisma.PurchaseOrderOrderByWithRelationInput = (
       {
         poNumber: { poNumber: input.dir },
         createdAt: { createdAt: input.dir },
@@ -147,6 +147,10 @@ export class PurchaseOrderService {
         totalMinor: { totalMinor: input.dir },
       } as Record<string, Prisma.PurchaseOrderOrderByWithRelationInput>
     )[input.sort ?? ''] ?? { createdAt: input.dir }
+    const orderBy: Prisma.PurchaseOrderOrderByWithRelationInput[] = [
+      primaryOrderBy,
+      { id: 'desc' },
+    ]
 
     const [rows, total] = await Promise.all([
       db.purchaseOrder.findMany({
@@ -166,7 +170,8 @@ export class PurchaseOrderService {
     actorId: string,
     outerTx?: Prisma.TransactionClient,
   ): Promise<IssueResult> {
-    const requisition = await db.requisition.findUnique({
+    const contextDb = outerTx ?? db
+    const requisition = await contextDb.requisition.findUnique({
       where: { id: input.requisitionId },
       include: { lines: true, approvals: true },
     })
@@ -185,7 +190,9 @@ export class PurchaseOrderService {
       )
     }
 
-    const vendor = await db.vendor.findUnique({ where: { id: input.vendorId } })
+    const vendor = await contextDb.vendor.findUnique({
+      where: { id: input.vendorId },
+    })
     if (!vendor) throw new NotFoundException('Vendor not found')
 
     const attempt = async (tx: Prisma.TransactionClient) => {
@@ -227,6 +234,15 @@ export class PurchaseOrderService {
       if (awardedQuote && awardedQuote.vendorId !== input.vendorId) {
         throw new ConflictException(
           'PO vendor must match the vendor on the accepted quote',
+        )
+      }
+      if (
+        awardedQuote &&
+        awardedQuote.validUntil != null &&
+        awardedQuote.validUntil.getTime() < Date.now()
+      ) {
+        throw new ConflictException(
+          'Accepted quote has expired — re-quote required before PO issue',
         )
       }
 

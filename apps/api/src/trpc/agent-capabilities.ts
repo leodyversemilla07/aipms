@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server'
  * Deliberately ungrantable (no capability exists): purchaseOrder.sign (§16.4
  * humans countersign), sso.* (identity admin), paymentRun.* (§8.6 no single
  * principal moves money), vendor.verifyBankAccount (beneficiary control),
+ * vendor.verifyContact / vendor.revokeContact (contact channel control),
  * messaging.approve / messaging.reject (§8.3 gated-send review is human),
  * users.list, policy.create, budget.create, approval.decide (route
  * membership decides).
@@ -69,6 +70,7 @@ export const AGENT_CAPABILITIES: Record<string, string> = {
   'receipt.detail': 'receipt.read',
   'receipt.record': 'receipt.record',
   'intake.list': 'intake.read',
+  'intake.page': 'intake.read',
   'intake.detail': 'intake.read',
   'intake.ingest': 'intake.ingest',
   'intake.ingestStructured': 'intake.ingest',

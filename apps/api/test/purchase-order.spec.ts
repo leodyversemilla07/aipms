@@ -246,6 +246,37 @@ describe('Awarded quote traceability', () => {
     ])
     expect((await budgetService.detail(budget.id)).committedMinor).toBe(110_000)
   })
+
+  it('blocks PO issue if the accepted quote has expired before issue', async () => {
+    await makeThresholdPolicy(500_000)
+    const budget = await makeBudget(100_000_000)
+    const awardedVendor = await makeVendor('active')
+    const req = await makeApprovedRequisition(budget.id, 125_000)
+
+    const quote = await db.quote.create({
+      data: {
+        requisitionId: req.id,
+        vendorId: awardedVendor.id,
+        status: 'accepted',
+        totalMinor: 110_000,
+        currencyCode: 'PHP',
+        validUntil: new Date(Date.now() - 60_000), // expired!
+        awardedAt: new Date(),
+        requestedBy: actorId,
+        createdBy: actorId,
+      },
+    })
+    created.quote.push(quote.id)
+
+    await expect(
+      purchaseOrderService.issue(
+        { requisitionId: req.id, vendorId: awardedVendor.id },
+        actorId,
+      ),
+    ).rejects.toThrow(
+      /Accepted quote has expired — re-quote required before PO issue/,
+    )
+  })
 })
 
 describe('Vendor gate at PO issue', () => {

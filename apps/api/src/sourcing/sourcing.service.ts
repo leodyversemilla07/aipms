@@ -185,14 +185,14 @@ export class SourcingService {
    * Deterministic comparison of all received quotes for a requisition.
    * Pure ranking — no side effects — so humans review before award.
    */
-  async compare(requisitionId: string) {
-    const requisition = await this.assertRequisition(requisitionId)
-    const quotes = await db.quote.findMany({
+  async compare(requisitionId: string, tx: Prisma.TransactionClient = db) {
+    const requisition = await this.assertRequisition(requisitionId, tx)
+    const quotes = await tx.quote.findMany({
       where: { requisitionId, status: 'received' },
     })
     const vendorRatings = new Map(
       (
-        await db.vendor.findMany({
+        await tx.vendor.findMany({
           where: { id: { in: quotes.map((quote) => quote.vendorId) } },
           select: { id: true, ratingScore: true },
         })
@@ -217,7 +217,7 @@ export class SourcingService {
       }
     }
 
-    const config = await this.evaluationCriterion(requisition.costCenter)
+    const config = await this.evaluationCriterion(requisition.costCenter, tx)
     const ranked = [...quotes].sort((a, b) => {
       if ((a.totalMinor ?? Infinity) !== (b.totalMinor ?? Infinity)) {
         return (a.totalMinor ?? Infinity) - (b.totalMinor ?? Infinity)
@@ -262,19 +262,40 @@ export class SourcingService {
       )
     }
 
+    const now = new Date()
+    const quoteMap = new Map(quotes.map((q) => [q.id, q]))
+    const isExpired = (q: (typeof quotes)[number] | undefined) =>
+      Boolean(q?.validUntil && q.validUntil.getTime() < now.getTime())
+
+    const recommendedQuoteId =
+      config.criterion === 'bestValue'
+        ? (scores?.find((s) => !isExpired(quoteMap.get(s.quoteId)))?.quoteId ??
+          null)
+        : (ranked.find((q) => !isExpired(q))?.id ?? null)
+
     return {
       criterion: config.criterion ?? 'lowestCost',
       policyId: config.policyId ?? null,
       policyVersion: config.policyVersion ?? null,
       priceWeight: appliedPriceWeight,
-      recommendedQuoteId:
-        config.criterion === 'bestValue'
-          ? (scores?.[0]?.quoteId ?? null)
-          : (ranked[0]?.id ?? null),
+      recommendedQuoteId,
       ranking:
         config.criterion === 'bestValue'
-          ? (scores ?? []).map((s) => ({ quoteId: s.quoteId, score: s.score }))
-          : ranked.map((q) => ({ quoteId: q.id, score: null })),
+          ? (scores ?? []).map((s) => {
+              const q = quoteMap.get(s.quoteId)
+              return {
+                quoteId: s.quoteId,
+                score: s.score,
+                expired: isExpired(q),
+                validUntil: q?.validUntil ?? null,
+              }
+            })
+          : ranked.map((q) => ({
+              quoteId: q.id,
+              score: null,
+              expired: isExpired(q),
+              validUntil: q.validUntil,
+            })),
     }
   }
 
@@ -284,12 +305,20 @@ export class SourcingService {
     awardedBy: string,
     outerTx?: Prisma.TransactionClient,
   ) {
-    const quote = await this.detail(quoteId)
+    const quote = await this.detail(quoteId, outerTx ?? db)
     if (quote.totalMinor == null) {
       throw new BadRequestException('Quote has no recorded offer amount')
     }
+    if (quote.validUntil != null && quote.validUntil.getTime() < Date.now()) {
+      throw new ConflictException(
+        'Quote has commercially expired and cannot be awarded',
+      )
+    }
 
-    const requisition = await this.assertRequisition(quote.requisitionId)
+    const requisition = await this.assertRequisition(
+      quote.requisitionId,
+      outerTx ?? db,
+    )
     const requisitionCurrency = requisition.lines.length
       ? assertSingleCurrency(
           requisition.lines.map((line) => line.currencyCode),
@@ -319,6 +348,14 @@ export class SourcingService {
       if (current.status !== 'received') {
         throw new ConflictException(
           `Quote is ${current.status} — only received quotes can be awarded`,
+        )
+      }
+      if (
+        current.validUntil != null &&
+        current.validUntil.getTime() < Date.now()
+      ) {
+        throw new ConflictException(
+          'Quote has commercially expired and cannot be awarded',
         )
       }
       const alreadyAccepted = await tx.quote.count({
@@ -376,19 +413,22 @@ export class SourcingService {
   ) {
     return db.quote.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 500,
     })
   }
 
-  async detail(id: string) {
-    const quote = await db.quote.findUnique({ where: { id } })
+  async detail(id: string, tx: Prisma.TransactionClient = db) {
+    const quote = await tx.quote.findUnique({ where: { id } })
     if (!quote) throw new NotFoundException(`Quote ${id} not found`)
     return quote
   }
 
-  private async assertRequisition(requisitionId: string) {
-    const requisition = await db.requisition.findUnique({
+  private async assertRequisition(
+    requisitionId: string,
+    tx: Prisma.TransactionClient = db,
+  ) {
+    const requisition = await tx.requisition.findUnique({
       where: { id: requisitionId },
       include: { lines: true },
     })

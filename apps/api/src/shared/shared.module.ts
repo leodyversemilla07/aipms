@@ -4,12 +4,14 @@ import { AuditService } from './audit/audit.service'
 import { AutomationLeaseService } from './automation/automation-lease.service'
 import { DocumentNumberService } from './document-number/document-number.service'
 import { IdempotencyService } from './idempotency/idempotency.service'
+import { RetentionService } from './retention/retention.service'
 import { SigningService } from './signing/signing.service'
 
 @Module({
   providers: [
     AgentQuotaService,
     IdempotencyService,
+    RetentionService,
     AuditService,
     AutomationLeaseService,
     DocumentNumberService,
@@ -18,6 +20,7 @@ import { SigningService } from './signing/signing.service'
   exports: [
     AgentQuotaService,
     IdempotencyService,
+    RetentionService,
     AuditService,
     AutomationLeaseService,
     DocumentNumberService,

@@ -2,8 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
+import { PageControls } from "@/components/page-controls"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -47,11 +48,19 @@ export function PoList() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 25
 
   const pos = useQuery(
-    trpc.purchaseOrder.list.queryOptions({ q: "", page: 1, pageSize: 50 })
+    trpc.purchaseOrder.list.queryOptions({ q: "", page, pageSize: PAGE_SIZE })
   )
   const rows = (pos.data?.rows ?? []) as PoRow[]
+  const total = pos.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  useEffect(() => {
+    if (pos.data && page > totalPages) setPage(totalPages)
+  }, [pos.data, page, totalPages])
 
   const confirm = useMutation(trpc.purchaseOrder.confirm.mutationOptions())
   const cancel = useMutation(
@@ -69,7 +78,10 @@ export function PoList() {
         <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
           Purchase orders
         </h2>
-        <span className="text-muted-foreground text-xs">{rows.length}</span>
+        <span className="text-muted-foreground text-xs">
+          {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+          {Math.min(page * PAGE_SIZE, total)} of {total}
+        </span>
       </div>
 
       {rows.length === 0 ? (
@@ -109,6 +121,16 @@ export function PoList() {
           ))}
         </ul>
       )}
+
+      {totalPages > 1 ? (
+        <div className="mt-2 flex justify-start">
+          <PageControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }

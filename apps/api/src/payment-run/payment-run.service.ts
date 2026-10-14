@@ -515,14 +515,47 @@ export class PaymentRunService {
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
     })
-    const where = input.status ? { status: input.status } : {}
+    const where: Prisma.PaymentRunWhereInput = {}
+    if (input.status) where.status = input.status
+    if (input.q) {
+      where.OR = [
+        { runNumber: { contains: input.q, mode: 'insensitive' } },
+        { voidReason: { contains: input.q, mode: 'insensitive' } },
+      ]
+    }
     return db.paymentRun.findMany({
       where,
       skip,
       take,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: { lines: true },
     })
+  }
+
+  async page(input: Partial<ListInput> & { status?: PaymentRunStatus } = {}) {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
+    })
+    const where: Prisma.PaymentRunWhereInput = {}
+    if (input.status) where.status = input.status
+    if (input.q) {
+      where.OR = [
+        { runNumber: { contains: input.q, mode: 'insensitive' } },
+        { voidReason: { contains: input.q, mode: 'insensitive' } },
+      ]
+    }
+    const [rows, total] = await Promise.all([
+      db.paymentRun.findMany({
+        where,
+        skip,
+        take,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        include: { lines: true },
+      }),
+      db.paymentRun.count({ where }),
+    ])
+    return { rows, total }
   }
 
   async detail(runId: string) {

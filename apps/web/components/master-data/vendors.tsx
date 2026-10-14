@@ -9,7 +9,8 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { PageControls } from "@/components/page-controls"
 import { useTRPC } from "@/lib/trpc/client"
 
 type VendorRow = {
@@ -18,18 +19,28 @@ type VendorRow = {
   email: string | null
   taxId: string | null
   status: string
+  contactChannels: unknown
   bankAccountVerifiedAt: string | Date | null
   bankAccountChangedAt: string | Date | null
 }
 
+function getVerifiedEmails(channels: unknown): string[] {
+  if (!channels || typeof channels !== "object") return []
+  const obj = channels as { verifiedEmails?: unknown }
+  if (!Array.isArray(obj.verifiedEmails)) return []
+  return obj.verifiedEmails.filter((e): e is string => typeof e === "string")
+}
+
 /**
- * Vendor master — onboard suppliers, flip status, and verify the beneficiary
- * bank account that §8.6 payment runs pay into.
+ * Vendor master — onboard suppliers, flip status, manage verified contacts,
+ * and verify the beneficiary bank account that §8.6 payment runs pay into.
  */
 export function VendorsPanel() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
 
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 25
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [taxId, setTaxId] = useState("")
@@ -40,13 +51,25 @@ export function VendorsPanel() {
   const [accountNumber, setAccountNumber] = useState("")
   const [holder, setHolder] = useState("")
 
+  const [contactVendorId, setContactVendorId] = useState<string | null>(null)
+  const [contactEmail, setContactEmail] = useState("")
+  const [contactEvidence, setContactEvidence] = useState("")
+
   const list = useQuery(
-    trpc.vendor.list.queryOptions({ q: "", page: 1, pageSize: 50 })
+    trpc.vendor.list.queryOptions({ q: "", page, pageSize: PAGE_SIZE })
   )
   const rows = (list.data?.rows ?? []) as VendorRow[]
+  const total = list.data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  useEffect(() => {
+    if (list.data && page > totalPages) setPage(totalPages)
+  }, [list.data, page, totalPages])
 
   const create = useMutation(trpc.vendor.create.mutationOptions())
   const verify = useMutation(trpc.vendor.verifyBankAccount.mutationOptions())
+  const verifyContact = useMutation(trpc.vendor.verifyContact.mutationOptions())
+  const revokeContact = useMutation(trpc.vendor.revokeContact.mutationOptions())
 
   function refresh() {
     queryClient.invalidateQueries(trpc.vendor.pathFilter())
@@ -89,6 +112,43 @@ export function VendorsPanel() {
       setBank("")
       setAccountNumber("")
       setHolder("")
+      refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function doVerifyContact(vendorId: string) {
+    setNotice(null)
+    setError(null)
+    try {
+      await verifyContact.mutateAsync({
+        idempotencyKey: `web-contact-${crypto.randomUUID()}`,
+        vendorId,
+        email: contactEmail,
+        evidence: contactEvidence,
+      })
+      setNotice(`Contact ${contactEmail} verified successfully`)
+      setContactVendorId(null)
+      setContactEmail("")
+      setContactEvidence("")
+      refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function doRevokeContact(vendorId: string, email: string) {
+    setNotice(null)
+    setError(null)
+    try {
+      await revokeContact.mutateAsync({
+        idempotencyKey: `web-revoke-${crypto.randomUUID()}`,
+        vendorId,
+        email,
+        reason: "Revoked from vendor master cockpit",
+      })
+      setNotice(`Contact ${email} revoked`)
       refresh()
     } catch (e) {
       setError((e as Error).message)
@@ -157,11 +217,23 @@ export function VendorsPanel() {
         </p>
       ) : null}
 
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+          Suppliers
+        </h3>
+        <span className="text-muted-foreground text-xs">
+          {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+          {Math.min(page * PAGE_SIZE, total)} of {total}
+        </span>
+      </div>
+
       <ul className="flex flex-col gap-2">
         {rows.map((v) => {
           const needsBankVerification =
             !v.bankAccountVerifiedAt || Boolean(v.bankAccountChangedAt)
           const editingBank = bankVendorId === v.id
+          const verifiedContacts = getVerifiedEmails(v.contactChannels)
+          const editingContact = contactVendorId === v.id
           return (
             <li
               key={v.id}
@@ -201,6 +273,98 @@ export function VendorsPanel() {
                   ) : null}
                 </div>
               </div>
+
+              <div className="flex flex-col gap-1.5 border-t pt-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-muted-foreground">
+                    Verified messaging contacts ({verifiedContacts.length}):
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs"
+                    disabled={
+                      v.status === "blacklisted" || verifyContact.isPending
+                    }
+                    onClick={() => {
+                      setContactVendorId(editingContact ? null : v.id)
+                      setContactEmail(v.email ?? "")
+                      setContactEvidence("")
+                    }}
+                  >
+                    {editingContact ? "Cancel" : "+ Add contact"}
+                  </Button>
+                </div>
+                {verifiedContacts.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {verifiedContacts.map((cEmail) => (
+                      <span
+                        key={cEmail}
+                        className="inline-flex items-center gap-1 rounded bg-secondary px-2 py-0.5 font-mono text-xs"
+                      >
+                        {cEmail}
+                        <button
+                          type="button"
+                          className="ml-1 text-muted-foreground hover:text-destructive"
+                          title={`Revoke ${cEmail}`}
+                          disabled={revokeContact.isPending}
+                          onClick={() => doRevokeContact(v.id, cEmail)}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-xs italic">
+                    No verified contacts (outbound messaging blocked)
+                  </p>
+                )}
+              </div>
+
+              {editingContact ? (
+                <FieldGroup className="flex-row flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+                  <Field>
+                    <FieldLabel htmlFor={`contact-email-${v.id}`}>
+                      Email
+                    </FieldLabel>
+                    <Input
+                      id={`contact-email-${v.id}`}
+                      type="email"
+                      value={contactEmail}
+                      onChange={(e) => setContactEmail(e.target.value)}
+                      placeholder="ap@vendor.example"
+                      className="h-9 w-52"
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`contact-evidence-${v.id}`}>
+                      Verification evidence
+                    </FieldLabel>
+                    <Input
+                      id={`contact-evidence-${v.id}`}
+                      value={contactEvidence}
+                      onChange={(e) => setContactEvidence(e.target.value)}
+                      placeholder="Signed vendor master form"
+                      className="h-9 w-64"
+                    />
+                    <FieldDescription>
+                      At least 5 characters required.
+                    </FieldDescription>
+                  </Field>
+                  <Button
+                    size="sm"
+                    disabled={
+                      verifyContact.isPending ||
+                      !contactEmail.trim() ||
+                      contactEvidence.trim().length < 5
+                    }
+                    onClick={() => doVerifyContact(v.id)}
+                  >
+                    Verify contact
+                  </Button>
+                </FieldGroup>
+              ) : null}
 
               {editingBank ? (
                 <FieldGroup className="flex-row flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
@@ -260,6 +424,16 @@ export function VendorsPanel() {
           )
         })}
       </ul>
+
+      {totalPages > 1 ? (
+        <div className="mt-2 flex justify-start">
+          <PageControls
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }
