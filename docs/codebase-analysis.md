@@ -361,7 +361,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 
 - Bounded audit pages fix memory usage, not total scan cost or snapshot semantics. Capture a verification high-water sequence or use a consistent snapshot so concurrent appends do not extend the operation indefinitely.
 - A hash chain without an independently stored head/checkpoint cannot prove that the tail was not truncated or the entire history rewritten by a sufficiently privileged actor. Embedded-key PO verification proves cryptographic consistency with that key, not external signer trust or legally qualified status. Keep claims aligned with this threat model.
-- `scripts/restore.sh:83` ignores failure to stop writers with `|| true`. A failed stop must not silently proceed to destructive restoration; verify writers are stopped and abort otherwise.
+- `scripts/restore.sh:83` fails closed if stopping writers fails, preventing destructive database restoration from racing live application writers.
 - Docker runtime targets retain the full workspace/development dependencies and do not specify a non-root user. Reduce runtime contents and privileges while preserving required migration/runtime functionality.
 - Rate-limit and idempotency storage retention/cleanup policy implemented via `RetentionService` (addressing unbounded database growth) guarded by cross-replica lease locks (`AutomationLeaseService`), exposed via `analytics.retention` / `analytics.pruneRetention` tRPC procedures with audit tracking and web cockpit controls.
 - API integration isolation is good. The local browser suite reuses running servers and lacks the same explicit disposable-database guard; establish a similarly safe E2E contract.

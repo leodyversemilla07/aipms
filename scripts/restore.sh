@@ -80,7 +80,10 @@ VALIDATION_CREATED=0
 echo "[restore] archive validation passed"
 
 echo "[restore] stopping api + web + agent so nothing writes during restore"
-docker compose stop agent web api || true
+if ! docker compose stop agent web api; then
+  echo "[restore] ERROR: failed to stop application writers; aborting restore to prevent corruption" >&2
+  exit 1
+fi
 
 # End any straggling sessions after stopping the application writers. This
 # prevents a stale connection from racing the destructive --clean statements.
