@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common'
 import type { ErpConnectionModel as ErpConnection } from '@workspace/db'
 import { db } from '@workspace/db'
+import { withDeadline } from './fetch-with-deadline'
 import {
   buildAuthorizeUrl,
   buildJournalEntry,
@@ -65,7 +66,8 @@ export class QboService {
    * (@Optional on an unresolvable token) and we fall back to global fetch.
    */
   constructor(@Optional() fetchImpl?: FetchLike) {
-    this.fetchImpl = fetchImpl ?? ((url, init) => fetch(url, init))
+    const raw = fetchImpl ?? ((url, init) => fetch(url, init))
+    this.fetchImpl = withDeadline(raw)
   }
 
   get config(): QboConfig {

@@ -12,9 +12,16 @@
  * the API boundary unconverted.
  */
 
+import { withDeadline } from './fetch-with-deadline'
+
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body?: string },
+  init: {
+    method: string
+    headers: Record<string, string>
+    body?: string
+    signal?: AbortSignal
+  },
 ) => Promise<{
   ok: boolean
   status: number
@@ -96,7 +103,8 @@ async function postForm(
   config: QboConfig,
   body: URLSearchParams,
 ): Promise<TokenResponse> {
-  const res = await fetchImpl(TOKEN_URL, {
+  const fetcher = withDeadline(fetchImpl)
+  const res = await fetcher(TOKEN_URL, {
     method: 'POST',
     headers: {
       authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`,
@@ -231,7 +239,8 @@ export async function listAccounts(
   accessToken: string,
   fetchImpl: FetchLike,
 ): Promise<{ id: string; name: string; type: string }[]> {
-  const res = await fetchImpl(
+  const fetcher = withDeadline(fetchImpl)
+  const res = await fetcher(
     `${apiBase(config)}/v3/company/${realmId}/query?query=${encodeURIComponent(
       'select * from Account where Active = true maxresults 500',
     )}`,
@@ -259,7 +268,8 @@ export async function createJournalEntry(
   payload: QboJournalEntryPayload,
   fetchImpl: FetchLike,
 ): Promise<{ id: string }> {
-  const res = await fetchImpl(
+  const fetcher = withDeadline(fetchImpl)
+  const res = await fetcher(
     `${apiBase(config)}/v3/company/${realmId}/journalentry?minorversion=65`,
     {
       method: 'POST',

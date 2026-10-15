@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { fetchWithDeadline } from "../lib/http-client"
 import { agentAuthorizationToken, getApiConfig } from "../lib/trpc-client"
 
 /**
@@ -20,7 +21,7 @@ export default defineTool({
   async execute({ limit }, ctx) {
     const { apiUrl } = getApiConfig()
     const token = await agentAuthorizationToken()
-    const res = await fetch(`${apiUrl}/api/service/agent/batch`, {
+    const res = await fetchWithDeadline(`${apiUrl}/api/service/agent/batch`, {
       method: "POST",
       headers: {
         "content-type": "application/json",

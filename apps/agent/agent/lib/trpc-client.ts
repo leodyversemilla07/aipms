@@ -7,6 +7,8 @@
  *   - mutations: POST /api/trpc/<router>.<procedure> with the JSON input as body
  */
 
+import { fetchWithDeadline } from "./http-client"
+
 export function getApiConfig() {
   const apiUrl = process.env.AIPMS_API_URL ?? "http://localhost:3001"
   const token = process.env.AIPMS_SERVICE_TOKEN
@@ -31,7 +33,7 @@ export async function agentAuthorizationToken() {
   if (cachedAccess && cachedAccess.expiresAt - 30_000 > now) {
     return cachedAccess.token
   }
-  const res = await fetch(`${apiUrl}/api/service/agent/token`, {
+  const res = await fetchWithDeadline(`${apiUrl}/api/service/agent/token`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -71,7 +73,7 @@ export async function trpcQuery<T = unknown>(
   const token = await agentAuthorizationToken()
   const url = new URL(`${apiUrl}/api/trpc/${router}.${procedure}`)
   url.searchParams.set("input", JSON.stringify(input))
-  const res = await fetch(url.toString(), {
+  const res = await fetchWithDeadline(url.toString(), {
     headers: { authorization: `Bearer ${token}` },
   })
   if (!res.ok) {
@@ -93,14 +95,17 @@ export async function trpcMutate<T = unknown>(
 ): Promise<T> {
   const { apiUrl } = getApiConfig()
   const token = await agentAuthorizationToken()
-  const res = await fetch(`${apiUrl}/api/trpc/${router}.${procedure}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(input),
-  })
+  const res = await fetchWithDeadline(
+    `${apiUrl}/api/trpc/${router}.${procedure}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(input),
+    }
+  )
   if (!res.ok) {
     const text = await res.text()
     throw new Error(
