@@ -457,6 +457,59 @@ describe('MessagingService (§8.3 relay)', () => {
     expect(all.total).toBeGreaterThanOrEqual(queuedOnly.total)
   })
 
+  it('lists stale sending claims and reconciles them with provider evidence', async () => {
+    const svc = makeService(transport)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      subject: `Stale sending ${suffix}`,
+      body: 'Human-approved terms.',
+    })
+    const staged = message as { id: string }
+    messageIds.push(staged.id)
+    const staleBefore = new Date(Date.now() - 20 * 60 * 1000)
+    await db.message.update({
+      where: { id: staged.id },
+      data: { status: 'sending', dispatchStartedAt: staleBefore },
+    })
+
+    const staleOnly = await svc.list({ staleSendingOnly: true })
+    expect(staleOnly.rows.map((row) => row.id)).toContain(staged.id)
+
+    const reconciled = (await svc.resolveFailedDelivery({
+      id: staged.id,
+      resolverId: 'finance-checker-stale',
+      outcome: 'confirmed_sent',
+      evidence: 'Provider log confirms acceptance before worker crash',
+    })) as { status: string }
+    expect(reconciled.status).toBe('sent')
+  })
+
+  it('refuses to reconcile fresh in-flight sending claims', async () => {
+    const svc = makeService(transport)
+    const { message } = await svc.submit({
+      vendorId: activeVendorId,
+      recipient,
+      subject: `Fresh sending ${suffix}`,
+      body: 'Human-approved terms.',
+    })
+    const staged = message as { id: string }
+    messageIds.push(staged.id)
+    await db.message.update({
+      where: { id: staged.id },
+      data: { status: 'sending', dispatchStartedAt: new Date() },
+    })
+
+    await expect(
+      svc.resolveFailedDelivery({
+        id: staged.id,
+        resolverId: 'finance-checker-fresh',
+        outcome: 'confirmed_not_sent',
+        evidence: 'Too early — worker may still deliver',
+      }),
+    ).rejects.toThrow(/actively in-flight/)
+  })
+
   it('exposes the transport through the DI token seam', () => {
     const svc = makeService(transport)
     expect(MESSAGE_TRANSPORT.description).toBe('MESSAGE_TRANSPORT')

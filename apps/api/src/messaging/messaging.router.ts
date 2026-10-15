@@ -73,6 +73,7 @@ const listInputWithFilters = listInput.extend({
     .enum(['queued', 'approved', 'sending', 'rejected', 'sent', 'failed'])
     .optional(),
   tier: z.enum(['auto', 'gated']).optional(),
+  staleSendingOnly: z.boolean().optional(),
 })
 
 const idInput = z.object({ id: z.string().min(1) })

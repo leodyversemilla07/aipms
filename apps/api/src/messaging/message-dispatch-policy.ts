@@ -35,3 +35,13 @@ export function stagedMessageWhere(): Prisma.MessageWhereInput {
     ],
   }
 }
+
+/** True when an in-flight sending claim has exceeded the stale-claim lease window. */
+export function isStaleSendingMessage(
+  message: { status: string; dispatchStartedAt: Date | null },
+  now = Date.now(),
+): boolean {
+  if (message.status !== 'sending') return false
+  if (!message.dispatchStartedAt) return true
+  return message.dispatchStartedAt.getTime() <= now - EXTERNAL_DISPATCH_STALE_MS
+}

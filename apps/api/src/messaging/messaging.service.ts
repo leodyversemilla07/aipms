@@ -18,7 +18,11 @@ import {
   assertAutoTemplateContent,
   resolveAutoTemplate,
 } from './auto-template'
-import { stagedMessageWhere } from './message-dispatch-policy'
+import {
+  EXTERNAL_DISPATCH_STALE_MS,
+  isStaleSendingMessage,
+  stagedMessageWhere,
+} from './message-dispatch-policy'
 
 export type { AutoTemplateId, AutoTemplateParams } from './auto-template'
 export { AUTO_TEMPLATES, renderAutoTemplate } from './auto-template'
@@ -155,22 +159,33 @@ export class MessagingService {
     input: Partial<ListInput> & {
       status?: MessageStatus
       tier?: MessageTier
+      staleSendingOnly?: boolean
     } = {},
   ): Promise<ListResult<MessageListRow>> {
     const { skip, take } = paginate({
       page: input.page ?? 1,
       pageSize: input.pageSize ?? 25,
     })
-    const where = {
+    const staleBefore = new Date(Date.now() - EXTERNAL_DISPATCH_STALE_MS)
+    const where: Prisma.MessageWhereInput = {
       ...(input.status ? { status: input.status } : {}),
       ...(input.tier ? { tier: input.tier } : {}),
+      ...(input.staleSendingOnly
+        ? {
+            status: 'sending',
+            OR: [
+              { dispatchStartedAt: { lt: staleBefore } },
+              { dispatchStartedAt: null },
+            ],
+          }
+        : {}),
     }
     return Promise.all([
       db.message.findMany({
         where,
         skip,
         take,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       }),
       db.message.count({ where }),
     ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
@@ -417,9 +432,16 @@ export class MessagingService {
     `
     const message = await tx.message.findUnique({ where: { id: input.id } })
     if (!message) throw new NotFoundException(`Message ${input.id} not found`)
-    if (message.status !== 'failed') {
+    const isFailed = message.status === 'failed'
+    const isStaleSending = isStaleSendingMessage(message)
+    if (!isFailed && !isStaleSending) {
+      if (message.status === 'sending') {
+        throw new ConflictException(
+          `Message ${input.id} is actively in-flight; only stale sending messages (>15m) may be reconciled`,
+        )
+      }
       throw new ConflictException(
-        `Message ${input.id} is no longer failed — reload before recovery`,
+        `Message ${input.id} is ${message.status} — only failed or stale sending messages may be reconciled`,
       )
     }
     if (message.approvedBy === input.resolverId) {
@@ -446,7 +468,7 @@ export class MessagingService {
         : { sentAt: resolvedAt }),
     }
     const changed = await tx.message.updateMany({
-      where: { id: message.id, status: 'failed' },
+      where: { id: message.id, status: message.status },
       data: recoveryUpdate,
     })
     if (changed.count !== 1) {

@@ -72,6 +72,7 @@ type FailedMessage = {
   id: string
   recipient: string
   subject: string
+  status: string
   tier: string
   failedReason: string | null
   dispatchStartedAt: string | Date | null
@@ -117,6 +118,27 @@ function RecoveryConsole() {
     })
   )
   const failedRows = (failedMessages.data?.rows ?? []) as FailedMessage[]
+  const staleMessages = useQuery(
+    trpc.messaging.list.queryOptions({
+      q: "",
+      page: 1,
+      pageSize: 50,
+      staleSendingOnly: true,
+    })
+  )
+  const staleRowsList = (staleMessages.data?.rows ?? []) as FailedMessage[]
+  const allRecoverableMessages = [
+    ...failedRows,
+    ...staleRowsList.filter((s) => !failedRows.some((f) => f.id === s.id)),
+  ]
+  const recoverableTotal =
+    (failedMessages.data?.total ?? failedRows.length) +
+    (staleMessages.data?.total ?? staleRowsList.length)
+  const recoverableEmpty =
+    !failedMessages.isPending &&
+    !staleMessages.isPending &&
+    (failedMessages.data?.total ?? 0) === 0 &&
+    (staleMessages.data?.total ?? 0) === 0
   const requeue = useMutation(
     trpc.events.requeue.mutationOptions({
       onSuccess: () => {
@@ -189,6 +211,7 @@ function RecoveryConsole() {
     ["Stale relay claims", summary.data?.staleRelayClaims],
     ["Stale agent runs", summary.data?.staleAgentRuns],
     ["Failed messages", summary.data?.failedMessages],
+    ["Stale sending", summary.data?.staleSendingMessages],
     ["Ambiguous QBO", summary.data?.ambiguousErpDispatches],
   ] as const
 
@@ -229,7 +252,8 @@ function RecoveryConsole() {
       {summary.isError ||
       deadLetters.isError ||
       staleRuns.isError ||
-      failedMessages.isError ? (
+      failedMessages.isError ||
+      staleMessages.isError ? (
         <Alert variant="destructive">
           <AlertTitle>Recovery data unavailable</AlertTitle>
           <AlertDescription>
@@ -239,7 +263,7 @@ function RecoveryConsole() {
         </Alert>
       ) : null}
 
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {stats.map(([label, value]) => (
           <Card key={label} size="sm">
             <CardHeader>
@@ -382,36 +406,43 @@ function RecoveryConsole() {
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Failed vendor messages</h2>
+            <h2 className="font-semibold">Failed & stale vendor messages</h2>
             <p className="text-muted-foreground text-sm">
               Reconcile with the transport provider before closing or retrying
               an ambiguous delivery. Automatic retries are prohibited.
             </p>
           </div>
-          <Badge variant={failedRows.length > 0 ? "destructive" : "secondary"}>
-            {failedMessages.data?.total ?? "…"}
+          <Badge variant={recoverableTotal > 0 ? "destructive" : "secondary"}>
+            {failedMessages.isPending && staleMessages.isPending
+              ? "…"
+              : recoverableTotal}
           </Badge>
         </div>
 
-        {!failedMessages.isPending && failedRows.length === 0 ? (
+        {recoverableEmpty ? (
           <Empty className="border">
             <EmptyHeader>
-              <EmptyTitle>No failed messages</EmptyTitle>
+              <EmptyTitle>No failed or stale messages</EmptyTitle>
               <EmptyDescription>
-                The outbound relay has no failures requiring reconciliation.
+                The outbound relay has no failures or ambiguous sending claims
+                requiring reconciliation.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
           <ul className="flex flex-col gap-2">
-            {failedRows.map((message) => (
+            {allRecoverableMessages.map((message) => (
               <li
                 key={message.id}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 text-sm"
               >
                 <div className="flex max-w-2xl flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="destructive">failed</Badge>
+                    <Badge variant="destructive">
+                      {message.status === "sending"
+                        ? "stale sending"
+                        : "failed"}
+                    </Badge>
                     <span className="font-medium">{message.subject}</span>
                   </div>
                   <span className="text-muted-foreground text-xs">
@@ -421,7 +452,10 @@ function RecoveryConsole() {
                       : "time unavailable"}
                   </span>
                   <span className="break-words text-xs">
-                    {message.failedReason ?? "No transport error detail"}
+                    {message.failedReason ??
+                      (message.status === "sending"
+                        ? "In-flight sending claim exceeded 15m timeout; requires provider outcome review"
+                        : "No transport error detail")}
                   </span>
                 </div>
                 <Button

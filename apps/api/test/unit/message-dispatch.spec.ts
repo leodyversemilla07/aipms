@@ -254,4 +254,101 @@ describe('durable message claim boundaries (injected clients)', () => {
     })
     expect(f.message.dispatchStartedAt).toBeInstanceOf(Date)
   })
+
+  it('reconciles a stale sending message with confirmed_sent', async () => {
+    const twentyMinsAgo = new Date(Date.now() - 20 * 60 * 1000)
+    const f = fixture({
+      status: 'sending',
+      dispatchStartedAt: twentyMinsAgo,
+    })
+    await f.service.resolveFailedDelivery(
+      {
+        id: 'message-1',
+        resolverId: 'finance-checker',
+        outcome: 'confirmed_sent',
+        evidence: 'SMTP server logs confirmed message accepted and delivered',
+      },
+      f.client,
+    )
+    expect(f.message).toMatchObject({
+      status: 'sent',
+      deliveryResolution: 'confirmed_sent',
+      deliveryResolvedBy: 'finance-checker',
+    })
+    expect(f.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'message.sent',
+        entityId: 'message-1',
+        payload: expect.objectContaining({ deliveryRecovery: true }),
+      }),
+      f.client,
+    )
+  })
+
+  it('reconciles a stale sending message with confirmed_not_sent and permits safe redispatch', async () => {
+    const twentyMinsAgo = new Date(Date.now() - 20 * 60 * 1000)
+    const f = fixture({
+      status: 'sending',
+      dispatchStartedAt: twentyMinsAgo,
+    })
+    await f.service.resolveFailedDelivery(
+      {
+        id: 'message-1',
+        resolverId: 'finance-checker',
+        outcome: 'confirmed_not_sent',
+        evidence:
+          'Transport provider confirmed socket dropped before HELO handshake',
+      },
+      f.client,
+    )
+    expect(f.message).toMatchObject({
+      status: 'queued',
+      dispatchStartedAt: null,
+      deliveryResolution: 'confirmed_not_sent',
+      deliveryResolvedBy: 'finance-checker',
+    })
+    // Safe to dispatch now
+    await f.service.dispatchIfQueued('message-1', f.client)
+    expect(f.send).toHaveBeenCalledTimes(1)
+    expect(f.message.status).toBe('sent')
+  })
+
+  it('refuses to reconcile an in-flight fresh sending message', async () => {
+    const oneMinAgo = new Date(Date.now() - 60 * 1000)
+    const f = fixture({
+      status: 'sending',
+      dispatchStartedAt: oneMinAgo,
+    })
+    await expect(
+      f.service.resolveFailedDelivery(
+        {
+          id: 'message-1',
+          resolverId: 'finance-checker',
+          outcome: 'confirmed_not_sent',
+          evidence: 'test evidence',
+        },
+        f.client,
+      ),
+    ).rejects.toThrow(/actively in-flight/)
+  })
+
+  it('enforces segregation of duties (approver cannot resolve delivery outcome)', async () => {
+    const twentyMinsAgo = new Date(Date.now() - 20 * 60 * 1000)
+    const f = fixture({
+      status: 'sending',
+      dispatchStartedAt: twentyMinsAgo,
+      approvedBy: 'approver-alice',
+    })
+    await expect(
+      f.service.resolveFailedDelivery(
+        {
+          id: 'message-1',
+          resolverId: 'approver-alice',
+          outcome: 'confirmed_sent',
+          evidence: 'test evidence',
+        },
+        f.client,
+      ),
+    ).rejects.toThrow(/approver cannot resolve/)
+  })
 })

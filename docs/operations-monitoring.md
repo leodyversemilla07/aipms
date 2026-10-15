@@ -75,7 +75,7 @@ interval.
 | Stale agent runs | `staleAgentRuns > 0` for 5 minutes | Automation operations | Verify worker and lease ownership, then use audited cancellation. |
 | Failed messages | `failedMessages > 0` | Procurement/finance operations | Reconcile with the provider; retry only after confirmed non-delivery. |
 | Stranded staged messages | `staleStagedMessages > 0` | Procurement/finance operations | Check the dispatcher and retained eligibility/integrity errors; do not reset prior dispatch state. |
-| Stale sending messages | `staleSendingMessages > 0` | Procurement/finance operations | Quiesce the sender and investigate provider outcome; no automatic retry or manual status reset. |
+| Stale sending messages | `staleSendingMessages > 0` | Procurement/finance operations | Quiesce the sender, verify provider outcome, then use audited `messaging.resolveFailed`; no automatic retry or manual status reset. |
 | Ambiguous ERP dispatches | `ambiguousErpDispatches > 0` | Finance, high priority | Independently verify QBO outcome before resolving. Never automatically repost. |
 | Monitoring endpoint | 401, 503, timeout, or stale `checkedAt` | Platform | Verify credential injection and API/database availability. |
 
@@ -87,7 +87,7 @@ Staged messages become stale after 15 minutes without updates. Sending/QBO
 claims become stale after 15 minutes; missing claim timestamps are also
 exceptions. QBO failures count immediately, including otherwise recent claims.
 See [durable outbound dispatch recovery](message-dispatch-recovery.md) for exact
-eligibility rules and the still-open stale-sending resolution workflow. Deploy
+eligibility rules and the stale-sending reconciliation workflow. Deploy
 the API and scheduled probe together; missing new gauges fail closed.
 
 ## Infrastructure-owned alerts

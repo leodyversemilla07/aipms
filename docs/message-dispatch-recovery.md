@@ -48,11 +48,14 @@ resolver different from a gated message's approver. Confirmed delivery closes
 the row without another send. Confirmed non-delivery stages one new eligible
 claim, which either the caller or background dispatcher can release.
 
-A supported stale-`sending` resolution workflow remains **open**. Do not reset
-its status/timestamp manually. Quiescing the prior sender, provider evidence,
-attempt identity/fencing, independent resolution, and audit/idempotency must be
-designed together before exposing that command. Merely fencing database writes
-would not stop an old worker from completing external delivery.
+Stale-`sending` rows (claim older than 15 minutes, or missing claim time) use
+the same finance-only `messaging.resolveFailed` command with provider evidence:
+fresh in-flight `sending` rows are refused, while stale claims accept
+`confirmed_sent` (close without resend) or `confirmed_not_sent` (stage one new
+eligible claim). Do not reset status/timestamp manually. Quiesce the prior
+sender before reconciling: fencing database writes alone cannot stop an old
+worker that already passed the claim boundary from completing external
+delivery.
 
 ## Monitoring
 
@@ -70,9 +73,9 @@ The authenticated operations endpoint now includes:
 Monitoring never mutates these rows. The fail-closed scheduled operations probe
 checks both new message gauges with zero default thresholds. Deploy API and
 probe together: an older API missing the gauges fails the new probe rather than
-appearing healthy. The recovery desk's current failed-message action still
-does not resolve `sending`; authorized operators can inspect those rows using
-the additive `messaging.list` status filter.
+appearing healthy. The recovery desk lists failed rows plus stale `sending`
+claims via the additive `messaging.list` `staleSendingOnly` filter and resolves
+both through the same evidence-bearing delivery reconciliation.
 
 ## Regression evidence and limits
 
@@ -88,6 +91,5 @@ They use injected transport receipts (no external delivery). CI runs them
 against its disposable `*_test` database; local execution must satisfy the same
 unchanged database guard.
 
-Remaining work includes evidence-based stale-sending resolution, server-owned
-canonical template parameters, transport-wide deadlines, provider/operator
+Remaining work includes transport-wide deadlines, provider/operator
 reconciliation, and real deployment/provider validation.

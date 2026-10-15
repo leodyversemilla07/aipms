@@ -353,6 +353,7 @@ const appRouter = t.router({
     .enum(['queued', 'approved', 'sending', 'rejected', 'sent', 'failed'])
     .optional(),
   tier: z.enum(['auto', 'gated']).optional(),
+  staleSendingOnly: z.boolean().optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<MessagingRouter["list"]>>),
     detail: publicProcedure
