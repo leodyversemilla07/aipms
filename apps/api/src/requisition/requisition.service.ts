@@ -17,7 +17,7 @@ import {
   assertSingleCurrency,
   normalizeCurrencyCode,
 } from '../shared/money/minor-units'
-import { paginate } from '../trpc/list-input'
+import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
 export interface CreateRequisitionLineInput {
   sku?: string | null
@@ -202,19 +202,64 @@ export class RequisitionService {
     throw new ConflictException('Could not allocate a request number')
   }
 
-  /** The exception queue (§10.2): blocked requisitions and open gates. */
-  async exceptionQueue() {
-    const requisitions = await db.requisition.findMany({
-      where: { status: 'exception' },
-      include: { lines: true, approvals: true },
-      orderBy: { createdAt: 'asc' },
+  /**
+   * The exception queue (§10.2): blocked requisitions and open gates.
+   * Both sections are count-backed, bounded pages with stable ordering.
+   */
+  async exceptionQueue(
+    input: Partial<Pick<ListInput, 'page' | 'pageSize'>> = {},
+  ): Promise<{
+    requisitions: ListResult<
+      Prisma.RequisitionGetPayload<{
+        include: { lines: true; approvals: true }
+      }>
+    >
+    pendingApprovals: ListResult<
+      Prisma.ApprovalGetPayload<{
+        include: { requisition: { include: { lines: true } } }
+      }>
+    >
+  }> {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
     })
-    const pendingApprovals = await db.approval.findMany({
-      where: { status: 'pending', requisitionId: { not: null } },
-      include: { requisition: { include: { lines: true } } },
-      orderBy: { createdAt: 'asc' },
-    })
-    return { requisitions, pendingApprovals }
+    const requisitionWhere = { status: 'exception' } as const
+    const approvalWhere = {
+      status: 'pending',
+      requisitionId: { not: null },
+    } as const
+    const [requisitions, requisitionTotal, pendingApprovals, approvalTotal] =
+      await Promise.all([
+        db.requisition.findMany({
+          where: requisitionWhere,
+          include: { lines: true, approvals: true },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          skip,
+          take,
+        }),
+        db.requisition.count({ where: requisitionWhere }),
+        db.approval.findMany({
+          where: approvalWhere,
+          include: { requisition: { include: { lines: true } } },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          skip,
+          take,
+        }),
+        db.approval.count({ where: approvalWhere }),
+      ])
+    return {
+      requisitions: {
+        rows: requisitions,
+        total: requisitionTotal,
+        facetCounts: {},
+      },
+      pendingApprovals: {
+        rows: pendingApprovals,
+        total: approvalTotal,
+        facetCounts: {},
+      },
+    }
   }
 
   /**

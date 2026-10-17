@@ -69,7 +69,7 @@ function Dashboard() {
     role === "procurement" || role === "finance" || role === "admin"
   const isFinance = role === "finance" || role === "admin"
   const pending = useQuery({
-    ...trpc.approval.pendingList.queryOptions(),
+    ...trpc.approval.pendingList.queryOptions({ q: "", page: 1, pageSize: 8 }),
     enabled: isSupervisor,
   })
   const requisitions = useQuery(
@@ -115,9 +115,9 @@ function Dashboard() {
             >
               Needs attention
             </h2>
-            {pending.data && pending.data.length > 0 ? (
+            {pending.data && pending.data.total > 0 ? (
               <Badge variant="destructive">
-                {pending.data.length} awaiting review
+                {pending.data.total} awaiting review
               </Badge>
             ) : null}
             <span className="text-muted-foreground text-sm">
@@ -127,7 +127,7 @@ function Dashboard() {
           <div className="grid gap-3 sm:grid-cols-3">
             <OverviewCard
               title="Pending approvals"
-              count={pending.data?.length}
+              count={pending.data?.total}
               description="Decisions awaiting a human"
               href="#exception-queue"
               linkLabel="Review queue"

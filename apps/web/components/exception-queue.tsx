@@ -86,7 +86,9 @@ export function ExceptionQueue() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const [review, setReview] = useState<QueueApprovalRow | null>(null)
-  const pending = useQuery(trpc.approval.pendingList.queryOptions())
+  const pending = useQuery(
+    trpc.approval.pendingList.queryOptions({ q: "", page: 1, pageSize: 50 })
+  )
   const decide = useMutation(
     trpc.approval.decide.mutationOptions({
       onSuccess: () => {
@@ -96,7 +98,7 @@ export function ExceptionQueue() {
       },
     })
   )
-  const pendingRows = pending.data as ApprovalOutput[] | undefined
+  const pendingRows = pending.data?.rows as ApprovalOutput[] | undefined
   const rows: QueueApprovalRow[] = (pendingRows ?? []).map(normalizeApproval)
 
   function submit(verdict: "approve" | "reject") {
@@ -118,7 +120,7 @@ export function ExceptionQueue() {
           Approval queue
         </h3>
         {pending.data ? (
-          <Badge variant="outline">{rows.length} pending</Badge>
+          <Badge variant="outline">{pending.data.total} pending</Badge>
         ) : null}
       </div>
       {pending.isPending ? (

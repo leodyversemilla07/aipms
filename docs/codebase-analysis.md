@@ -125,6 +125,18 @@ Verified vendor contact enrollment follow-up:
 - Added Next.js web cockpit management controls in `VendorsPanel` for adding, viewing, and revoking verified contacts.
 - Unit test suite `apps/api/test/unit/vendor-contact.spec.ts` covers email normalization, evidence validation, role authorization, agent rejection, revocation, and blacklisting invalidation without database dependencies (15 test files / 255 tests passed in the unit lane).
 
+Exception queue bounding follow-up:
+
+- `approval.pendingList` and `requisition.exceptionQueue` accept the shared
+  `listInput` and return count-backed `ListResult` sections with stable
+  `[{ createdAt: 'asc' }, { id: 'asc' }]` ordering, removing the last unbounded
+  exception read (previously capped at 100 submissions with no count, and a
+  fully unbounded queue on the agent-reachable surface).
+- Cockpit and approval-queue badges now show the full pending total instead of
+  a capped row count; test call sites read `rows` from the new shape.
+- Remaining broad reads: policy history, run traces, certificate details, and
+  IMAP vendor loading.
+
 ## Executive assessment
 
 **The architecture is worth preserving, but the current revision is not ready for production financial operations.** At the reviewed baseline, release blockers included a reproducible workspace typecheck failure, an agent data-projection bypass, and cancellation paths that are not coordinated with invoice eligibility and budget settlement. Additional risks concentrate around concurrency, dispatch recovery, and effective configuration.
@@ -354,7 +366,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 
 - Payment-run and matched-invoice selectors, Intake Queue, Master Data (Vendors), and PO list wired with `PageControls`, count-backed pages (`page` query procedures), search filters, and range counters, ensuring older records remain fully accessible across desks.
 - List sorting and queries across Intake, Payment Runs, Audit Trail, Sourcing, Vendors, and POs enforce stable deterministic ordering with primary sort + ID / sequence tie-breakers (`[{ receivedAt: 'desc' }, { id: 'desc' }]`, `[{ at: 'desc' }, { seq: 'desc' }]`, etc.).
-- Remaining broad reads include the requisition exception queue, policy history, run traces, certificate details, and IMAP vendor loading. Prioritize aggregation, bounded queries, and asynchronous exports where complete data is needed.
+- Remaining broad reads are policy history, run traces, certificate details, and IMAP vendor loading. Prioritize aggregation, bounded queries, and asynchronous exports where complete data is needed.
 - Add indexes matching query patterns, particularly PO requisition lookup and status/date ordering. Validate with representative query plans instead of assuming single-column indexes suffice.
 - Standardize error/empty/pending states and replace hand-maintained response assertions with shared/inferred DTOs where practical.
 - Production CSP still allows inline scripts. A nonce/hash-based policy could improve XSS defense, but needs correct Next.js rendering/caching integration; do not simply remove the directive and break the app.

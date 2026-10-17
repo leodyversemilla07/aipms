@@ -83,6 +83,7 @@ const appRouter = t.router({
     }),
   approval: t.router({
     pendingList: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<ApprovalRouter["pendingList"]>>),
     detail: publicProcedure
       .input(z.object({ id: z.string().min(1) }))
@@ -576,6 +577,7 @@ const appRouter = t.router({
       .input(z.object({ id: z.string().min(1) }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["detail"]>>),
     exceptionQueue: publicProcedure
+      .input(listInput)
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<RequisitionRouter["exceptionQueue"]>>),
     create: publicProcedure
       .input(z.object({

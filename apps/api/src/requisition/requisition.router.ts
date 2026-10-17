@@ -81,9 +81,9 @@ export class RequisitionRouter {
     )
   }
 
-  @Query()
-  async exceptionQueue() {
-    return this.requisition.exceptionQueue()
+  @Query({ input: listInput })
+  async exceptionQueue(@Input() input: z.infer<typeof listInput>) {
+    return this.requisition.exceptionQueue(input)
   }
 
   @Mutation({ input: createRequisitionInput })

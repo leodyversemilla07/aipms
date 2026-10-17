@@ -12,6 +12,8 @@ import {
   assertDatabaseInt,
   normalizeCurrencyCode,
 } from '../shared/money/minor-units'
+import type { ListInput, ListResult } from '../trpc/list-input'
+import { paginate } from '../trpc/list-input'
 
 export type DecideVerdict = 'approve' | 'reject' | 'override'
 
@@ -35,15 +37,33 @@ export class ApprovalService {
     private readonly events: EventEmitterService,
     private readonly invoice: InvoiceService,
   ) {}
-  async pendingList() {
-    return db.approval.findMany({
-      where: { status: 'pending' },
-      include: {
-        requisition: { include: { lines: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
+  /** Count-backed pending gate queue; always read with a bounded page. */
+  async pendingList(
+    input: Partial<Pick<ListInput, 'page' | 'pageSize'>> = {},
+  ): Promise<
+    ListResult<
+      Prisma.ApprovalGetPayload<{
+        include: { requisition: { include: { lines: true } } }
+      }>
+    >
+  > {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
     })
+    const where = { status: 'pending' } as const
+    return Promise.all([
+      db.approval.findMany({
+        where,
+        include: {
+          requisition: { include: { lines: true } },
+        },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        skip,
+        take,
+      }),
+      db.approval.count({ where }),
+    ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
   async detail(id: string) {

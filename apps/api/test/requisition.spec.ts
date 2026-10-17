@@ -187,11 +187,20 @@ describe('Threshold gate (human approval)', () => {
     expect(submitted.requisition.status).toBe('submitted')
 
     const pending = await approvalService.pendingList()
-    const gate = pending.find((a) => a.requisitionId === req.id)
+    const gate = pending.rows.find((a) => a.requisitionId === req.id)
     expect(gate).toBeDefined()
     expect(gate?.kind).toBe('threshold')
     if (!gate) throw new Error('expected a pending threshold approval')
     created.approval.push(gate.id)
+
+    // Count-backed contract: a one-row page still reports the full total.
+    expect(pending.total).toBeGreaterThanOrEqual(1)
+    const bounded = await approvalService.pendingList({
+      page: 1,
+      pageSize: 1,
+    })
+    expect(bounded.rows).toHaveLength(1)
+    expect(bounded.total).toBe(pending.total)
 
     await expect(
       approvalService.decide(gate.id, 'approve', actorId, 'self approval'),
@@ -218,7 +227,7 @@ describe('Budget override gate', () => {
     expect(submitted.decision.outcome).toBe('NEED_APPROVAL')
     expect(submitted.decision.gateKind).toBe('budgetOverride')
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id,
     )
     expect(gate?.kind).toBe('budgetOverride')

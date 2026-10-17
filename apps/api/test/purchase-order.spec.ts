@@ -293,7 +293,7 @@ describe('Vendor gate at PO issue', () => {
     )
     expect(first.outcome).toBe('NEED_APPROVAL')
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id && a.kind === 'vendorGate',
     )
     expect(gate?.vendorId).toBe(vendor.id)

@@ -11,6 +11,7 @@ import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { ApprovalService } from './approval.service'
 
@@ -43,9 +44,9 @@ export class ApprovalRouter {
     @Inject(AuditService) private readonly audit: AuditService,
   ) {}
 
-  @Query()
-  async pendingList() {
-    return this.approval.pendingList()
+  @Query({ input: listInput })
+  async pendingList(@Input() input: z.infer<typeof listInput>) {
+    return this.approval.pendingList(input)
   }
 
   @Query({ input: idInput })
