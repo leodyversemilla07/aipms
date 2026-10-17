@@ -170,7 +170,7 @@ describe('Approval route enforcement (§10)', () => {
     const submitted = await requisitionService.submit(req.id)
     expect(submitted.decision.outcome).toBe('NEED_APPROVAL')
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id,
     )
     expect(gate).toBeDefined()
@@ -200,7 +200,7 @@ describe('Approval route enforcement (§10)', () => {
     const budget = await makeBudget(100_000_000)
     const req = await makeRequisition(budget.id, 250_000, users.finance)
     await requisitionService.submit(req.id)
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (row) => row.requisitionId === req.id,
     )
     if (!gate) throw new Error('expected maker/checker approval')
@@ -228,7 +228,7 @@ describe('Approval route enforcement (§10)', () => {
     const budget = await makeBudget(100_000_000)
     const req = await makeRequisition(budget.id, 250_000)
     await requisitionService.submit(req.id)
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (row) => row.requisitionId === req.id,
     )
     if (!gate) throw new Error('expected override approval')
@@ -263,7 +263,7 @@ describe('Approval route enforcement (§10)', () => {
     )
     expect(first.outcome).toBe('NEED_APPROVAL')
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id && a.kind === 'vendorGate',
     )
     expect(gate?.route).toContain('procurement')
@@ -291,7 +291,7 @@ describe('Approval route enforcement (§10)', () => {
     const submitted = await requisitionService.submit(req.id)
     expect(submitted.decision.outcome).toBe('NEED_APPROVAL')
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id,
     )
     if (!gate) throw new Error('expected a pending threshold approval')
@@ -320,7 +320,7 @@ describe('Approval route enforcement (§10)', () => {
     const req = await makeRequisition(budget.id, 250_000)
     await requisitionService.submit(req.id)
 
-    const gate = (await approvalService.pendingList()).find(
+    const gate = (await approvalService.pendingList()).rows.find(
       (a) => a.requisitionId === req.id,
     )
     if (!gate) throw new Error('expected a pending threshold approval')
@@ -364,7 +364,7 @@ describe('requester row-level boundary (§10)', () => {
 
 describe('central human procedure policy (§10)', () => {
   it('covers the complete current tRPC surface', () => {
-    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(105)
+    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(111)
   })
 
   it('grants procurement and finance capabilities without conflating them', () => {

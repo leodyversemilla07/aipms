@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common'
+import {
+  ConflictException,
+  Injectable,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common'
 import { db, Prisma, type VendorModel as Vendor } from '@workspace/db'
 import { evaluateThresholdGate } from '../policy/policy-engine'
 import { resolveEffectivePolicy } from '../policy/policy-resolver'
@@ -38,6 +43,7 @@ export class AgentWakeService implements OnModuleInit {
   constructor(
     private readonly relay: EventRelayService,
     private readonly commands: AgentCommandService,
+    @Optional()
     dbClient?: typeof db,
   ) {
     this.db = dbClient ?? db

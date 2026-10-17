@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common'
+import { BadRequestException, Injectable, Optional } from '@nestjs/common'
 import { db, type Prisma, type UserKind, type UserRole } from '@workspace/db'
 import {
   type IssueInput,
@@ -41,7 +41,9 @@ export class AgentCommandService {
     private readonly purchaseOrders: PurchaseOrderService,
     private readonly audit: AuditService,
     private readonly quotas: AgentQuotaService,
+    @Optional()
     private readonly idempotency?: IdempotencyService,
+    @Optional()
     dbClient?: typeof db,
   ) {
     this.db = dbClient ?? db
