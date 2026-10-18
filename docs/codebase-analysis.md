@@ -386,7 +386,7 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 - Broad reads resolved by shape: `policy.list` is count-backed via `listInput`; `runTrace` is quota-bounded with summary-only selects; BIR certificates are period-scoped aggregation; IMAP vendor loading is a documented single-tenant design.
 - Hot-path indexes added (`20261018000000_hot_path_indexes`) matching measured query patterns: `purchaseOrder(requisitionId)`, `invoice(receivedAt)`, `intakeDocument(receivedAt)`. A DI bootstrap check (`pnpm --filter api di:check`) compiles the AppModule graph in CI before test lanes.
 - Standardize error/empty/pending states and replace hand-maintained response assertions with shared/inferred DTOs where practical.
-- Production CSP still allows inline scripts. A nonce/hash-based policy could improve XSS defense, but needs correct Next.js rendering/caching integration; do not simply remove the directive and break the app.
+- Production CSP is now nonce-based (`proxy.ts` per-request nonce + `'strict-dynamic'`, forced dynamic rendering at the root layout via `connection()`, and the `x-nonce` handoff to `next-themes`'s inline bootstrap). The proxy is the single CSP writer; static headers minus CSP (HSTS, nosniff, frame, referrer, permissions) remain in `next.config.ts`, with `/api/auth` still excluded so IdP-controlled SAML POST forms keep rendering. The E2E web server builds and starts the production web app (no longer `next dev`) so browser flows exercise the real script policy every commit, and the production smoke job now asserts that `script-src` carries a nonce without `unsafe-inline`.
 
 ### Audit, deployment, and tests
 

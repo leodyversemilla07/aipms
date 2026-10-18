@@ -97,6 +97,20 @@ for required_header in \
   fi
 done
 
+# The CSP must be nonce-based: inline scripts may not rely on 'unsafe-inline'.
+csp_value="$(sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: //p' <<< "$web_headers")"
+csp_script_src="$(sed -n 's/.*script-src \([^;]*\);.*/\1/p' <<< "$csp_value")"
+if [[ "$csp_script_src" != *"'nonce-"* ]]; then
+  printf 'Production CSP script-src does not carry a per-request nonce: %s\n' \
+    "$csp_script_src" >&2
+  exit 1
+fi
+if [[ "$csp_script_src" == *"'unsafe-inline'"* ]]; then
+  printf 'Production CSP script-src still allows unsafe-inline: %s\n' \
+    "$csp_script_src" >&2
+  exit 1
+fi
+
 health_payload=$(curl --silent --show-error --fail "http://localhost:${API_PORT}/health/ready")
 if [[ "$health_payload" != *'"ok":true'* ]]; then
   printf 'Unexpected API health payload: %s\n' "$health_payload" >&2

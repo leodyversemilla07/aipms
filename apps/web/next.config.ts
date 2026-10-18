@@ -1,23 +1,16 @@
 import type { NextConfig } from "next"
 
 const isDevelopment = process.env.NODE_ENV === "development"
-const contentSecurityPolicy = [
-  "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' blob: data:",
-  "font-src 'self'",
-  `connect-src 'self'${isDevelopment ? " ws: wss:" : ""}`,
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  "manifest-src 'self'",
-  ...(!isDevelopment ? ["upgrade-insecure-requests"] : []),
-].join("; ")
 
+/**
+ * Document-level security headers. The Content-Security-Policy itself is not
+ * set here: apps/web/proxy.ts issues a per-request nonce-based CSP (Next.js
+ * applies request-header CSP nonces to inline scripts only in dynamically
+ * rendered documents), so this static list covers everything around it. The
+ * source excludes /api/auth so IdP-controlled SAML POST forms keep rendering
+ * without document CSP (audited auth flow, §8.5).
+ */
 const securityHeaders = [
-  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "no-referrer" },

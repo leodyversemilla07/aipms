@@ -58,10 +58,14 @@ export default defineConfig({
       },
     },
     {
-      command: "pnpm --filter web dev",
+      // Production build + start: the browser suite must exercise the real
+      // document security posture, including the per-request nonce CSP from
+      // proxy.ts (dev-mode CSP allows 'unsafe-eval' and would silently miss
+      // production-only breakage).
+      command: "pnpm --filter web build && pnpm --filter web start",
       url: "http://localhost:3000/",
       reuseExistingServer: !process.env.CI,
-      timeout: 120_000,
+      timeout: 240_000,
     },
   ],
 })
