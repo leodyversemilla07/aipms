@@ -162,22 +162,27 @@ describe('Audit chain', () => {
     )
     rows.push({ seq: 502, entryHash: 'unexpected-hash' })
     const count = vi.fn().mockResolvedValue(501)
+    const findFirst = vi.fn().mockResolvedValue({ seq: 502 })
     const findMany = vi.fn(
       async ({
         where,
         take,
       }: {
-        where: { seq?: { gt: number } }
+        where: { seq?: { gt?: number; lte?: number } }
         take: number
       }) => {
         expect(take).toBe(500)
         return rows
-          .filter((row) => row.seq > (where.seq?.gt ?? 0))
+          .filter(
+            (row) =>
+              row.seq > (where.seq?.gt ?? 0) &&
+              row.seq <= (where.seq?.lte ?? Number.POSITIVE_INFINITY),
+          )
           .slice(0, take)
       },
     )
     const client = {
-      auditEntry: { count, findMany },
+      auditEntry: { count, findFirst, findMany },
     } as unknown as Prisma.TransactionClient
 
     const result = await service.verifyChain(client)
@@ -188,7 +193,13 @@ describe('Audit chain', () => {
       brokenAtSeq: 502,
     })
     expect(findMany).toHaveBeenCalledTimes(2)
-    expect(findMany.mock.calls[1][0].where).toEqual({ seq: { gt: 500 } })
+    expect(findMany.mock.calls[1][0].where).toEqual({
+      seq: { gt: 500, lte: 502 },
+    })
+    expect(findFirst).toHaveBeenCalledWith({
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    })
     expect(count).toHaveBeenCalledWith({ where: { entryHash: null } })
   })
 
