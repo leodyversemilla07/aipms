@@ -44,7 +44,9 @@ export function PoliciesPanel() {
   const [error, setError] = useState<string | null>(null)
 
   const list = useQuery(trpc.policy.list.queryOptions({}))
-  const rows = (list.data ?? []) as PolicyRow[]
+  // Bounded page; the badge shows the real history size across pages.
+  const rows = (list.data?.rows ?? []) as PolicyRow[]
+  const total = list.data?.total ?? rows.length
 
   const create = useMutation(trpc.policy.create.mutationOptions())
 
@@ -89,7 +91,7 @@ export function PoliciesPanel() {
         <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
           Policies
         </h2>
-        <span className="text-muted-foreground text-xs">{rows.length}</span>
+        <span className="text-muted-foreground text-xs">{total}</span>
       </div>
 
       <div className="flex flex-col gap-2 rounded-xl border bg-card p-4 shadow-sm">

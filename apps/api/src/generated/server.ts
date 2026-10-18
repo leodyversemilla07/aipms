@@ -479,7 +479,7 @@ const appRouter = t.router({
     }),
   policy: t.router({
     list: publicProcedure
-      .input(z.object({
+      .input(listInput.extend({
   kind: z.enum([
   'threshold',
   'preferredVendor',

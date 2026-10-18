@@ -12,6 +12,7 @@ import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
 import { requireRole } from '../trpc/authorize'
 import type { AuthedTrpcContext } from '../trpc/context.types'
+import { listInput } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 import { PolicyService } from './policy.service'
 
@@ -35,7 +36,7 @@ const createPolicyInput = z.object({
   config: z.record(z.string(), z.unknown()),
 })
 
-const listPolicyInput = z.object({
+const listPolicyInput = listInput.extend({
   kind: policyKind.optional(),
   enabled: z.boolean().optional(),
 })

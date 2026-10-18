@@ -10,6 +10,8 @@ import {
   PH_DEFAULT_POLICY,
   type TaxPolicyConfig,
 } from '@workspace/tax'
+import type { ListInput, ListResult } from '../trpc/list-input'
+import { paginate } from '../trpc/list-input'
 import { policyScope, validatePolicyConfig } from './policy-config'
 import {
   POLICY_ORDER,
@@ -32,14 +34,27 @@ export interface ListPolicyOptions {
 
 @Injectable()
 export class PolicyService {
-  list(opts: ListPolicyOptions = {}) {
-    const where: Prisma.PolicyWhereInput = {}
-    if (opts.kind) where.kind = opts.kind
-    if (opts.enabled !== undefined) where.enabled = opts.enabled
-    return db.policy.findMany({
-      where,
-      orderBy: [{ kind: 'asc' }, ...POLICY_ORDER],
+  /** Count-backed policy catalog with its full revision history; bounded page. */
+  async list(
+    input: ListPolicyOptions &
+      Partial<Pick<ListInput, 'page' | 'pageSize'>> = {},
+  ): Promise<ListResult<Prisma.PolicyGetPayload<object>>> {
+    const { skip, take } = paginate({
+      page: input.page ?? 1,
+      pageSize: input.pageSize ?? 25,
     })
+    const where: Prisma.PolicyWhereInput = {}
+    if (input.kind) where.kind = input.kind
+    if (input.enabled !== undefined) where.enabled = input.enabled
+    return Promise.all([
+      db.policy.findMany({
+        where,
+        orderBy: [{ kind: 'asc' }, ...POLICY_ORDER],
+        skip,
+        take,
+      }),
+      db.policy.count({ where }),
+    ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
   }
 
   async detail(id: string) {

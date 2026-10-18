@@ -134,8 +134,25 @@ Exception queue bounding follow-up:
   fully unbounded queue on the agent-reachable surface).
 - Cockpit and approval-queue badges now show the full pending total instead of
   a capped row count; test call sites read `rows` from the new shape.
-- Remaining broad reads: policy history, run traces, certificate details, and
-  IMAP vendor loading.
+- `policy.list` accepts the shared `listInput` (plus `kind`/`enabled` filters)
+  and returns a count-backed `ListResult` with stable
+  `[{ kind: 'asc' }, ...POLICY_ORDER]` ordering; the policy master desk shows
+  the real history total instead of a capped page. The agent-reachable surface
+  no longer returns full revision history in one read.
+- Remaining broad reads audited against their query shapes: `analytics.runTrace`
+  is naturally bounded by per-run quota limits and selects summary columns
+  only; BIR certificates are period-scoped aggregation (Form 1601-E) or
+  period+vendor scoped (Form 2307); IMAP intake re-reads vendor master each
+  cycle by design (single-tenant, three-field select, documented). No further
+  bounding needed today; revisit if multi-tenant scales arrive.
+- Hot-path indexes added (`20261018000000_hot_path_indexes`): PO-by-requisition
+  lookups (issue serialization, wake recovery) previously full-scanned
+  `purchaseOrder(requisitionId)`; BIR period-range and newest-first reads
+  full-scanned `invoice(receivedAt)` and `intakeDocument(receivedAt)`.
+- DI bootstrap check added (`pnpm --filter api di:check`, CI step "API module
+  DI bootstrap check"): compiles the full AppModule dependency graph without a
+  database so unresolvable-provider boot failures fail locally and in CI before
+  the test lanes, instead of surfacing only in E2E/demo/smoke jobs.
 
 ## Executive assessment
 
@@ -366,8 +383,8 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 
 - Payment-run and matched-invoice selectors, Intake Queue, Master Data (Vendors), and PO list wired with `PageControls`, count-backed pages (`page` query procedures), search filters, and range counters, ensuring older records remain fully accessible across desks.
 - List sorting and queries across Intake, Payment Runs, Audit Trail, Sourcing, Vendors, and POs enforce stable deterministic ordering with primary sort + ID / sequence tie-breakers (`[{ receivedAt: 'desc' }, { id: 'desc' }]`, `[{ at: 'desc' }, { seq: 'desc' }]`, etc.).
-- Remaining broad reads are policy history, run traces, certificate details, and IMAP vendor loading. Prioritize aggregation, bounded queries, and asynchronous exports where complete data is needed.
-- Add indexes matching query patterns, particularly PO requisition lookup and status/date ordering. Validate with representative query plans instead of assuming single-column indexes suffice.
+- Broad reads resolved by shape: `policy.list` is count-backed via `listInput`; `runTrace` is quota-bounded with summary-only selects; BIR certificates are period-scoped aggregation; IMAP vendor loading is a documented single-tenant design.
+- Hot-path indexes added (`20261018000000_hot_path_indexes`) matching measured query patterns: `purchaseOrder(requisitionId)`, `invoice(receivedAt)`, `intakeDocument(receivedAt)`. A DI bootstrap check (`pnpm --filter api di:check`) compiles the AppModule graph in CI before test lanes.
 - Standardize error/empty/pending states and replace hand-maintained response assertions with shared/inferred DTOs where practical.
 - Production CSP still allows inline scripts. A nonce/hash-based policy could improve XSS defense, but needs correct Next.js rendering/caching integration; do not simply remove the directive and break the app.
 
