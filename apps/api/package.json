@@ -15,6 +15,7 @@
     "start": "node --import @swc-node/register/esm-register src/main.ts",
     "dev": "concurrently -n api,trpc -c blue,magenta \"node --watch --watch-path=src --import @swc-node/register/esm-register src/main.ts\" \"nestjs-trpc watch -e src/app.module.ts -o src/generated\"",
     "trpc:generate": "nestjs-trpc generate -e src/app.module.ts -o src/generated",
+    "di:check": "node --import @swc-node/register/esm-register scripts/di-bootstrap-check.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "test": "vitest run",
