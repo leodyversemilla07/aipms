@@ -390,12 +390,12 @@ Outbound messaging requires `contactChannels.verifiedEmails`, but normal vendor 
 
 ### Audit, deployment, and tests
 
-- Bounded audit pages fix memory usage, not total scan cost or snapshot semantics. Capture a verification high-water sequence or use a consistent snapshot so concurrent appends do not extend the operation indefinitely.
+- Audit chain verification pins every keyset page to the head sequence captured before the walk (`verifyChain` high-water marker): entries appended during verification belong to the next run, so the scan cannot be extended indefinitely by concurrent writers, while page expectations stay byte-identical for a quiescent trail. Covered by unit tests in `apps/api/test/unit/audit-verification.spec.ts`, including a head-pin test injecting a concurrent writer between head capture and page reads. Tail-truncation detection still requires an independently retained checkpoint (§16.3) — that deeper claim remains scoped out.
 - A hash chain without an independently stored head/checkpoint cannot prove that the tail was not truncated or the entire history rewritten by a sufficiently privileged actor. Embedded-key PO verification proves cryptographic consistency with that key, not external signer trust or legally qualified status. Keep claims aligned with this threat model.
 - `scripts/restore.sh:83` fails closed if stopping writers fails, preventing destructive database restoration from racing live application writers.
 - Docker runtime targets retain the full workspace/development dependencies and do not specify a non-root user. Reduce runtime contents and privileges while preserving required migration/runtime functionality.
 - Rate-limit and idempotency storage retention/cleanup policy implemented via `RetentionService` (addressing unbounded database growth) guarded by cross-replica lease locks (`AutomationLeaseService`), exposed via `analytics.retention` / `analytics.pruneRetention` tRPC procedures with audit tracking and web cockpit controls.
-- API integration isolation is good. The local browser suite reuses running servers and lacks the same explicit disposable-database guard; establish a similarly safe E2E contract.
+- API integration isolation is good. The browser suite applies the same fail-closed disposable-database guard (`requireIsolatedTestDatabase()` in `apps/web/playwright.config.ts`, evaluated before webServer boot). The stale-claim follow-up is resolved; the residual `reuseExistingServer: !CI` behavior still trusts an operator-started server's own database choice, which is inherent to server reuse.
 - Most important missing tests are cross-domain concurrency/crash scenarios, not additional happy-path unit tests: PO cancellation versus payment, receipt cancellation versus planning, sibling approvals, crash-after-dispatch-claim, raw agent list projection, versioned wake policies, and effective Compose scope overrides.
 
 ## Recommended development sequence

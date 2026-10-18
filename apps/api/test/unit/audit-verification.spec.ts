@@ -16,9 +16,16 @@ async function fixture(length: number) {
       where,
       take,
     }: {
-      where: { seq?: { gt: number } }
+      where: { seq?: { gt?: number; lte?: number } }
       take: number
-    }) => rows.filter((row) => row.seq > (where.seq?.gt ?? 0)).slice(0, take),
+    }) =>
+      rows
+        .filter(
+          (row) =>
+            row.seq > (where.seq?.gt ?? 0) &&
+            row.seq <= (where.seq?.lte ?? Number.POSITIVE_INFINITY),
+        )
+        .slice(0, take),
   )
   const client = {
     $executeRaw: vi.fn().mockResolvedValue(0),
@@ -75,7 +82,12 @@ describe('bounded audit verification with injected clients', () => {
         expect(findMany.mock.calls[page][0]).toMatchObject({
           take: 500,
           orderBy: { seq: 'asc' },
-          where: page === 0 ? {} : { seq: { gt: page * 500 } },
+          where: {
+            seq: {
+              gt: page === 0 ? undefined : page * 500,
+              lte: length || undefined,
+            },
+          },
         })
       }
     },
@@ -89,7 +101,38 @@ describe('bounded audit verification with injected clients', () => {
       checked: 501,
       legacy: 0,
     })
-    expect(findMany.mock.calls[1][0].where).toEqual({ seq: { gt: 1500 } })
+    expect(findMany.mock.calls[1][0].where).toEqual({
+      seq: { gt: 1500, lte: 1503 },
+    })
+  })
+
+  it('pins the walk to the head captured before paging', async () => {
+    const { service, client, rows, findMany } = await fixture(3)
+    const findFirst = client.auditEntry.findFirst as unknown as ReturnType<
+      typeof vi.fn
+    >
+    // A concurrent writer appends between head capture and page reads; its
+    // entry belongs to the next verification, never this walk.
+    findFirst.mockImplementationOnce(async () => {
+      const head = rows.at(-1)
+      await service.record(
+        {
+          actorId: 'unit-writer',
+          actorKind: 'human',
+          action: 'fixture.late',
+          entity: 'UnitFixture',
+        },
+        client,
+      )
+      return { seq: head.seq }
+    })
+    expect(await service.verifyChain(client)).toEqual({
+      ok: true,
+      checked: 3,
+      legacy: 0,
+    })
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(rows).toHaveLength(4) // the late entry exists but was never visited
   })
 
   it('detects content tampering immediately after the first full page', async () => {

@@ -127,10 +127,20 @@ export class AuditService {
    * §16.3 — walk the chain in insertion order and recompute every hash.
    * Changed content or predecessor links break verification. Detecting tail
    * truncation additionally requires an independently retained checkpoint.
+   *
+   * The walk is pinned to the head sequence captured before the first page:
+   * entries appended during verification belong to the next verification,
+   * so the scan cannot be extended indefinitely by concurrent writers.
    */
   async verifyChain(
     client: Prisma.TransactionClient | typeof db = db,
   ): Promise<ChainVerification> {
+    const head = await client.auditEntry.findFirst({
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    })
+    const highWater = head?.seq
+
     // Count separately so failures retain the total legacy count, even when
     // verification stops early. Keyset pagination keeps memory bounded and
     // avoids increasingly expensive OFFSET scans as the trail grows.
@@ -143,7 +153,7 @@ export class AuditService {
 
     while (true) {
       const entries = await client.auditEntry.findMany({
-        where: lastSeq === undefined ? {} : { seq: { gt: lastSeq } },
+        where: { seq: { gt: lastSeq, lte: highWater } },
         orderBy: { seq: 'asc' },
         take: VERIFICATION_PAGE_SIZE,
         select: {
