@@ -429,6 +429,7 @@ model PurchaseOrder {
   @@map("purchaseOrder")
   @@index([status])
   @@index([vendorId])
+  @@index([requisitionId])
 }
 
 model PurchaseOrderLine {
@@ -668,6 +669,7 @@ model IntakeDocument {
   @@map("intakeDocument")
   @@unique([channel, contentHash])
   @@index([status])
+  @@index([receivedAt])
 }
 
 // §9 Invoice: gross before tax, with VAT/EWT computed deterministically by the
@@ -692,6 +694,7 @@ model Invoice {
   @@unique([vendorId, number])
   @@index([status])
   @@index([poId])
+  @@index([receivedAt])
 }
 
 // §8.1 receipt of goods/services against PO lines — the middle leg of the
