@@ -41,7 +41,9 @@ test("sign-in supports provisioned users without exposing public enrollment", as
   await expect(
     page.getByRole("heading", { name: "Procurement flow" })
   ).toBeVisible()
-  await expect(page.getByText("Invoice exceptions")).toBeVisible()
+  await expect(
+    page.locator('[data-slot="sidebar-inset"]').getByText("Invoice exceptions")
+  ).toBeVisible()
   await expect(page.getByRole("link", { name: "Procurement" })).toBeVisible()
   await expect(page.getByRole("link", { name: "Open finance" })).toBeVisible()
   expect(buttonSemanticsErrors).toEqual([])

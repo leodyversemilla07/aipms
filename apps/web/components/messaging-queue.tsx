@@ -58,7 +58,10 @@ export function MessagingQueue() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+        <h2
+          id="vendor-messages"
+          className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
+        >
           Vendor messages
         </h2>
         <div className="flex items-center gap-1">

@@ -26,10 +26,13 @@ test.describe("desks render", () => {
     page,
   }) => {
     await page.goto("/procurement")
-    await expect(page.getByText("Issue PO")).toBeVisible()
-    await expect(page.getByText("Purchase orders")).toBeVisible()
-    await expect(page.getByText("Goods receipts")).toBeVisible()
-    await expect(page.getByText("Vendor messages")).toBeVisible()
+    // The sidebar repeats the section names as sub-navigation, so the
+    // assertions are scoped to the desk content.
+    const desk = page.locator('[data-slot="sidebar-inset"]')
+    await expect(desk.getByText("Issue PO")).toBeVisible()
+    await expect(desk.getByText("Purchase orders")).toBeVisible()
+    await expect(desk.getByText("Goods receipts")).toBeVisible()
+    await expect(desk.getByText("Vendor messages")).toBeVisible()
   })
 
   test("finance desk shows invoices, payment runs, ERP sync, and BIR reports", async ({

@@ -73,8 +73,12 @@ test("requisition → PO → receipt, over-receipt refused", async ({ page }) =>
   ) ?? [])[0]
   if (!poNumber) throw new Error("issued PO number not surfaced")
 
-  // The new PO appears in the purchase-order feed as Issued.
-  const poSection = page.getByText("Purchase orders").locator("../..")
+  // The new PO appears in the purchase-order feed as Issued. The section is
+  // located inside the desk content: the sidebar repeats section names.
+  const poSection = page
+    .locator('[data-slot="sidebar-inset"]')
+    .getByText("Purchase orders")
+    .locator("../..")
   await expect(poSection.getByText(poNumber)).toBeVisible()
 
   // ── 3. Record a full goods receipt against it ───────────────────────────
