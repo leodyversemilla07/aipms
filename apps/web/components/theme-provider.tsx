@@ -47,7 +47,10 @@ function ThemeHotkey() {
         return
       }
 
-      if (event.key.toLowerCase() !== "d") {
+      // Synthetic keydown events (browser extensions, embedded webviews, test
+      // harnesses) can carry no key at all. Ignore them instead of throwing
+      // on an event shape a real key press never has.
+      if (typeof event.key !== "string" || event.key.toLowerCase() !== "d") {
         return
       }
 
