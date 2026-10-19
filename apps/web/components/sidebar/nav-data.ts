@@ -16,142 +16,99 @@ import {
 /**
  * Navigation model for the inset sidebar (shadcn block: sidebar-08).
  *
- * Three groups, mirroring the block's structure:
- * - `desks`     the supervisory desks, each with collapsible in-page sections
- * - `queues`    cross-desk work queues that need a human decision
- * - `governance` audit, recovery and identity, pinned to the bottom
+ * Three groups, one rule each:
+ * - `desks`    places with content of their own, in workflow order
+ * - `queues`   lists of items waiting on a person (they may live inside a desk)
+ * - `controls` oversight and instance configuration
  */
 
 /** Roles that may see a navigation entry. Empty means every signed-in user. */
 export type NavRole = "admin" | "finance" | "procurement" | "user"
 
-export interface NavSection {
-  title: string
-  /** Deep link into the desk page, e.g. /procurement#purchase-orders */
-  href: string
-}
-
-export interface NavDesk {
+export interface NavItem {
   title: string
   href: string
   icon: LucideIcon
   roles: NavRole[]
-  /** In-page sections of the desk; rendered as collapsible sub-navigation. */
-  sections?: NavSection[]
 }
 
-export interface NavQueue {
-  title: string
-  href: string
-  icon: LucideIcon
-  roles: NavRole[]
+export interface NavQueue extends NavItem {
   /** Desk that owns the queue, used by the row action menu. */
-  deskTitle: string
-  deskHref: string
+  deskTitle?: string
+  deskHref?: string
 }
 
-export interface NavLink {
-  title: string
-  href: string
-  icon: LucideIcon
-  roles: NavRole[]
-}
-
-export const desks: NavDesk[] = [
+export const desks: NavItem[] = [
   {
-    title: "Overview",
+    title: "Dashboard",
     href: "/",
     icon: LayoutDashboardIcon,
     roles: [],
-  },
-  {
-    title: "Procurement",
-    href: "/procurement",
-    icon: ClipboardListIcon,
-    roles: ["procurement", "finance", "admin"],
-    sections: [
-      { title: "Sourcing", href: "/procurement#sourcing" },
-      { title: "Issue PO", href: "/procurement#issue-po" },
-      { title: "Purchase orders", href: "/procurement#purchase-orders" },
-      { title: "Goods receipts", href: "/procurement#goods-receipts" },
-      { title: "Vendor messages", href: "/procurement#vendor-messages" },
-    ],
-  },
-  {
-    title: "Finance",
-    href: "/finance",
-    icon: WalletIcon,
-    roles: ["finance", "admin"],
-    sections: [
-      { title: "Register invoice", href: "/finance#register-invoice" },
-      { title: "Invoices", href: "/finance#invoices" },
-      { title: "Payment runs", href: "/finance#payment-runs" },
-      { title: "ERP sync", href: "/finance#erp-sync" },
-      { title: "BIR withholding", href: "/finance#bir-withholding" },
-    ],
   },
   {
     title: "Intake",
     href: "/intake",
     icon: InboxIcon,
     roles: ["finance", "admin"],
-    sections: [
-      { title: "Ingest document", href: "/intake#ingest-document" },
-      { title: "Queue", href: "/intake#queue" },
-    ],
+  },
+  {
+    title: "Procurement",
+    href: "/procurement",
+    icon: ClipboardListIcon,
+    roles: ["procurement", "finance", "admin"],
+  },
+  {
+    title: "Finance",
+    href: "/finance",
+    icon: WalletIcon,
+    roles: ["finance", "admin"],
   },
   {
     title: "Master data",
     href: "/master-data",
     icon: DatabaseIcon,
     roles: ["procurement", "finance", "admin"],
-    sections: [
-      { title: "Vendors", href: "/master-data#vendors" },
-      { title: "Catalog items", href: "/master-data#catalog-items" },
-      { title: "Budgets", href: "/master-data#budgets" },
-      { title: "Policies", href: "/master-data#policies" },
-    ],
   },
 ]
 
 export const queues: NavQueue[] = [
   {
     title: "Approvals",
-    href: "/#exception-queue",
+    href: "/approvals",
     icon: ClipboardCheckIcon,
     roles: ["procurement", "finance", "admin"],
-    deskTitle: "Overview",
+    deskTitle: "Dashboard",
     deskHref: "/",
   },
   {
     title: "Invoice exceptions",
-    href: "/finance#invoices",
+    href: "/exceptions",
     icon: TriangleAlertIcon,
     roles: ["finance", "admin"],
-    deskTitle: "Finance",
-    deskHref: "/finance",
+    deskTitle: "Dashboard",
+    deskHref: "/",
   },
   {
     title: "Agent runs",
-    href: "/#agent-activity",
+    href: "/agent-runs",
     icon: BotIcon,
     roles: ["finance", "admin"],
-    deskTitle: "Overview",
+    deskTitle: "Dashboard",
     deskHref: "/",
+  },
+  {
+    title: "Delivery recovery",
+    href: "/operations",
+    icon: RotateCcwIcon,
+    roles: ["finance", "admin"],
   },
 ]
 
-export const governance: NavLink[] = [
+export const controls: NavItem[] = [
   {
     title: "Audit trail",
     href: "/audit",
     icon: FileClockIcon,
-    roles: ["finance", "admin"],
-  },
-  {
-    title: "Recovery",
-    href: "/operations",
-    icon: RotateCcwIcon,
     roles: ["finance", "admin"],
   },
   {

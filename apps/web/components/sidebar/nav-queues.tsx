@@ -28,12 +28,13 @@ import Link from "next/link"
 import type { NavQueue } from "@/components/sidebar/nav-data"
 
 /**
- * Work queues that need a human decision, with a per-row action menu.
+ * Work queues: lists of items waiting on a person.
  *
- * Mirrors the shadcn sidebar-08 "Projects" group: a list of items where the
- * trailing affordance opens a small menu of related actions.
+ * The shadcn sidebar-08 block renders this group as "NavProjects" - a list of
+ * items with a trailing action menu. The rows here open the queue itself; the
+ * menu offers the owning desk and a data refresh.
  */
-export function NavProjects({ items }: { items: NavQueue[] }) {
+export function NavQueues({ items }: { items: NavQueue[] }) {
   const { isMobile } = useSidebar()
   const queryClient = useQueryClient()
 
@@ -65,10 +66,12 @@ export function NavProjects({ items }: { items: NavQueue[] }) {
                     <ArrowRightIcon />
                     Open queue
                   </DropdownMenuItem>
-                  <DropdownMenuItem render={<Link href={item.deskHref} />}>
-                    <LayoutDashboardIcon />
-                    Open {item.deskTitle}
-                  </DropdownMenuItem>
+                  {item.deskHref && item.deskHref !== item.href ? (
+                    <DropdownMenuItem render={<Link href={item.deskHref} />}>
+                      <LayoutDashboardIcon />
+                      Open {item.deskTitle}
+                    </DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>

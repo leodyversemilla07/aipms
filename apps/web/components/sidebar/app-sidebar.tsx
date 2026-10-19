@@ -13,32 +13,32 @@ import {
 } from "@workspace/ui/components/sidebar"
 import { CommandIcon } from "lucide-react"
 import Link from "next/link"
-import type { NavDesk, NavLink, NavQueue } from "@/components/sidebar/nav-data"
-import { NavMain } from "@/components/sidebar/nav-main"
-import { NavProjects } from "@/components/sidebar/nav-projects"
-import { NavSecondary } from "@/components/sidebar/nav-secondary"
+import { NavControls } from "@/components/sidebar/nav-controls"
+import type { NavItem, NavQueue } from "@/components/sidebar/nav-data"
+import { NavDesks } from "@/components/sidebar/nav-desks"
+import { NavQueues } from "@/components/sidebar/nav-queues"
 import { NavUser } from "@/components/sidebar/nav-user"
 
 /**
  * Inset sidebar with secondary navigation (shadcn block: sidebar-08).
  *
- * Groups, top to bottom: the desks with their collapsible sections, the work
- * queues that need a decision, and the governance links pinned to the bottom.
+ * Groups, top to bottom: the desks, the work queues that need a decision, and
+ * the oversight links pinned to the bottom.
  */
 export function AppSidebar({
   user,
   desks,
   queues,
-  governance,
+  controls,
 }: {
   user: {
     name?: string | null
     email: string
     role?: string
   }
-  desks: NavDesk[]
+  desks: NavItem[]
   queues: NavQueue[]
-  governance: NavLink[]
+  controls: NavItem[]
 }) {
   const { setOpenMobile } = useSidebar()
 
@@ -67,9 +67,9 @@ export function AppSidebar({
       </SidebarHeader>
       <SidebarContent>
         <nav aria-label="Desks" className="flex flex-1 flex-col">
-          <NavMain items={desks} />
-          <NavProjects items={queues} />
-          <NavSecondary items={governance} className="mt-auto" />
+          <NavDesks items={desks} />
+          <NavQueues items={queues} />
+          <NavControls items={controls} className="mt-auto" />
         </nav>
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:items-center">

@@ -27,6 +27,7 @@ import {
   EmptyTitle,
 } from "@workspace/ui/components/empty"
 import { Skeleton } from "@workspace/ui/components/skeleton"
+import type { ReactNode } from "react"
 import { useState } from "react"
 import { minorToPhp } from "@/lib/money"
 import { fmtTime } from "@/lib/time"
@@ -82,7 +83,7 @@ function lineSummary(
 }
 
 /** Human review requires an explicit confirmation; the API remains the source of truth. */
-export function ExceptionQueue() {
+export function ExceptionQueue({ heading }: { heading?: ReactNode }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const [review, setReview] = useState<QueueApprovalRow | null>(null)
@@ -114,11 +115,18 @@ export function ExceptionQueue() {
   }
 
   return (
-    <section aria-labelledby="queue-title" className="flex flex-col gap-3">
+    <section
+      aria-labelledby={heading === undefined ? "queue-title" : undefined}
+      className="flex flex-col gap-3"
+    >
       <div className="flex items-center justify-between gap-2">
-        <h3 id="queue-title" className="font-heading font-medium">
-          Approval queue
-        </h3>
+        {heading === undefined ? (
+          <h3 id="queue-title" className="font-heading font-medium">
+            Approval queue
+          </h3>
+        ) : (
+          heading
+        )}
         {pending.data ? (
           <Badge variant="outline">{pending.data.total} pending</Badge>
         ) : null}

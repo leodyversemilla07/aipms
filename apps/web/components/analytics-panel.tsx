@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select"
+import type { ReactNode } from "react"
 import { useState } from "react"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
@@ -24,7 +25,7 @@ import { useTRPC } from "@/lib/trpc/client"
  * query time from approvals, requisitions, budgets, and agent runs; the
  * period selector bounds the window.
  */
-export function AnalyticsPanel() {
+export function AnalyticsPanel({ heading }: { heading?: ReactNode }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
   const [months, setMonths] = useState("3")
@@ -58,9 +59,13 @@ export function AnalyticsPanel() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Financial control & operations
-        </h2>
+        {heading === undefined ? (
+          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            Financial control & operations
+          </h2>
+        ) : (
+          heading
+        )}
         <Select value={months} onValueChange={(v) => setMonths(v ?? "3")}>
           <SelectTrigger className="w-36" aria-label="Window">
             <SelectValue />

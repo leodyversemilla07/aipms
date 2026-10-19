@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@workspace/ui/components/table"
+import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import { PageControls } from "@/components/page-controls"
 import { INVOICE_STATUS, netMinor } from "@/lib/finance"
@@ -28,11 +29,19 @@ import { useTRPC } from "@/lib/trpc/client"
  */
 const PAGE_SIZE = 25
 
-export function InvoiceList() {
+export function InvoiceList({
+  status,
+  heading,
+}: {
+  /** Restrict the list to one invoice status (§8.4 exception queue). */
+  status?: "received" | "matched" | "exception" | "paid"
+  /** Heading owned by the page; the panel renders its own when omitted. */
+  heading?: ReactNode
+}) {
   const trpc = useTRPC()
   const [page, setPage] = useState(1)
   const invoices = useQuery(
-    trpc.invoice.page.queryOptions({ page, pageSize: PAGE_SIZE })
+    trpc.invoice.page.queryOptions({ page, pageSize: PAGE_SIZE, status })
   )
   const total = invoices.data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -76,12 +85,16 @@ export function InvoiceList() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2
-          id="invoices"
-          className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
-        >
-          Invoices
-        </h2>
+        {heading === undefined ? (
+          <h2
+            id="invoices"
+            className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
+          >
+            Invoices
+          </h2>
+        ) : (
+          heading
+        )}
         <span className="text-muted-foreground text-xs">
           {total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
           {Math.min(page * PAGE_SIZE, total)} of {total}

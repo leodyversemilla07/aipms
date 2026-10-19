@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
+import type { ReactNode } from "react"
 import { useState } from "react"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -31,7 +32,7 @@ function emptyLine(): LineDraft {
  * it, which runs the gates — threshold / budget-override / vendor. Anything
  * requiring a human lands in the ExceptionQueue above.
  */
-export function CreateRequisition() {
+export function CreateRequisition({ heading }: { heading?: ReactNode }) {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
 
@@ -105,9 +106,13 @@ export function CreateRequisition() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          New requisition
-        </h2>
+        {heading === undefined ? (
+          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            New requisition
+          </h2>
+        ) : (
+          heading
+        )}
         {!show ? (
           <button
             type="button"
@@ -121,8 +126,8 @@ export function CreateRequisition() {
 
       {!show ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          Cut a requisition from a budget; the policy engine gates it and routes
-          exceptions to the queue above.
+          Nothing to submit yet. Start a requisition and the policy engine gates
+          it.
         </p>
       ) : (
         <form

@@ -36,15 +36,14 @@ test("sign-in supports provisioned users without exposing public enrollment", as
     page.getByRole("heading", { name: "Needs attention" })
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "Approval queue" })
-  ).toBeVisible()
-  await expect(
     page.getByRole("heading", { name: "Procurement flow" })
   ).toBeVisible()
   await expect(
     page.locator('[data-slot="sidebar-inset"]').getByText("Invoice exceptions")
   ).toBeVisible()
   await expect(page.getByRole("link", { name: "Procurement" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Open finance" })).toBeVisible()
+  await expect(
+    page.getByRole("link", { name: "Open exceptions" })
+  ).toBeVisible()
   expect(buttonSemanticsErrors).toEqual([])
 })

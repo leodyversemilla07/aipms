@@ -68,10 +68,7 @@ export function BudgetsPanel() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2
-          id="budgets"
-          className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
-        >
+        <h2 className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
           Budgets
         </h2>
         <span className="text-muted-foreground text-xs">{rows.length}</span>

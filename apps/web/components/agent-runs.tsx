@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog"
+import type { ReactNode } from "react"
 import { useState } from "react"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
@@ -82,7 +83,7 @@ const RUN_STATUS: Record<
  * §7.1 — what is the agent doing right now? Recent agent runs with status,
  * active skills, and trigger metadata, so supervision starts with visibility.
  */
-export function AgentRuns() {
+export function AgentRuns({ heading }: { heading?: ReactNode }) {
   const trpc = useTRPC()
   const [traceFor, setTraceFor] = useState<RunRow | null>(null)
   const runsQuery = useQuery(
@@ -101,9 +102,13 @@ export function AgentRuns() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
-          Agent activity
-        </h2>
+        {heading === undefined ? (
+          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+            Agent activity
+          </h2>
+        ) : (
+          heading
+        )}
         <span className="text-muted-foreground text-xs">
           {runsQuery.data?.total ?? "…"} runs
         </span>

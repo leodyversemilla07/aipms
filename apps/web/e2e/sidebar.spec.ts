@@ -8,7 +8,7 @@ test("sidebar persists across desks and marks the current page", async ({
   const breadcrumb = toolbar.getByRole("navigation", { name: "Breadcrumb" })
   await expect(breadcrumb.getByRole("link", { name: "AIPMS" })).toBeVisible()
   await expect(
-    breadcrumb.getByText("Overview", { exact: true })
+    breadcrumb.getByText("Dashboard", { exact: true })
   ).toHaveAttribute("aria-current", "page")
   await expect(toolbar.getByRole("heading")).toHaveCount(0)
   await expect(
@@ -22,7 +22,7 @@ test("sidebar persists across desks and marks the current page", async ({
   const overviewBounds = await pageHeader.boundingBox()
   expect(overviewBounds).not.toBeNull()
   const nav = page.getByRole("navigation", { name: "Desks" })
-  await expect(nav.getByRole("link", { name: "Overview" })).toHaveAttribute(
+  await expect(nav.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "aria-current",
     "page"
   )
@@ -48,7 +48,7 @@ test("sidebar persists across desks and marks the current page", async ({
   expect(procurementBounds?.x).toBeCloseTo(overviewBounds?.x ?? 0, 0)
   expect(procurementBounds?.width).toBeCloseTo(overviewBounds?.width ?? 0, 0)
   await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
-  await expect(nav.getByRole("link", { name: "Overview" })).toBeVisible()
+  await expect(nav.getByRole("link", { name: "Dashboard" })).toBeVisible()
   // The account menu (which carries the sign-out action) stays reachable
   // when the rail collapses to icons.
   await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible()

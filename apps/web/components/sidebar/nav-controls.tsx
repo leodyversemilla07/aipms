@@ -11,22 +11,22 @@ import {
 } from "@workspace/ui/components/sidebar"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import type { NavLink } from "@/components/sidebar/nav-data"
+import type { NavItem } from "@/components/sidebar/nav-data"
 
 /**
- * Secondary navigation, pinned to the bottom of the sidebar by the caller.
- * Mirrors the shadcn sidebar-08 "NavSecondary" group.
+ * Oversight and instance configuration, pinned to the bottom of the rail.
+ * The shadcn sidebar-08 block renders this group as "NavSecondary".
  */
-export function NavSecondary({
+export function NavControls({
   items,
   ...props
-}: { items: NavLink[] } & React.ComponentProps<typeof SidebarGroup>) {
+}: { items: NavItem[] } & React.ComponentProps<typeof SidebarGroup>) {
   const pathname = usePathname()
   const { setOpenMobile } = useSidebar()
 
   return (
     <SidebarGroup {...props}>
-      <SidebarGroupLabel>Governance</SidebarGroupLabel>
+      <SidebarGroupLabel>Controls</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {

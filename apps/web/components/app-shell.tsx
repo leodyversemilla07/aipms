@@ -21,21 +21,24 @@ import { usePathname } from "next/navigation"
 import type { ReactNode } from "react"
 import { AppSidebar } from "@/components/sidebar/app-sidebar"
 import {
+  controls,
   desks,
-  governance,
   type NavRole,
   queues,
 } from "@/components/sidebar/nav-data"
 import { useTRPC } from "@/lib/trpc/client"
 
 const pageSections: Record<string, string> = {
-  "/": "Overview",
+  "/": "Dashboard",
+  "/intake": "Intake",
   "/procurement": "Procurement",
   "/finance": "Finance",
-  "/intake": "Intake",
-  "/audit": "Audit",
   "/master-data": "Master data",
+  "/approvals": "Approvals",
+  "/exceptions": "Invoice exceptions",
+  "/agent-runs": "Agent runs",
   "/operations": "Recovery",
+  "/audit": "Audit",
   "/sso": "Identity",
 }
 
@@ -70,7 +73,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         }}
         desks={desks.filter((desk) => isAllowed(desk.roles))}
         queues={queues.filter((queue) => isAllowed(queue.roles))}
-        governance={governance.filter((entry) => isAllowed(entry.roles))}
+        controls={controls.filter((entry) => isAllowed(entry.roles))}
       />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">

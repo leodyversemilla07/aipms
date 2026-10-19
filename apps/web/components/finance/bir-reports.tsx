@@ -73,10 +73,7 @@ export function BirReports() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2
-          id="bir-withholding"
-          className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
-        >
+        <h2 className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
           BIR withholding (2307 / 1601-E)
         </h2>
         <Select

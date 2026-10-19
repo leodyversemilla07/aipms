@@ -15,11 +15,11 @@ import {
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { AgentRuns } from "@/components/agent-runs"
 import { AnalyticsPanel } from "@/components/analytics-panel"
+import { PageSection } from "@/components/page-section"
+import { SectionTitle } from "@/components/section-title"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
-import { ExceptionQueue } from "./exception-queue"
 import { PageHeader } from "./page-header"
 import { SignInCard } from "./sign-in"
 
@@ -104,46 +104,38 @@ function Dashboard() {
       />
 
       {isSupervisor && (
-        <section
-          aria-labelledby="attention-title"
-          className="flex flex-col gap-4"
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <h2
-              id="attention-title"
-              className="font-heading font-semibold text-xl"
-            >
-              Needs attention
-            </h2>
-            {pending.data && pending.data.total > 0 ? (
+        <PageSection
+          titleId="attention-title"
+          title="Needs attention"
+          description="Human decisions and operational exceptions"
+          action={
+            pending.data && pending.data.total > 0 ? (
               <Badge variant="destructive">
                 {pending.data.total} awaiting review
               </Badge>
-            ) : null}
-            <span className="text-muted-foreground text-sm">
-              Human decisions and operational exceptions
-            </span>
-          </div>
+            ) : null
+          }
+        >
           <div className="grid gap-3 sm:grid-cols-3">
             <OverviewCard
               title="Pending approvals"
               count={pending.data?.total}
               description="Decisions awaiting a human"
-              href="#exception-queue"
+              href="/approvals"
               linkLabel="Review queue"
             />
             <OverviewCard
               title="Invoice exceptions"
               count={exceptionInvoices}
               description="Among the 25 most recent invoices"
-              href="/finance"
-              linkLabel="Open finance"
+              href="/exceptions"
+              linkLabel="Open exceptions"
             />
             <OverviewCard
               title="Failed agent runs"
               count={failedRecentRuns}
               description="Among the 8 most recent runs"
-              href="#agent-activity"
+              href="/agent-runs"
               linkLabel="Inspect runs"
             />
           </div>
@@ -153,22 +145,15 @@ function Dashboard() {
               refresh.
             </p>
           ) : null}
-          <div id="exception-queue" className="scroll-mt-6">
-            <ExceptionQueue />
-          </div>
-        </section>
+        </PageSection>
       )}
 
       <div className="grid gap-8 lg:grid-cols-2">
-        <section aria-labelledby="flow-title" className="flex flex-col gap-3">
-          <div>
-            <h2 id="flow-title" className="font-heading font-semibold text-xl">
-              Procurement flow
-            </h2>
-            <p className="text-muted-foreground text-sm">
-              Records across the lifecycle · all time
-            </p>
-          </div>
+        <PageSection
+          titleId="flow-title"
+          title="Procurement flow"
+          description="Records across the lifecycle · all time"
+        >
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
             <OverviewCard
               title="Requisitions"
@@ -201,16 +186,28 @@ function Dashboard() {
               Could not load some procurement counts.
             </p>
           ) : null}
-        </section>
-        {isSupervisor && (
-          <div id="agent-activity" className="scroll-mt-6">
-            <AgentRuns />
-          </div>
-        )}
+        </PageSection>
       </div>
 
-      {isSupervisor && <AnalyticsPanel />}
-      <CreateRequisition />
+      <CreateRequisition
+        heading={
+          <SectionTitle
+            title="New requisition"
+            description="Cut a requisition from a budget; the policy engine gates it and routes exceptions to the approval queue."
+          />
+        }
+      />
+
+      {isSupervisor && (
+        <AnalyticsPanel
+          heading={
+            <SectionTitle
+              title="Financial control & operations"
+              description="Budget, gates, latency and retention hygiene"
+            />
+          }
+        />
+      )}
     </div>
   )
 }
