@@ -12,15 +12,17 @@ test("sidebar persists across desks and marks the current page", async ({
   ).toHaveAttribute("aria-current", "page")
   await expect(toolbar.getByRole("heading")).toHaveCount(0)
   await expect(
-    page
-      .locator('[data-slot="card"]')
-      .getByRole("heading", { name: "Supervisory desk" })
+    page.getByRole("heading", { name: "Supervisory desk" })
   ).toBeVisible()
-  const pageHeader = page
-    .locator('[data-slot="sidebar-inset"] [data-slot="card"]')
+  // The page title sits on the content edge, and every page keeps that edge.
+  const dashboardTitle = await page
+    .getByRole("heading", { name: "Supervisory desk" })
+    .boundingBox()
+  const contentColumn = page
+    .locator('[data-slot="sidebar-inset"] > div')
     .first()
-  const overviewBounds = await pageHeader.boundingBox()
-  expect(overviewBounds).not.toBeNull()
+  const dashboardColumn = await contentColumn.boundingBox()
+  expect(dashboardColumn).not.toBeNull()
   const nav = page.getByRole("navigation", { name: "Desks" })
   await expect(nav.getByRole("link", { name: "Dashboard" })).toHaveAttribute(
     "aria-current",
@@ -37,16 +39,18 @@ test("sidebar persists across desks and marks the current page", async ({
     "aria-current",
     "page"
   )
-  const financeBounds = await pageHeader.boundingBox()
-  expect(financeBounds?.x).toBeCloseTo(overviewBounds?.x ?? 0, 0)
-  expect(financeBounds?.width).toBeCloseTo(overviewBounds?.width ?? 0, 0)
+  const financeTitle = await page
+    .getByRole("heading", { name: "Finance desk" })
+    .boundingBox()
+  expect(financeTitle?.x).toBeCloseTo(dashboardTitle?.x ?? 0, 0)
   await nav.getByRole("link", { name: "Procurement" }).click()
   await expect(
     page.getByRole("heading", { name: "Procurement desk" })
   ).toBeVisible()
-  const procurementBounds = await pageHeader.boundingBox()
-  expect(procurementBounds?.x).toBeCloseTo(overviewBounds?.x ?? 0, 0)
-  expect(procurementBounds?.width).toBeCloseTo(overviewBounds?.width ?? 0, 0)
+  const procurementTitle = await page
+    .getByRole("heading", { name: "Procurement desk" })
+    .boundingBox()
+  expect(procurementTitle?.x).toBeCloseTo(dashboardTitle?.x ?? 0, 0)
   await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
   await expect(nav.getByRole("link", { name: "Dashboard" })).toBeVisible()
   // The account menu (which carries the sign-out action) stays reachable
@@ -57,18 +61,21 @@ test("sidebar persists across desks and marks the current page", async ({
 test("mobile sidebar opens and closes after navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/")
-  const pageHeader = page
-    .locator('[data-slot="sidebar-inset"] [data-slot="card"]')
+  const contentColumn = page
+    .locator('[data-slot="sidebar-inset"] > div')
     .first()
-  await expect(pageHeader).toBeVisible()
-  const overviewBounds = await pageHeader.boundingBox()
+  await expect(contentColumn).toBeVisible()
+  const dashboardTitle = await page
+    .getByRole("heading", { name: "Supervisory desk" })
+    .boundingBox()
   await page.getByRole("button", { name: "Toggle Sidebar" }).click()
   const nav = page.getByRole("navigation", { name: "Desks" })
   await expect(nav.getByRole("link", { name: "Intake" })).toBeVisible()
   await nav.getByRole("link", { name: "Intake" }).click()
   await expect(page.getByRole("heading", { name: "Intake desk" })).toBeVisible()
   await expect(nav).not.toBeVisible()
-  const intakeBounds = await pageHeader.boundingBox()
-  expect(intakeBounds?.x).toBeCloseTo(overviewBounds?.x ?? 0, 0)
-  expect(intakeBounds?.width).toBeCloseTo(overviewBounds?.width ?? 0, 0)
+  const intakeTitle = await page
+    .getByRole("heading", { name: "Intake desk" })
+    .boundingBox()
+  expect(intakeTitle?.x).toBeCloseTo(dashboardTitle?.x ?? 0, 0)
 })

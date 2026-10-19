@@ -210,7 +210,7 @@ export function IntakeQueue() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+        <h2 className="scroll-mt-6 font-heading font-semibold text-xl tracking-tight">
           Ingest document
         </h2>
       </div>
@@ -277,7 +277,7 @@ export function IntakeQueue() {
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <h2 className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+          <h2 className="scroll-mt-6 font-heading font-semibold text-xl tracking-tight">
             Queue
           </h2>
           <span className="text-muted-foreground text-xs">

@@ -60,7 +60,7 @@ export function AnalyticsPanel({ heading }: { heading?: ReactNode }) {
     <section className="flex flex-col gap-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         {heading === undefined ? (
-          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+          <h2 className="font-heading font-semibold text-xl tracking-tight">
             Financial control & operations
           </h2>
         ) : (

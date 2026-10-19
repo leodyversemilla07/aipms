@@ -148,46 +148,44 @@ function Dashboard() {
         </PageSection>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <PageSection
-          titleId="flow-title"
-          title="Procurement flow"
-          description="Records across the lifecycle · all time"
-        >
-          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
+      <PageSection
+        titleId="flow-title"
+        title="Procurement flow"
+        description="Records across the lifecycle · all time"
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <OverviewCard
+            title="Requisitions"
+            count={requisitions.data?.total}
+            description="Purchase requests"
+            href="/procurement"
+            linkLabel="View requests"
+          />
+          {isSupervisor && (
             <OverviewCard
-              title="Requisitions"
-              count={requisitions.data?.total}
-              description="Purchase requests"
+              title="Purchase orders"
+              count={orders.data?.total}
+              description="Orders issued"
               href="/procurement"
-              linkLabel="View requests"
+              linkLabel="View orders"
             />
-            {isSupervisor && (
-              <OverviewCard
-                title="Purchase orders"
-                count={orders.data?.total}
-                description="Orders issued"
-                href="/procurement"
-                linkLabel="View orders"
-              />
-            )}
-            {isFinance && (
-              <OverviewCard
-                title="Invoices"
-                count={invoiceRows?.length}
-                description="Most recent 25 · all statuses"
-                href="/finance"
-                linkLabel="View invoices"
-              />
-            )}
-          </div>
-          {requisitions.isError || orders.isError ? (
-            <p role="alert" className="text-destructive text-sm">
-              Could not load some procurement counts.
-            </p>
-          ) : null}
-        </PageSection>
-      </div>
+          )}
+          {isFinance && (
+            <OverviewCard
+              title="Invoices"
+              count={invoiceRows?.length}
+              description="Most recent 25 · all statuses"
+              href="/finance"
+              linkLabel="View invoices"
+            />
+          )}
+        </div>
+        {requisitions.isError || orders.isError ? (
+          <p role="alert" className="text-destructive text-sm">
+            Could not load some procurement counts.
+          </p>
+        ) : null}
+      </PageSection>
 
       <CreateRequisition
         heading={

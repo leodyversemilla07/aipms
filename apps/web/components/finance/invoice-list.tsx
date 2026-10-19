@@ -88,7 +88,7 @@ export function InvoiceList({
         {heading === undefined ? (
           <h2
             id="invoices"
-            className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide"
+            className="scroll-mt-6 font-heading font-semibold text-xl tracking-tight"
           >
             Invoices
           </h2>

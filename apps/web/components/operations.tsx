@@ -41,12 +41,11 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@workspace/ui/components/toggle-group"
-import Link from "next/link"
 import { useState } from "react"
+import { PageHeader } from "@/components/page-header"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 import { SignInCard } from "./sign-in"
-import { SignOutButton } from "./sign-out-button"
 
 type DeadLetter = {
   id: string
@@ -87,7 +86,6 @@ function errorMessage(error: unknown) {
 function RecoveryConsole() {
   const trpc = useTRPC()
   const queryClient = useQueryClient()
-  const { data: session } = authClient.useSession()
   const [selected, setSelected] = useState<DeadLetter | null>(null)
   const [reason, setReason] = useState("")
   const [error, setError] = useState<string | null>(null)
@@ -216,38 +214,11 @@ function RecoveryConsole() {
   ] as const
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-      <header className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="font-semibold text-lg tracking-tight">
-            Operations recovery
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            {session?.user.email} · audited exception handling
-          </p>
-        </div>
-        <nav className="flex items-center gap-4 text-sm">
-          <Link
-            href="/"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Supervisory desk
-          </Link>
-          <Link
-            href="/finance"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Finance
-          </Link>
-          <Link
-            href="/audit"
-            className="text-muted-foreground underline hover:text-foreground"
-          >
-            Audit
-          </Link>
-          <SignOutButton />
-        </nav>
-      </header>
+    <div className="flex w-full flex-col gap-8">
+      <PageHeader
+        title="Operations recovery"
+        description="Failed deliveries and stale runs that need an operator"
+      />
 
       {summary.isError ||
       deadLetters.isError ||
@@ -282,7 +253,9 @@ function RecoveryConsole() {
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Domain-event dead letters</h2>
+            <h2 className="font-heading font-semibold text-xl tracking-tight">
+              Domain-event dead letters
+            </h2>
             <p className="text-muted-foreground text-sm">
               Requeue only after the subscriber fault has been repaired and
               verified. Every release records the operator and reason.
@@ -349,7 +322,9 @@ function RecoveryConsole() {
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Stale agent runs</h2>
+            <h2 className="font-heading font-semibold text-xl tracking-tight">
+              Stale agent runs
+            </h2>
             <p className="text-muted-foreground text-sm">
               Cancel only after confirming that no worker still owns the run.
               Cancellation closes supervision state; it does not replay work.
@@ -406,7 +381,9 @@ function RecoveryConsole() {
       <section className="flex flex-col gap-3">
         <div className="flex items-baseline justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Failed & stale vendor messages</h2>
+            <h2 className="font-heading font-semibold text-xl tracking-tight">
+              Failed & stale vendor messages
+            </h2>
             <p className="text-muted-foreground text-sm">
               Reconcile with the transport provider before closing or retrying
               an ambiguous delivery. Automatic retries are prohibited.

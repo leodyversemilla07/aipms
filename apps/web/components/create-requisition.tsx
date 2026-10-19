@@ -107,7 +107,7 @@ export function CreateRequisition({ heading }: { heading?: ReactNode }) {
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
         {heading === undefined ? (
-          <h2 className="font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+          <h2 className="font-heading font-semibold text-xl tracking-tight">
             New requisition
           </h2>
         ) : (

@@ -85,7 +85,7 @@ export function Receipts() {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
-        <h2 className="scroll-mt-6 font-semibold text-muted-foreground text-sm uppercase tracking-wide">
+        <h2 className="scroll-mt-6 font-heading font-semibold text-xl tracking-tight">
           Goods receipts
         </h2>
         <span className="text-muted-foreground text-xs">{rows.length}</span>

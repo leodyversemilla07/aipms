@@ -95,9 +95,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Breadcrumb>
           </div>
         </header>
-        <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-          {children}
-        </div>
+        {/*
+          One content column for every page: the title, its sections and
+          their cards share the same edge and the same rhythm.
+        */}
+        <div className="w-full flex-1 px-4 py-6 sm:px-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   )
