@@ -70,6 +70,8 @@ export function NavUser({
             render={
               <SidebarMenuButton
                 size="lg"
+                aria-label="Account menu"
+                title="Account menu"
                 className="data-open:bg-sidebar-accent data-open:text-sidebar-accent-foreground"
               />
             }

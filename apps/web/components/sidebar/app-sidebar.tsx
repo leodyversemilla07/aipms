@@ -18,7 +18,6 @@ import { NavMain } from "@/components/sidebar/nav-main"
 import { NavProjects } from "@/components/sidebar/nav-projects"
 import { NavSecondary } from "@/components/sidebar/nav-secondary"
 import { NavUser } from "@/components/sidebar/nav-user"
-import { SignOutButton } from "@/components/sign-out-button"
 
 /**
  * Inset sidebar with secondary navigation (shadcn block: sidebar-08).
@@ -75,7 +74,6 @@ export function AppSidebar({
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:items-center">
         <NavUser user={user} />
-        <SignOutButton />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

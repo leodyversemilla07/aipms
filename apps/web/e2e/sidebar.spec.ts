@@ -49,7 +49,9 @@ test("sidebar persists across desks and marks the current page", async ({
   expect(procurementBounds?.width).toBeCloseTo(overviewBounds?.width ?? 0, 0)
   await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
   await expect(nav.getByRole("link", { name: "Overview" })).toBeVisible()
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible()
+  // The account menu (which carries the sign-out action) stays reachable
+  // when the rail collapses to icons.
+  await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible()
 })
 
 test("mobile sidebar opens and closes after navigation", async ({ page }) => {
