@@ -166,7 +166,7 @@ function SsoAdminBody() {
       ) : null}
 
       <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm">
-        <h2 className="font-heading font-medium text-sm">Sign-in providers</h2>
+        <h3 className="font-heading font-medium text-sm">Sign-in providers</h3>
         {rows.length === 0 ? (
           <p className="text-muted-foreground text-sm">
             No IdP configured — users sign in with email and password.
@@ -295,7 +295,7 @@ function SsoAdminBody() {
       </section>
 
       <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm">
-        <h2 className="font-heading font-medium text-sm">SCIM provisioning</h2>
+        <h3 className="font-heading font-medium text-sm">SCIM provisioning</h3>
         <p className="text-muted-foreground text-xs">
           Point your IdP at <code>/api/auth/scim/v2</code> with a bearer token.
           The token is shown once.

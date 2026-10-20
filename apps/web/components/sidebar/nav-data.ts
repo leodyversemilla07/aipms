@@ -18,8 +18,11 @@ import {
  *
  * Three groups, one rule each:
  * - `desks`    places with content of their own, in workflow order
- * - `queues`   lists of items waiting on a person (they may live inside a desk)
+ * - `queues`   lists of items waiting on a person
  * - `controls` oversight and instance configuration
+ *
+ * Every entry is a page: a navigation link never points at a fragment of
+ * another page.
  */
 
 /** Roles that may see a navigation entry. Empty means every signed-in user. */
@@ -32,11 +35,7 @@ export interface NavItem {
   roles: NavRole[]
 }
 
-export interface NavQueue extends NavItem {
-  /** Desk that owns the queue, used by the row action menu. */
-  deskTitle?: string
-  deskHref?: string
-}
+export interface NavQueue extends NavItem {}
 
 export const desks: NavItem[] = [
   {
@@ -77,24 +76,18 @@ export const queues: NavQueue[] = [
     href: "/approvals",
     icon: ClipboardCheckIcon,
     roles: ["procurement", "finance", "admin"],
-    deskTitle: "Dashboard",
-    deskHref: "/",
   },
   {
     title: "Invoice exceptions",
     href: "/exceptions",
     icon: TriangleAlertIcon,
     roles: ["finance", "admin"],
-    deskTitle: "Dashboard",
-    deskHref: "/",
   },
   {
     title: "Agent runs",
     href: "/agent-runs",
     icon: BotIcon,
     roles: ["finance", "admin"],
-    deskTitle: "Dashboard",
-    deskHref: "/",
   },
   {
     title: "Delivery recovery",

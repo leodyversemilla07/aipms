@@ -132,7 +132,7 @@ function Dashboard() {
               linkLabel="Open exceptions"
             />
             <OverviewCard
-              title="Failed agent runs"
+              title="Agent runs"
               count={failedRecentRuns}
               description="Among the 8 most recent runs"
               href="/agent-runs"

@@ -18,12 +18,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@workspace/ui/components/sidebar"
-import {
-  ArrowRightIcon,
-  LayoutDashboardIcon,
-  MoreHorizontalIcon,
-  RefreshCwIcon,
-} from "lucide-react"
+import { ArrowRightIcon, MoreHorizontalIcon, RefreshCwIcon } from "lucide-react"
 import Link from "next/link"
 import type { NavQueue } from "@/components/sidebar/nav-data"
 
@@ -66,12 +61,6 @@ export function NavQueues({ items }: { items: NavQueue[] }) {
                     <ArrowRightIcon />
                     Open queue
                   </DropdownMenuItem>
-                  {item.deskHref && item.deskHref !== item.href ? (
-                    <DropdownMenuItem render={<Link href={item.deskHref} />}>
-                      <LayoutDashboardIcon />
-                      Open {item.deskTitle}
-                    </DropdownMenuItem>
-                  ) : null}
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>

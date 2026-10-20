@@ -16,8 +16,8 @@ import type { NavItem } from "@/components/sidebar/nav-data"
  * The desks: places with content of their own, in workflow order.
  *
  * The shadcn sidebar-08 block renders this group as "NavMain" with collapsible
- * sub-sections; the desk pages here carry their own section headings, so the
- * rail stays a flat list instead of duplicating every panel title.
+ * sub-sections. The desk pages here carry their own section headings, so the
+ * rail stays a flat list of pages instead of repeating every panel title.
  */
 export function NavDesks({ items }: { items: NavItem[] }) {
   const pathname = usePathname()
