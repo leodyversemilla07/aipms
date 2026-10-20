@@ -40,6 +40,29 @@ test("full chain verification runs only on request", async ({ page }) => {
   expect(checks).toBe(1)
 })
 
+test("a retained checkpoint is issued and verifies against the live trail", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"])
+  await page.goto("/audit")
+  await expect(page.getByText("Chain checkpoint")).toBeVisible()
+
+  // The operator copies the head and keeps it outside the database.
+  await page.getByRole("button", { name: "Copy checkpoint" }).click()
+  const payload = await page.evaluate(() => navigator.clipboard.readText())
+  const checkpoint = JSON.parse(payload) as { seq: number; entryHash: string }
+  expect(checkpoint.seq).toBeGreaterThan(0)
+  expect(checkpoint.entryHash).toMatch(/^[0-9a-f]{64}$/)
+
+  // Verifying the trail against the checkpoint it just issued must agree.
+  await page.getByLabel("Retained checkpoint").fill(payload)
+  await page.getByRole("button", { name: "Verify against checkpoint" }).click()
+  await expect(
+    page.getByText("Trail matches the retained checkpoint")
+  ).toBeVisible()
+})
+
 test("audit entries are server-paginated and filters reset the page", async ({
   page,
 }) => {

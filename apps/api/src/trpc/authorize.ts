@@ -102,6 +102,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
   'audit.list': ['finance'],
   'audit.meta': ['finance'],
   'audit.chain': ['finance'],
+  'audit.checkpoint': ['finance'],
 
   'bir.certificate': ['finance'],
   'bir.remittance': ['finance'],

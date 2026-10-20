@@ -54,6 +54,61 @@ type AudRow = {
   at: string | Date
 }
 
+type CheckpointInput = { seq: number; entryHash: string }
+
+/**
+ * Accepts a retained checkpoint as JSON (`{"seq":42,"entryHash":"…"}`) or as
+ * the shorthand `42 <hash>`, so an operator can paste back what they kept.
+ */
+function parseCheckpoint(raw: string): CheckpointInput | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith("{")) {
+    try {
+      const parsed: unknown = JSON.parse(trimmed)
+      if (
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "seq" in parsed &&
+        "entryHash" in parsed &&
+        typeof parsed.seq === "number" &&
+        typeof parsed.entryHash === "string"
+      ) {
+        return { seq: parsed.seq, entryHash: parsed.entryHash }
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+  const [seq, entryHash] = trimmed.split(/[\s:]+/, 2)
+  const parsedSeq = Number(seq)
+  if (!Number.isInteger(parsedSeq) || !entryHash) return null
+  return { seq: parsedSeq, entryHash }
+}
+
+const CHECKPOINT_VERDICT: Record<
+  string,
+  { title: string; destructive: boolean }
+> = {
+  advanced: {
+    title: "Trail matches the retained checkpoint",
+    destructive: false,
+  },
+  truncated: {
+    title: "Trail tip was removed",
+    destructive: true,
+  },
+  rewritten: {
+    title: "Checkpointed entry was rewritten",
+    destructive: true,
+  },
+  missing: {
+    title: "Checkpointed entry is gone",
+    destructive: true,
+  },
+}
+
 /** Read-only, server-paginated view of the immutable audit trail. */
 export function AuditViewer() {
   const trpc = useTRPC()
@@ -63,8 +118,12 @@ export function AuditViewer() {
   const [page, setPage] = useState(1)
 
   const meta = useQuery(trpc.audit.meta.queryOptions())
+  const checkpoint = useQuery(trpc.audit.checkpoint.queryOptions())
+  const [expectedInput, setExpectedInput] = useState("")
+  const [copied, setCopied] = useState(false)
+  const expected = parseCheckpoint(expectedInput)
   const chain = useQuery({
-    ...trpc.audit.chain.queryOptions(),
+    ...trpc.audit.chain.queryOptions({ expected: expected ?? undefined }),
     enabled: false,
     retry: false,
   })
@@ -167,10 +226,95 @@ export function AuditViewer() {
             {chain.data.ok
               ? `${chain.data.checked} hashed entries verified${chain.data.legacy > 0 ? ` · ${chain.data.legacy} legacy entries predate the chain` : ""}`
               : `Broken at seq ${chain.data.brokenAtSeq}: ${chain.data.reason}`}
-            {` · checked ${new Date(chain.dataUpdatedAt).toLocaleString()}. An external checkpoint is needed to detect a removed chain tip.`}
+            {` · checked ${new Date(chain.dataUpdatedAt).toLocaleString()}.`}
           </AlertDescription>
         </Alert>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Chain checkpoint</CardTitle>
+          <CardDescription>
+            Copy the current head and keep it outside the database. Verifying
+            against it later proves the trail still ends where it did - the only
+            way to notice a removed tip.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variant="outline">seq {checkpoint.data?.seq ?? "—"}</Badge>
+              <span className="font-mono text-muted-foreground text-xs">
+                {checkpoint.data
+                  ? `sha256 ${checkpoint.data.entryHash.slice(0, 16)}…`
+                  : "—"}
+              </span>
+              {checkpoint.data ? (
+                <span className="text-muted-foreground text-xs">
+                  {checkpoint.data.total} entries ·{" "}
+                  {new Date(checkpoint.data.at).toLocaleString()}
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!checkpoint.data}
+                onClick={() => {
+                  if (!checkpoint.data) return
+                  const payload = JSON.stringify(checkpoint.data)
+                  void navigator.clipboard.writeText(payload).then(() => {
+                    setCopied(true)
+                    setTimeout(() => setCopied(false), 2000)
+                  })
+                }}
+              >
+                {copied ? "Copied" : "Copy checkpoint"}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                value={expectedInput}
+                onChange={(event) => setExpectedInput(event.target.value)}
+                aria-label="Retained checkpoint"
+                placeholder="Retained checkpoint: 42 sha256…"
+                className="min-w-52 flex-1 font-mono text-xs"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!expected || chain.isFetching}
+                onClick={() => void chain.refetch()}
+              >
+                {chain.isFetching ? "Verifying…" : "Verify against checkpoint"}
+              </Button>
+            </div>
+            {expectedInput && !expected ? (
+              <p className="text-destructive text-xs">
+                That is not a checkpoint. Paste the copied JSON, or the sequence
+                and hash as <code>42 sha256…</code>.
+              </p>
+            ) : null}
+            {chain.data?.checkpoint ? (
+              <Alert
+                variant={
+                  CHECKPOINT_VERDICT[chain.data.checkpoint.status]?.destructive
+                    ? "destructive"
+                    : "default"
+                }
+              >
+                <AlertTitle>
+                  {CHECKPOINT_VERDICT[chain.data.checkpoint.status]?.title ??
+                    "Checkpoint comparison"}
+                </AlertTitle>
+                <AlertDescription>
+                  {chain.data.checkpoint.detail}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

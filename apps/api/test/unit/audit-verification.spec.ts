@@ -9,7 +9,15 @@ async function fixture(length: number) {
   const service = new AuditService()
   const rows: AuditEntry[] = []
   const count = vi.fn(
-    async () => rows.filter((row) => row.entryHash === null).length,
+    async (args?: { where?: { entryHash?: null | { not: null } } }) => {
+      if (args?.where?.entryHash === null) {
+        return rows.filter((row) => row.entryHash === null).length
+      }
+      if (args?.where?.entryHash) {
+        return rows.filter((row) => row.entryHash !== null).length
+      }
+      return rows.length
+    },
   )
   const findMany = vi.fn(
     async ({
@@ -32,7 +40,19 @@ async function fixture(length: number) {
     auditEntry: {
       count,
       findMany,
-      findFirst: vi.fn(async () => rows.at(-1) ?? null),
+      findFirst: vi.fn(
+        async (args?: {
+          where?: { seq?: number; entryHash?: { not: null } }
+        }) => {
+          if (typeof args?.where?.seq === 'number') {
+            return rows.find((row) => row.seq === args.where?.seq) ?? null
+          }
+          if (args?.where?.entryHash) {
+            return rows.filter((row) => row.entryHash !== null).at(-1) ?? null
+          }
+          return rows.at(-1) ?? null
+        },
+      ),
       create: vi.fn(async ({ data }: { data: Omit<AuditEntry, 'seq'> }) => {
         const row = {
           ...data,
@@ -171,5 +191,89 @@ describe('bounded audit verification with injected clients', () => {
     })
     expect(count).toHaveBeenCalledWith({ where: { entryHash: null } })
     expect(findMany).toHaveBeenCalledOnce()
+  })
+})
+
+describe('retained checkpoint comparison', () => {
+  /** The hash a chained fixture row committed to. */
+  function hashOf(row: AuditEntry | undefined): string {
+    if (!row?.entryHash) throw new Error('fixture row carries no hash')
+    return row.entryHash
+  }
+
+  it('issues the current head as a checkpoint', async () => {
+    const { service, client, rows } = await fixture(3)
+    const head = rows.at(-1)
+    if (!head) throw new Error('fixture produced no rows')
+    expect(await service.checkpoint(client)).toEqual({
+      seq: head.seq,
+      entryHash: head.entryHash,
+      at: head.at.toISOString(),
+      total: 3,
+    })
+  })
+
+  it('reports an advanced trail when the checkpointed entry is intact', async () => {
+    const { service, client, rows } = await fixture(3)
+    const result = await service.verifyChain(client, {
+      seq: 2,
+      entryHash: hashOf(rows[1]),
+    })
+    expect(result.ok).toBe(true)
+    expect(result.checkpoint).toMatchObject({
+      status: 'advanced',
+      expectedSeq: 2,
+      currentSeq: 3,
+    })
+  })
+
+  it('reports truncation when the trail tip was removed', async () => {
+    const { service, client, rows } = await fixture(3)
+    const checkpoint = { seq: 3, entryHash: hashOf(rows[2]) }
+    // The tip disappears: the remaining chain is still internally consistent.
+    rows.pop()
+    const result = await service.verifyChain(client, checkpoint)
+    expect(result.ok).toBe(false)
+    expect(result.checkpoint).toMatchObject({
+      status: 'truncated',
+      expectedSeq: 3,
+      currentSeq: 2,
+    })
+    expect(result.reason).toContain('behind the retained checkpoint')
+  })
+
+  it('reports a rewritten checkpointed entry', async () => {
+    const { service, client, rows } = await fixture(3)
+    const checkpoint = { seq: 2, entryHash: hashOf(rows[1]) }
+    rows[1].entryHash = 'rewritten-hash'
+    const result = await service.verifyChain(client, checkpoint)
+    expect(result.ok).toBe(false)
+    expect(result.checkpoint).toMatchObject({
+      status: 'rewritten',
+      expectedSeq: 2,
+      currentSeq: 3,
+    })
+  })
+
+  it('reports a missing checkpointed entry', async () => {
+    const { service, client, rows } = await fixture(3)
+    const checkpoint = { seq: 2, entryHash: hashOf(rows[1]) }
+    // A hole in the middle: the entry the checkpoint vouches for is gone.
+    rows.splice(1, 1)
+    const result = await service.verifyChain(client, checkpoint)
+    expect(result.ok).toBe(false)
+    expect(result.checkpoint).toMatchObject({
+      status: 'missing',
+      expectedSeq: 2,
+    })
+  })
+
+  it('leaves verification untouched when no checkpoint is supplied', async () => {
+    const { service, client } = await fixture(3)
+    expect(await service.verifyChain(client)).toEqual({
+      ok: true,
+      checked: 3,
+      legacy: 0,
+    })
   })
 })

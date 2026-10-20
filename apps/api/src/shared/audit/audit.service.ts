@@ -36,6 +36,53 @@ export interface ChainVerification {
   /** seq of the first entry where verification failed. */
   brokenAtSeq?: number
   reason?: string
+  /** How the trail compares to a checkpoint retained outside the database. */
+  checkpoint?: CheckpointComparison
+}
+
+/**
+ * The chain head, for an operator to retain *outside* the database.
+ *
+ * A checkpoint only proves something when its holder keeps it somewhere the
+ * trail's writer cannot reach: the same database can rewrite both the trail
+ * and a checkpoint stored beside it.
+ */
+export interface ChainCheckpoint {
+  /** Sequence number of the checkpointed entry. */
+  seq: number
+  /** Hash the checkpointed entry committed to. */
+  entryHash: string
+  /** When the checkpointed entry was recorded (ISO 8601). */
+  at: string
+  /** Entries in the trail when the checkpoint was taken. */
+  total: number
+}
+
+/**
+ * How the trail compares to a retained checkpoint.
+ *
+ * - `advanced`  the trail grew past the checkpoint and the checkpointed entry
+ *   is intact — the expected outcome.
+ * - `truncated` the trail now ends before the checkpoint: the tip was removed.
+ * - `rewritten` the checkpointed entry still exists but no longer matches the
+ *   hash the checkpoint retained: the history was rewritten in place.
+ * - `missing`   nothing remains at the checkpointed sequence: entries were
+ *   deleted from the middle of the trail.
+ */
+export type CheckpointStatus =
+  | 'advanced'
+  | 'truncated'
+  | 'rewritten'
+  | 'missing'
+
+export interface CheckpointComparison {
+  status: CheckpointStatus
+  expectedSeq: number
+  expectedHash: string
+  currentSeq: number | null
+  currentHash: string | null
+  /** Operator-facing explanation of the verdict. */
+  detail: string
 }
 
 /** The row fields an entry's hash commits to. */
@@ -124,6 +171,102 @@ export class AuditService {
   }
 
   /**
+   * §16.3 — the current chain head, for an operator to retain outside the
+   * database. Reading it is cheap; retaining it is the operator's job.
+   */
+  async checkpoint(
+    client: Prisma.TransactionClient | typeof db = db,
+  ): Promise<ChainCheckpoint | null> {
+    // The chain tip is the newest *hashed* entry: legacy rows predate the
+    // chain and are not linked into it.
+    const head = await client.auditEntry.findFirst({
+      where: { entryHash: { not: null } },
+      orderBy: { seq: 'desc' },
+      select: { seq: true, entryHash: true, at: true },
+    })
+    if (!head || head.entryHash === null) return null
+    const total = await client.auditEntry.count({
+      where: { entryHash: { not: null } },
+    })
+    return {
+      seq: head.seq,
+      entryHash: head.entryHash,
+      at: head.at.toISOString(),
+      total,
+    }
+  }
+
+  /**
+   * §16.3 — compare the trail against a checkpoint the operator retained
+   * outside the database. Internal consistency cannot see a removed tip, so
+   * the retained head is the only evidence that the trail still ends where
+   * it did.
+   */
+  private async compareCheckpoint(
+    client: Prisma.TransactionClient | typeof db,
+    expected: { seq: number; entryHash: string },
+  ): Promise<CheckpointComparison> {
+    const head = await client.auditEntry.findFirst({
+      where: { entryHash: { not: null } },
+      orderBy: { seq: 'desc' },
+      select: { seq: true, entryHash: true },
+    })
+    const base = {
+      expectedSeq: expected.seq,
+      expectedHash: expected.entryHash,
+      currentSeq: head?.seq ?? null,
+      currentHash: head?.entryHash ?? null,
+    }
+
+    if (!head) {
+      return {
+        ...base,
+        status: 'truncated',
+        detail:
+          'the trail is empty: every entry since the checkpoint was retained is gone',
+      }
+    }
+
+    if (head.seq < expected.seq) {
+      return {
+        ...base,
+        status: 'truncated',
+        detail: `the trail now ends at seq ${head.seq}, behind the retained checkpoint at seq ${expected.seq}`,
+      }
+    }
+
+    const at = await client.auditEntry.findFirst({
+      where: { seq: expected.seq },
+      select: { seq: true, entryHash: true },
+    })
+
+    if (!at) {
+      return {
+        ...base,
+        status: 'missing',
+        detail: `no entry remains at seq ${expected.seq}: the trail has a hole where the checkpoint was taken`,
+      }
+    }
+
+    if (at.entryHash !== expected.entryHash) {
+      return {
+        ...base,
+        status: 'rewritten',
+        detail: `the entry at seq ${expected.seq} no longer matches the hash the checkpoint retained`,
+      }
+    }
+
+    return {
+      ...base,
+      status: 'advanced',
+      detail:
+        head.seq === expected.seq
+          ? `the trail still ends at seq ${head.seq} with the checkpointed entry intact`
+          : `the trail advanced from seq ${expected.seq} to seq ${head.seq} with the checkpointed entry intact`,
+    }
+  }
+
+  /**
    * §16.3 — walk the chain in insertion order and recompute every hash.
    * Changed content or predecessor links break verification. Detecting tail
    * truncation additionally requires an independently retained checkpoint.
@@ -134,7 +277,13 @@ export class AuditService {
    */
   async verifyChain(
     client: Prisma.TransactionClient | typeof db = db,
+    expected?: { seq: number; entryHash: string },
   ): Promise<ChainVerification> {
+    // Compared before the walk so a retained checkpoint is reported even when
+    // the walk itself is still in progress.
+    const checkpoint = expected
+      ? await this.compareCheckpoint(client, expected)
+      : undefined
     const head = await client.auditEntry.findFirst({
       orderBy: { seq: 'desc' },
       select: { seq: true },
@@ -187,6 +336,7 @@ export class AuditService {
               expectedPrev === null
                 ? 'first chained entry carries an unexpected prevHash'
                 : 'prevHash does not match the preceding chained entry',
+            checkpoint,
           }
         }
 
@@ -208,6 +358,7 @@ export class AuditService {
             legacy,
             brokenAtSeq: e.seq,
             reason: 'entry content no longer matches its committed hash',
+            checkpoint,
           }
         }
         expectedPrev = e.entryHash
@@ -217,7 +368,19 @@ export class AuditService {
       lastSeq = lastEntry.seq
     }
 
-    return { ok: true, checked, legacy }
+    // The trail is internally consistent. It can still have lost its tip, so a
+    // retained checkpoint has the final say.
+    if (checkpoint && checkpoint.status !== 'advanced') {
+      return {
+        ok: false,
+        checked,
+        legacy,
+        reason: checkpoint.detail,
+        checkpoint,
+      }
+    }
+
+    return { ok: true, checked, legacy, checkpoint }
   }
 
   /** Review — paginated, newest-first read of the immutable trail. Read

@@ -116,7 +116,13 @@ const appRouter = t.router({
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["list"]>>),
     meta: publicProcedure
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["meta"]>>),
+    checkpoint: publicProcedure
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["checkpoint"]>>),
     chain: publicProcedure
+      .input(z.object({ expected: z.object({
+  seq: z.number().int().positive(),
+  entryHash: z.string().min(16).max(128),
+}).optional() }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<AuditRouter["chain"]>>)
     }),
   bir: t.router({

@@ -1,4 +1,5 @@
 import { Inject } from '@nestjs/common'
+import { db } from '@workspace/db'
 import { Ctx, Input, Query, Router, UseMiddlewares } from 'nestjs-trpc'
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
@@ -9,6 +10,12 @@ import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
 const auditListInput = listInput.extend({
   entity: z.string().optional(),
   action: z.string().optional(),
+})
+
+/** A checkpoint retained outside the database: which entry, and its hash. */
+const checkpointInput = z.object({
+  seq: z.number().int().positive(),
+  entryHash: z.string().min(16).max(128),
 })
 
 /**
@@ -41,9 +48,22 @@ export class AuditRouter {
     return this.audit.meta()
   }
 
-  /** §16.3 — recompute the hash chain; any tampering since the first entry shows here. */
+  /**
+   * §16.3 — the current chain head. An operator retains this outside the
+   * database; verification against it is what detects a removed trail tip.
+   */
   @Query()
-  async chain() {
-    return this.audit.verifyChain()
+  async checkpoint() {
+    return this.audit.checkpoint()
+  }
+
+  /**
+   * §16.3 — recompute the hash chain; any tampering since the first entry
+   * shows here. Passing a retained checkpoint also proves the trail still
+   * ends where the checkpoint says it did.
+   */
+  @Query({ input: z.object({ expected: checkpointInput.optional() }) })
+  async chain(@Input() input: { expected?: z.infer<typeof checkpointInput> }) {
+    return this.audit.verifyChain(db, input.expected)
   }
 }

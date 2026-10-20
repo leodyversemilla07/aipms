@@ -364,7 +364,7 @@ describe('requester row-level boundary (§10)', () => {
 
 describe('central human procedure policy (§10)', () => {
   it('covers the complete current tRPC surface', () => {
-    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(111)
+    expect(Object.keys(HUMAN_PROCEDURE_ROLES)).toHaveLength(112)
   })
 
   it('grants procurement and finance capabilities without conflating them', () => {
