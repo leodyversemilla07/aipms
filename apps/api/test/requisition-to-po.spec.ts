@@ -7,6 +7,7 @@ import { RequisitionService } from '../src/requisition/requisition.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { EventRelayService } from '../src/shared/events/event-relay.service'
+import { toSkillList } from '../src/shared/skills'
 
 describe('Requisition → PO automation', () => {
   let relay: EventRelayService
@@ -77,11 +78,13 @@ describe('Requisition → PO automation', () => {
     // Poll outbox - should spawn run and issue PO
     await (relay as unknown as { poll(): Promise<void> }).poll()
 
-    const runs = await db.agentRun.findMany({
-      where: { agentId: 'operator', skills: { has: 'requisition-to-po' } },
-    })
-    expect(runs.length).toBeGreaterThan(0)
-    expect(runs[0].status).toBe('succeeded')
+    const runs = await db.agentRun.findMany({ where: { agentId: 'operator' } })
+    // The skill list is a JSON array, so it is matched after the read.
+    const matching = runs.filter((run) =>
+      toSkillList(run.skills).includes('requisition-to-po'),
+    )
+    expect(matching.length).toBeGreaterThan(0)
+    expect(matching[0]?.status).toBe('succeeded')
 
     const po = await db.purchaseOrder.findFirst({
       where: { requisitionId: req.id },
