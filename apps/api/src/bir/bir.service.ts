@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 
@@ -212,28 +212,52 @@ export class BirService {
       pageSize: input.pageSize ?? 25,
     })
     const [rows, totals] = await Promise.all([
-      db.$queryRaw<
-        {
-          period: string
-          taxWithheldMinor: bigint
-          invoiceCount: bigint
-        }[]
-      >(Prisma.sql`
-        select to_char(date_trunc('month', "receivedAt"), 'YYYY-MM') as period,
-               sum("ewtMinor")::bigint as "taxWithheldMinor",
-               count(*)::bigint as "invoiceCount"
-        from invoice
-        where "ewtMinor" > 0
-        group by 1
-        order by 1 desc
-        offset ${skip}
-        limit ${take}
-      `),
-      db.$queryRaw<{ count: bigint }[]>(Prisma.sql`
-        select count(distinct date_trunc('month', "receivedAt"))::bigint as count
-        from invoice
-        where "ewtMinor" > 0
-      `),
+      isSqlite()
+        ? db.$queryRaw<
+            {
+              period: string
+              taxWithheldMinor: bigint
+              invoiceCount: bigint
+            }[]
+          >(Prisma.sql`
+            select strftime('%Y-%m', "receivedAt") as period,
+                   sum("ewtMinor") as "taxWithheldMinor",
+                   count(*) as "invoiceCount"
+            from invoice
+            where "ewtMinor" > 0
+            group by 1
+            order by 1 desc
+            offset ${skip}
+            limit ${take}
+          `)
+        : db.$queryRaw<
+            {
+              period: string
+              taxWithheldMinor: bigint
+              invoiceCount: bigint
+            }[]
+          >(Prisma.sql`
+            select to_char(date_trunc('month', "receivedAt"), 'YYYY-MM') as period,
+                   sum("ewtMinor")::bigint as "taxWithheldMinor",
+                   count(*)::bigint as "invoiceCount"
+            from invoice
+            where "ewtMinor" > 0
+            group by 1
+            order by 1 desc
+            offset ${skip}
+            limit ${take}
+          `),
+      isSqlite()
+        ? db.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+            select count(distinct strftime('%Y-%m', "receivedAt")) as count
+            from invoice
+            where "ewtMinor" > 0
+          `)
+        : db.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+            select count(distinct date_trunc('month', "receivedAt"))::bigint as count
+            from invoice
+            where "ewtMinor" > 0
+          `),
     ])
     return {
       rows: rows.map((row) => ({

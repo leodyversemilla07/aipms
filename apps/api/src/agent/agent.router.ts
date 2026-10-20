@@ -1,5 +1,5 @@
 import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
-import { db } from '@workspace/db'
+import { db, isSqlite } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { toSkillList } from '../shared/skills'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput, paginate } from '../trpc/list-input'
 import { AuthMiddleware } from '../trpc/middlewares/auth.middleware'
@@ -150,7 +151,11 @@ export class AgentRouter {
       }),
       db.agentRun.count({ where }),
     ])
-    return { rows, total, facetCounts: {} }
+    return {
+      rows: rows.map((row) => ({ ...row, skills: toSkillList(row.skills) })),
+      total,
+      facetCounts: {},
+    }
   }
 
   @Mutation({ input: cancelStaleRunInput })
@@ -166,9 +171,13 @@ export class AgentRouter {
         input,
       },
       async (tx) => {
-        await tx.$queryRaw`
-          SELECT id FROM "agentRun" WHERE id = ${input.id} FOR UPDATE
-        `
+        // The run row is locked while it is cancelled. SQLite serialises
+        // writers for the whole transaction.
+        if (!isSqlite()) {
+          await tx.$queryRaw`
+            SELECT id FROM "agentRun" WHERE id = ${input.id} FOR UPDATE
+          `
+        }
         const run = await tx.agentRun.findUnique({ where: { id: input.id } })
         if (!run) throw new NotFoundException(`Agent run ${input.id} not found`)
         if (run.status !== 'running' || run.startedAt >= staleRunCutoff()) {

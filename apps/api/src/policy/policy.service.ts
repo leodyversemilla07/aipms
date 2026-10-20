@@ -10,6 +10,7 @@ import {
   PH_DEFAULT_POLICY,
   type TaxPolicyConfig,
 } from '@workspace/tax'
+import { lockScope } from '../shared/locks'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 import { policyScope, validatePolicyConfig } from './policy-config'
@@ -118,7 +119,7 @@ export class PolicyService {
     const scope = policyScope(config)
     const run = async (tx: Prisma.TransactionClient) => {
       // Same kind => one allocator, including standalone callers and router txs.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`policy-version:${input.kind}`}))`
+      await lockScope(tx, `policy-version:${input.kind}`)
       const latest = await tx.policy.findFirst({
         where: { kind: input.kind },
         orderBy: POLICY_ORDER,

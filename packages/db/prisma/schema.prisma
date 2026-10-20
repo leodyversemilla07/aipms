@@ -288,7 +288,7 @@ model AgentRun {
   taskId     String?   // parent task, if decomposed by orchestrator
   triggerEventId String? @unique // outbox event; prevents duplicate wake runs
   status     RunStatus @default(running)
-  skills     String[]  // which skill bundles were active
+  skills     Json     @default("[]")  // which skill bundles were active
   meta       Json?     // runtime metadata (model, tokens, cost)
   startedAt  DateTime  @default(now())
   finishedAt DateTime?

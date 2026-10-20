@@ -8,6 +8,7 @@ import { db, Prisma } from '@workspace/db'
 import { evaluateVendorGate } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockScope } from '../shared/locks'
 import {
   assertDatabaseInt,
   assertSingleCurrency,
@@ -347,7 +348,7 @@ export class PurchaseOrderService {
         )
       }
 
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('purchase_order_number'))`
+      await lockScope(tx, 'purchase_order_number')
       const poNumber = await this.numbers.next('PO-', () =>
         tx.purchaseOrder
           .findFirst({

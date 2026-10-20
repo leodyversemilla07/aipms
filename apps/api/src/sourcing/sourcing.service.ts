@@ -7,6 +7,7 @@ import {
 import { db, Prisma } from '@workspace/db'
 import { resolveEffectivePolicy } from '../policy/policy-resolver'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockScope } from '../shared/locks'
 import {
   assertSingleCurrency,
   DATABASE_INT_MAX,
@@ -74,7 +75,7 @@ export class SourcingService {
     const run = async (tx: Prisma.TransactionClient) => {
       // Serialize per requisition: the [requisitionId, vendorId] pair is
       // unique, and a violation would abort the transaction.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`sourcing:${requisitionId}`}))`
+      await lockScope(tx, `sourcing:${requisitionId}`)
       const requisition = await tx.requisition.findUnique({
         where: { id: requisitionId },
         include: { lines: true },
@@ -342,7 +343,7 @@ export class SourcingService {
       const criterion = evaluation.criterion ?? 'lowestCost'
       // Serialize awards per requisition: without this lock two concurrent
       // awards for sibling quotes could both accept (exclusivity violated).
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`award:${quote.requisitionId}`}))`
+      await lockScope(tx, `award:${quote.requisitionId}`)
       const current = await tx.quote.findUnique({ where: { id: quoteId } })
       if (!current) throw new NotFoundException(`Quote ${quoteId} not found`)
       if (current.status !== 'received') {

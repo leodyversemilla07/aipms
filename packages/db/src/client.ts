@@ -2,6 +2,7 @@ import "@workspace/env/load"
 
 import { PrismaPg } from "@prisma/adapter-pg"
 import { type Prisma, PrismaClient } from "./generated/prisma/client"
+import { databaseProvider } from "./provider"
 
 const connectionString = process.env.DATABASE_URL
 
@@ -52,9 +53,24 @@ const logDefinitions: Prisma.LogDefinition[] = [
     : []),
 ]
 
-const createPrismaClient = () => {
+/**
+ * The driver adapter for the configured engine.
+ *
+ * The SQLite adapter is a development-only dependency, so it is loaded on
+ * demand: a production image (PostgreSQL) never has to ship it, and the
+ * dynamic import never resolves there.
+ */
+const createAdapter = async (url: string) => {
+  if (databaseProvider(url) === "sqlite") {
+    const { PrismaLibSql } = await import("@prisma/adapter-libsql")
+    return new PrismaLibSql({ url })
+  }
+  return new PrismaPg({ connectionString: url })
+}
+
+const createPrismaClient = async () => {
   const client = new PrismaClient({
-    adapter: new PrismaPg({ connectionString }),
+    adapter: await createAdapter(connectionString),
     log: logDefinitions,
   })
 
@@ -75,10 +91,10 @@ const createPrismaClient = () => {
 }
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: ReturnType<typeof createPrismaClient> | undefined
+  prisma: Awaited<ReturnType<typeof createPrismaClient>> | undefined
 }
 
-export const db = globalForPrisma.prisma ?? createPrismaClient()
+export const db = globalForPrisma.prisma ?? (await createPrismaClient())
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = db

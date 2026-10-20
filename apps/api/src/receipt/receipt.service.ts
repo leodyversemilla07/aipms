@@ -9,6 +9,7 @@ import type { RematchSummary } from '../invoice/invoice.service'
 import { InvoiceService } from '../invoice/invoice.service'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockScope } from '../shared/locks'
 import { DATABASE_INT_MAX } from '../shared/money/minor-units'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
@@ -97,7 +98,7 @@ export class ReceiptService {
     // row + advisory locks so concurrent recorders cannot double-book.
     const run = async (tx: Prisma.TransactionClient) => {
       await tx.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId} FOR UPDATE`
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('receipt_number'))`
+      await lockScope(tx, 'receipt_number')
 
       const po = await tx.purchaseOrder.findUnique({
         where: { id: input.poId },

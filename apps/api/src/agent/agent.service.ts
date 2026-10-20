@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
 import { IntakeService } from '../intake/intake.service'
 import { InvoiceService } from '../invoice/invoice.service'
+import { toSkillList } from '../shared/skills'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 import { extractStructuredInvoice } from './extract'
@@ -12,7 +13,9 @@ export const AGENT_EXTRACTOR = 'AGENT_EXTRACTOR'
 /** Extraction seam: shape a raw document into a classified invoice payload. */
 export type Extractor = (raw: unknown) => InvoicePayload
 
-type AgentRunListRow = Prisma.AgentRunGetPayload<object>
+type AgentRunListRow = Omit<Prisma.AgentRunGetPayload<object>, 'skills'> & {
+  skills: string[]
+}
 
 /**
  * §3 Phase-3 internal domain agent. Owns the classify→register pipeline an LLM agent
@@ -96,6 +99,10 @@ export class AgentService {
         orderBy: { startedAt: 'desc' },
       }),
       db.agentRun.count({ where }),
-    ]).then(([rows, total]) => ({ rows, total, facetCounts: {} }))
+    ]).then(([rows, total]) => ({
+      rows: rows.map((row) => ({ ...row, skills: toSkillList(row.skills) })),
+      total,
+      facetCounts: {},
+    }))
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 
 /**
  * §14 observability — deterministic aggregations over existing domain
@@ -62,10 +62,129 @@ export interface Overview {
   }
 }
 
+interface LatencyRow {
+  count: bigint
+  medianMinutes: number | null
+  p90Minutes: number | null
+}
+
+/** Linear-interpolation percentile, matching PostgreSQL's `percentile_cont`. */
+function percentile(sorted: number[], fraction: number): number | null {
+  if (sorted.length === 0) return null
+  const position = (sorted.length - 1) * fraction
+  const lower = Math.floor(position)
+  const upper = Math.ceil(position)
+  const low = sorted[lower]
+  const high = sorted[upper]
+  if (low === undefined || high === undefined) return null
+  if (lower === upper) return low
+  return low + (high - low) * (position - lower)
+}
+
 @Injectable()
 export class AnalyticsService {
   private since(months: number): Date {
     return new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000)
+  }
+
+  /**
+   * Approval latency percentiles. PostgreSQL computes them in the database so
+   * a wide window never has to be materialised in API memory; the local
+   * SQLite environment has no `percentile_cont`, so it computes the same
+   * percentiles (linear interpolation) from the rows.
+   */
+  private async approvalLatency(since: Date): Promise<LatencyRow[]> {
+    if (isSqlite()) {
+      const rows = await db.approval.findMany({
+        where: {
+          createdAt: { gte: since },
+          status: { in: ['approved', 'rejected', 'overridden'] },
+          decidedAt: { not: null },
+        },
+        select: { createdAt: true, decidedAt: true },
+      })
+      const minutes: number[] = []
+      for (const row of rows) {
+        if (!row.decidedAt || row.decidedAt < row.createdAt) continue
+        minutes.push(
+          (row.decidedAt.getTime() - row.createdAt.getTime()) / 60000,
+        )
+      }
+      minutes.sort((a, b) => a - b)
+      return [
+        {
+          count: BigInt(minutes.length),
+          medianMinutes: percentile(minutes, 0.5),
+          p90Minutes: percentile(minutes, 0.9),
+        },
+      ]
+    }
+    return db.$queryRaw<LatencyRow[]>(Prisma.sql`
+      select count(*)::bigint as count,
+             percentile_cont(0.5) within group (
+               order by extract(epoch from ("decidedAt" - "createdAt")) / 60
+             )::float8 as "medianMinutes",
+             percentile_cont(0.9) within group (
+               order by extract(epoch from ("decidedAt" - "createdAt")) / 60
+             )::float8 as "p90Minutes"
+      from approval
+      where "createdAt" >= ${since}
+        and status in ('approved', 'rejected', 'overridden')
+        and "decidedAt" is not null
+        and "decidedAt" >= "createdAt"
+    `)
+  }
+
+  /** Monthly exception volume across the whole window. */
+  private async monthlyExceptions(
+    since: Date,
+  ): Promise<{ month: string; count: bigint }[]> {
+    if (isSqlite()) {
+      return db.$queryRaw<{ month: string; count: bigint }[]>(Prisma.sql`
+        select strftime('%Y-%m', "createdAt") as month,
+               count(*) as count
+        from requisition
+        where status = 'exception'
+          and "createdAt" >= ${since}
+        group by 1
+        order by 1
+      `)
+    }
+    return db.$queryRaw<{ month: string; count: bigint }[]>(Prisma.sql`
+      select to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
+             count(*)::bigint as count
+      from requisition
+      where status = 'exception'
+        and "createdAt" >= ${since}
+      group by 1
+      order by 1
+    `)
+  }
+
+  /** Agent runs grouped by the skill bundle that was active. */
+  private async skillStats(since: Date): Promise<SkillStat[]> {
+    if (isSqlite()) {
+      return db.$queryRaw<SkillStat[]>(Prisma.sql`
+        select s.value as "skill",
+               count(*) as total,
+               sum(case when status = 'succeeded' then 1 else 0 end) as succeeded,
+               sum(case when status = 'failed' then 1 else 0 end) as failed
+        from "agentRun", json_each("skills") as s
+        where "startedAt" >= ${since}
+        group by s.value
+        order by total desc
+      `)
+    }
+    return db.$queryRaw<SkillStat[]>(Prisma.sql`
+      select s as "skill",
+             count(*)::int as total,
+             sum(case when status = 'succeeded' then 1 else 0 end)::int as succeeded,
+             sum(case when status = 'failed' then 1 else 0 end)::int as failed
+      from "agentRun", jsonb_array_elements_text("skills") as s
+      where "startedAt" >= ${since}
+      group by s
+      order by total desc
+    `)
   }
 
   async overview(monthsIn: number): Promise<Overview> {
@@ -79,41 +198,8 @@ export class AnalyticsService {
           where: { createdAt: { gte: since } },
           _count: { _all: true },
         }),
-        // Compute percentiles in PostgreSQL rather than loading every approval
-        // duration into API memory (the dashboard window may contain millions).
-        db.$queryRaw<
-          {
-            count: bigint
-            medianMinutes: number | null
-            p90Minutes: number | null
-          }[]
-        >(Prisma.sql`
-          select count(*)::bigint as count,
-                 percentile_cont(0.5) within group (
-                   order by extract(epoch from ("decidedAt" - "createdAt")) / 60
-                 )::float8 as "medianMinutes",
-                 percentile_cont(0.9) within group (
-                   order by extract(epoch from ("decidedAt" - "createdAt")) / 60
-                 )::float8 as "p90Minutes"
-          from approval
-          where "createdAt" >= ${since}
-            and status in ('approved', 'rejected', 'overridden')
-            and "decidedAt" is not null
-            and "decidedAt" >= "createdAt"
-        `),
-        // Monthly exception volume across the whole window (raw SQL for the
-        // date truncation; Postgres-only by datasource contract).
-        db.$queryRaw<{ month: string; count: bigint }[]>(
-          Prisma.sql`
-            select to_char(date_trunc('month', "createdAt"), 'YYYY-MM') as month,
-                   count(*)::bigint as count
-            from requisition
-            where status = 'exception'
-              and "createdAt" >= ${since}
-            group by 1
-            order by 1
-          `,
-        ),
+        this.approvalLatency(since),
+        this.monthlyExceptions(since),
         db.budget.findMany({
           where: { updatedAt: { gte: since } },
           orderBy: [{ costCenter: 'asc' }, { period: 'desc' }],
@@ -124,18 +210,7 @@ export class AnalyticsService {
           where: { startedAt: { gte: since } },
           _count: { _all: true },
         }),
-        db.$queryRaw<SkillStat[]>(
-          Prisma.sql`
-            select s as "skill",
-                   count(*)::int as total,
-                   sum(case when status = 'succeeded' then 1 else 0 end)::int as succeeded,
-                   sum(case when status = 'failed' then 1 else 0 end)::int as failed
-            from "agentRun", unnest(skills) as s
-            where "startedAt" >= ${since}
-            group by s
-            order by total desc
-          `,
-        ),
+        this.skillStats(since),
       ])
 
     const byStatus = new Map<string, number>()

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, type Prisma } from '@workspace/db'
+import { db, isSqlite, type Prisma } from '@workspace/db'
 import { InvoiceService } from '../invoice/invoice.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import {
@@ -160,11 +160,16 @@ export class ApprovalService {
             'PO cancellation approval has no purchase order',
           )
         }
-        await tx.$queryRaw`
-          SELECT id FROM "purchaseOrder"
-          WHERE id = ${approval.poId}
-          FOR UPDATE
-        `
+        // The row lock serialises the decision against a concurrent one.
+        // SQLite serialises writers for the whole transaction, so the lock
+        // statement is a no-op there.
+        if (!isSqlite()) {
+          await tx.$queryRaw`
+            SELECT id FROM "purchaseOrder"
+            WHERE id = ${approval.poId}
+            FOR UPDATE
+          `
+        }
         const poBefore = await tx.purchaseOrder.findUnique({
           where: { id: approval.poId },
         })
@@ -247,9 +252,12 @@ export class ApprovalService {
       if (approval.requisitionId) {
         // §10.1, Finding 8: serialize sibling approval decisions on this requisition
         // so concurrent approvals on sibling gates never race or miscount pending gates.
-        await tx.$queryRaw`
-          SELECT id FROM "requisition" WHERE id = ${approval.requisitionId} FOR UPDATE
-        `
+        // SQLite serialises writers for the whole transaction.
+        if (!isSqlite()) {
+          await tx.$queryRaw`
+            SELECT id FROM "requisition" WHERE id = ${approval.requisitionId} FOR UPDATE
+          `
+        }
 
         if (verdict === 'reject') {
           const req = await tx.requisition.update({
@@ -338,9 +346,13 @@ export class ApprovalService {
     if (!req.budgetId) {
       throw new ConflictException('Purchase order requisition has no budget')
     }
-    await tx.$queryRaw`
-      SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
-    `
+    // The budget row is locked while it is committed against; SQLite
+    // serialises writers for the whole transaction.
+    if (!isSqlite()) {
+      await tx.$queryRaw`
+        SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
+      `
+    }
     const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
     if (!budget) throw new NotFoundException('Purchase order budget not found')
     if (

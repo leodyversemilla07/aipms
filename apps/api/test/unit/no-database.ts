@@ -14,4 +14,8 @@ vi.mock('@workspace/db', () => ({
   ),
   // Unit fixtures inject clients; no real Prisma runtime or connection is needed.
   Prisma: {},
+  // The engine is the deployed one unless a test says otherwise: the
+  // PostgreSQL-specific statements stay on their production path.
+  isSqlite: () => false,
+  databaseProvider: () => 'postgres',
 }))

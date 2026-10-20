@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 
 export type LeaseResult<T> = { acquired: false } | { acquired: true; value: T }
 
@@ -23,6 +23,11 @@ export class AutomationLeaseService {
         : 900_000
     return db.$transaction(
       async (tx) => {
+        // SQLite serialises writers for the whole transaction, so the lease is
+        // always available there.
+        if (isSqlite()) {
+          return { acquired: true, value: await task() }
+        }
         const [lock] = await tx.$queryRaw<Array<{ acquired: boolean }>>(
           Prisma.sql`
             SELECT pg_try_advisory_xact_lock(

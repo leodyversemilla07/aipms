@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
-import { db, Prisma, type UserKind } from '@workspace/db'
+import { db, isSqlite, Prisma, type UserKind } from '@workspace/db'
 import { paginate } from '../../trpc/list-input'
+import { lockScope } from '../locks'
 
 /**
  * §9 append-only audit trail. Every agent/human state change records an
@@ -118,8 +119,11 @@ export class AuditService {
   ): Promise<void> {
     const append = async (tx: Prisma.TransactionClient) => {
       // Serialize chain appends: read-then-insert of prevHash must be linear
-      // or concurrent writers would fork the chain.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('aipms-audit-chain'))`
+      // or concurrent writers would fork the chain. SQLite serialises writers
+      // for the whole transaction, so the advisory lock is a no-op there.
+      if (!isSqlite()) {
+        await lockScope(tx, 'aipms-audit-chain')
+      }
 
       const prev = await tx.auditEntry.findFirst({
         where: { entryHash: { not: null } },
@@ -144,6 +148,11 @@ export class AuditService {
       }
       const entryHash = this.entryHash(prevHash, id, at, content)
 
+      // PostgreSQL assigns the chain sequence from a column default. SQLite
+      // can only auto-increment a primary key, so the writer takes the next
+      // sequence itself - safe under SQLite's exclusive write transaction.
+      const seq = isSqlite() ? await this.nextSeq(tx) : undefined
+
       await tx.auditEntry.create({
         data: {
           id,
@@ -163,11 +172,18 @@ export class AuditService {
           at,
           prevHash,
           entryHash,
+          ...(seq === undefined ? {} : { seq }),
         },
       })
     }
     if (transaction) await append(transaction)
     else await db.$transaction(append)
+  }
+
+  /** The next chain sequence, across legacy and chained rows alike. */
+  private async nextSeq(tx: Prisma.TransactionClient): Promise<number> {
+    const highest = await tx.auditEntry.aggregate({ _max: { seq: true } })
+    return (highest._max.seq ?? 0) + 1
   }
 
   /**

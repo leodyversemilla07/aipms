@@ -12,6 +12,7 @@ import {
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockScope } from '../shared/locks'
 import {
   assertDatabaseInt,
   assertSingleCurrency,
@@ -162,7 +163,7 @@ export class RequisitionService {
           )
         }
       }
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('requisition_number'))`
+      await lockScope(tx, 'requisition_number')
       const requestNumber = await this.numbers.next('REQ-', () =>
         tx.requisition
           .findFirst({

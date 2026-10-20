@@ -1,2 +1,5 @@
-# Prisma Client is generated from prisma/schema.prisma — never commit it.
+# Prisma Client is generated from prisma/schema.prisma - never commit it.
 src/generated/
+# The SQLite development schema is generated from the canonical one.
+prisma/schema.sqlite.prisma
+prisma/migrations-sqlite/

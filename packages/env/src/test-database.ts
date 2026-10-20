@@ -15,10 +15,18 @@ export default function requireIsolatedTestDatabase(
   let database: string
   try {
     const url = new URL(active)
-    if (!["postgres:", "postgresql:"].includes(url.protocol)) {
-      throw new Error("not PostgreSQL")
+    if (url.protocol === "file:") {
+      // The local SQLite environment isolates by file name: the file itself
+      // is the disposable database.
+      const file = decodeURIComponent(url.pathname)
+      const base = file.split(/[\\/]/).pop() ?? file
+      database = base.replace(/\.[^.]+$/, "")
+    } else {
+      if (!["postgres:", "postgresql:"].includes(url.protocol)) {
+        throw new Error("not PostgreSQL")
+      }
+      database = decodeURIComponent(url.pathname.slice(1))
     }
-    database = decodeURIComponent(url.pathname.slice(1))
   } catch {
     throw new Error("AIPMS_TEST_DATABASE_URL must be a valid PostgreSQL URL")
   }

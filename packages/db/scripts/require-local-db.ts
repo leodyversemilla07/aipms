@@ -23,6 +23,9 @@ if (!resolved) {
 
 const host = hostOf(resolved.url)
 
+// A SQLite file lives on this machine: there is no remote to damage.
+if (host === null) process.exit(0)
+
 if (LOCAL_HOSTS.has(host)) process.exit(0)
 
 if (process.env.ALLOW_REMOTE_DB === "1") {
@@ -88,9 +91,12 @@ function workspaceRoot(): string | null {
   }
 }
 
-function hostOf(value: string): string {
+function hostOf(value: string): string | null {
   try {
-    return new URL(value).hostname
+    const url = new URL(value)
+    // A file: URL names a local file, not a host.
+    if (url.protocol === "file:") return null
+    return url.hostname
   } catch {
     return value
   }

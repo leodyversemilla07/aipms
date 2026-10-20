@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { ConflictException, Injectable } from '@nestjs/common'
 import { db, Prisma } from '@workspace/db'
+import { lockScope } from '../locks'
 
 /**
  * §9 idempotency: mutating procedures take an idempotency key so agent retries
@@ -53,7 +54,7 @@ export class IdempotencyService {
     return db.$transaction(
       async (tx) => {
         // Transaction-owned lock disappears on rollback/crash; no orphan claim.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`
+        await lockScope(tx, key)
         const existing = await tx.idempotencyKey.findUnique({ where: { key } })
         if (existing) {
           const stored = existing.resultJson as {

@@ -11,6 +11,7 @@ import {
   Prisma,
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
+import { lockScope } from '../shared/locks'
 import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, paginate } from '../trpc/list-input'
 import { type BuiltBatch, buildPaymentBatch } from './batch'
@@ -179,7 +180,7 @@ export class PaymentRunService {
       // parallel creates on disjoint invoices cannot collide; the retry
       // loop below is a belt-and-braces net for any residual race.
       const runNumber = await this.documentNumber.next('RUN-', async () => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('payment_run_number'))`
+        await lockScope(tx, 'payment_run_number')
         const last = await tx.paymentRun.findFirst({
           orderBy: { runNumber: 'desc' },
         })

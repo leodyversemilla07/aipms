@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockScope } from '../shared/locks'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 import {
@@ -276,7 +277,11 @@ export class ErpService {
     const { json } = await this.manifest(exportId)
     const claimId = randomUUID()
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`qbo-push:${exportId}`}))`
+      // One push per export at a time. SQLite serialises writers for the whole
+      // transaction, so the advisory lock is a no-op there.
+      if (!isSqlite()) {
+        await lockScope(tx, `qbo-push:${exportId}`)
+      }
       const row = await tx.erpJournalExport.findUnique({
         where: { id: exportId },
       })
@@ -378,7 +383,7 @@ export class ErpService {
   ) {
     // §13, Finding 340: serialize acknowledgement and QBO push claim operations under
     // the same advisory lock and row lock to prevent claim creation from racing manual acknowledgement.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`qbo-push:${input.exportId}`}))`
+    await lockScope(tx, `qbo-push:${input.exportId}`)
     await tx.$queryRaw`SELECT id FROM "erpJournalExport" WHERE id = ${input.exportId} FOR UPDATE`
 
     const row = await tx.erpJournalExport.findUnique({
@@ -480,7 +485,7 @@ export class ErpService {
     // Bulk sync commits all-or-nothing. Serialized on an advisory lock so
     // concurrent syncs cannot create duplicate master rows.
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('erp_vendor_ingest'))`
+      await lockScope(tx, 'erp_vendor_ingest')
       let created = 0
       let updated = 0
       for (const v of vendors) {
@@ -547,7 +552,17 @@ export class ErpService {
         _sum: { totalMinor: true },
         where: { status: 'posted' },
       }),
-      db.$queryRaw<MissingExportRow[]>(Prisma.sql`
+      isSqlite()
+        ? db.$queryRaw<MissingExportRow[]>(Prisma.sql`
+            select pr.id as "runId", pr."runNumber", pr."totalMinor",
+                   pr."currencyCode", count(*) over() as "totalCount"
+            from "paymentRun" pr
+            left join "erpJournalExport" e on e."runId" = pr.id
+            where pr.status in ('executed', 'reconciled') and e.id is null
+            order by pr."executedAt" desc nulls last, pr.id
+            limit 500
+          `)
+        : db.$queryRaw<MissingExportRow[]>(Prisma.sql`
           select pr.id as "runId", pr."runNumber", pr."totalMinor",
                  pr."currencyCode", count(*) over()::bigint as "totalCount"
           from "paymentRun" pr
