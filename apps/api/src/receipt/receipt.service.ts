@@ -9,7 +9,7 @@ import type { RematchSummary } from '../invoice/invoice.service'
 import { InvoiceService } from '../invoice/invoice.service'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { lockScope } from '../shared/locks'
+import { lockScope, lockSelection } from '../shared/locks'
 import { DATABASE_INT_MAX } from '../shared/money/minor-units'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
@@ -97,7 +97,11 @@ export class ReceiptService {
     // Serialize the over-receipt check and the receipt-number mint with
     // row + advisory locks so concurrent recorders cannot double-book.
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId}`,
+        ),
+      )
       await lockScope(tx, 'receipt_number')
 
       const po = await tx.purchaseOrder.findUnique({
@@ -244,7 +248,11 @@ export class ReceiptService {
         throw new ConflictException(`Receipt ${id} is already cancelled`)
       }
       // Serialize with recorders and invoice registrations on this PO.
-      await tx.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${receipt.poId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`SELECT id FROM "purchaseOrder" WHERE id = ${receipt.poId}`,
+        ),
+      )
       const changed = await tx.receipt.updateMany({
         where: { id, status: 'recorded' },
         data: { status: 'cancelled' },

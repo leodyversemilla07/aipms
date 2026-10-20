@@ -63,7 +63,19 @@ const logDefinitions: Prisma.LogDefinition[] = [
 const createAdapter = async (url: string) => {
   if (databaseProvider(url) === "sqlite") {
     const { PrismaLibSql } = await import("@prisma/adapter-libsql")
-    return new PrismaLibSql({ url })
+    // SQLite's default journal mode blocks every reader while a writer holds
+    // the file. The local environment runs a relay and the app against the
+    // same database, so WAL mode lets them work at the same time.
+    const { createClient } = await import("@libsql/client")
+    const bootstrap = createClient({ url })
+    try {
+      await bootstrap.execute("PRAGMA journal_mode=WAL")
+    } finally {
+      bootstrap.close()
+    }
+    // A busy timeout makes a writer wait for the lock instead of failing
+    // immediately.
+    return new PrismaLibSql({ url, timeout: 10_000 })
   }
   return new PrismaPg({ connectionString: url })
 }

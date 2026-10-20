@@ -44,8 +44,10 @@ export default defineConfig({
     {
       // Watcher-free boot: the dev script's node --watch fights the
       // nestjs-trpc codegen watcher (every regenerated server.ts restarts
-      // the API, which never settles on a fresh checkout).
-      command: "node --import @swc-node/register/esm-register src/main.ts",
+      // the API, which never settles on a fresh checkout). The client is
+      // regenerated first because it is engine-specific.
+      command:
+        "pnpm --filter @workspace/db db:generate && node --import @swc-node/register/esm-register src/main.ts",
       cwd: "../api",
       url: "http://localhost:3001/",
       reuseExistingServer: !process.env.CI,

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { containsInsensitive, db, Prisma } from '@workspace/db'
 import { PolicyService } from '../policy/policy.service'
 import {
   evaluateThresholdGate,
@@ -12,7 +12,7 @@ import {
 } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { lockScope } from '../shared/locks'
+import { lockScope, lockSelection } from '../shared/locks'
 import {
   assertDatabaseInt,
   assertSingleCurrency,
@@ -72,9 +72,9 @@ export class RequisitionService {
       : {}
     if (input.q) {
       where.OR = [
-        { requestNumber: { contains: input.q, mode: 'insensitive' } },
-        { costCenter: { contains: input.q, mode: 'insensitive' } },
-        { requestedBy: { contains: input.q, mode: 'insensitive' } },
+        { requestNumber: containsInsensitive(input.q) },
+        { costCenter: containsInsensitive(input.q) },
+        { requestedBy: containsInsensitive(input.q) },
       ]
     }
 
@@ -276,7 +276,9 @@ export class RequisitionService {
     const run = async (tx: Prisma.TransactionClient) => {
       // Lock the requisition first: concurrent submits serialize here and
       // the conditional updates below make double-submit impossible.
-      await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${id} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM requisition WHERE id = ${id}`),
+      )
       const requisition = await tx.requisition.findFirst({
         where: { id, ...(requestedBy ? { requestedBy } : {}) },
         include: { lines: true },

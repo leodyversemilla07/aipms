@@ -1,5 +1,5 @@
 import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
-import { db, isSqlite } from '@workspace/db'
+import { containsInsensitive, db, isSqlite, Prisma } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -11,6 +11,7 @@ import {
 import { z } from 'zod'
 import { AuditService } from '../shared/audit/audit.service'
 import { IdempotencyService } from '../shared/idempotency/idempotency.service'
+import { lockSelection } from '../shared/locks'
 import { toSkillList } from '../shared/skills'
 import type { AuthedTrpcContext } from '../trpc/context.types'
 import { listInput, paginate } from '../trpc/list-input'
@@ -129,8 +130,8 @@ export class AgentRouter {
       ...(q
         ? {
             OR: [
-              { id: { contains: q, mode: 'insensitive' as const } },
-              { agentId: { contains: q, mode: 'insensitive' as const } },
+              { id: containsInsensitive(q) },
+              { agentId: containsInsensitive(q) },
             ],
           }
         : {}),
@@ -174,9 +175,12 @@ export class AgentRouter {
         // The run row is locked while it is cancelled. SQLite serialises
         // writers for the whole transaction.
         if (!isSqlite()) {
-          await tx.$queryRaw`
-            SELECT id FROM "agentRun" WHERE id = ${input.id} FOR UPDATE
-          `
+          await tx.$queryRaw(
+            lockSelection(
+              Prisma.sql`
+            SELECT id FROM "agentRun" WHERE id = ${input.id}`,
+            ),
+          )
         }
         const run = await tx.agentRun.findUnique({ where: { id: input.id } })
         if (!run) throw new NotFoundException(`Agent run ${input.id} not found`)

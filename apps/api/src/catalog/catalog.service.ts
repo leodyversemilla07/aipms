@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@workspace/db'
-import { db } from '@workspace/db'
+import { containsInsensitive, db } from '@workspace/db'
 import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
@@ -31,9 +31,9 @@ export class CatalogService {
     const where: Prisma.CatalogItemWhereInput = input.q
       ? {
           OR: [
-            { name: { contains: input.q, mode: 'insensitive' } },
-            { sku: { contains: input.q, mode: 'insensitive' } },
-            { category: { contains: input.q, mode: 'insensitive' } },
+            { name: containsInsensitive(input.q) },
+            { sku: containsInsensitive(input.q) },
+            { category: containsInsensitive(input.q) },
           ],
         }
       : {}

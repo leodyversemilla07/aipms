@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import type { Prisma } from '@workspace/db'
-import { db } from '@workspace/db'
+import { containsInsensitive, db } from '@workspace/db'
 import {
   assertDatabaseInt,
   normalizeCurrencyCode,
@@ -22,9 +22,9 @@ export class BudgetService {
     const where: Prisma.BudgetWhereInput = input.q
       ? {
           OR: [
-            { name: { contains: input.q, mode: 'insensitive' } },
-            { costCenter: { contains: input.q, mode: 'insensitive' } },
-            { period: { contains: input.q, mode: 'insensitive' } },
+            { name: containsInsensitive(input.q) },
+            { costCenter: containsInsensitive(input.q) },
+            { period: containsInsensitive(input.q) },
           ],
         }
       : {}

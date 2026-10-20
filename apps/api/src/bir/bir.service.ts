@@ -227,8 +227,7 @@ export class BirService {
             where "ewtMinor" > 0
             group by 1
             order by 1 desc
-            offset ${skip}
-            limit ${take}
+            limit ${take} offset ${skip}
           `)
         : db.$queryRaw<
             {

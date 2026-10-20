@@ -4,11 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { containsInsensitive, db, Prisma } from '@workspace/db'
 import { evaluateVendorGate } from '../policy/policy-engine'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { lockScope } from '../shared/locks'
+import { lockScope, lockSelection } from '../shared/locks'
 import {
   assertDatabaseInt,
   assertSingleCurrency,
@@ -136,8 +136,8 @@ export class PurchaseOrderService {
     const where: Prisma.PurchaseOrderWhereInput = {}
     if (input.q) {
       where.OR = [
-        { poNumber: { contains: input.q, mode: 'insensitive' } },
-        { vendorId: { contains: input.q, mode: 'insensitive' } },
+        { poNumber: containsInsensitive(input.q) },
+        { vendorId: containsInsensitive(input.q) },
       ]
     }
     const primaryOrderBy: Prisma.PurchaseOrderOrderByWithRelationInput = (
@@ -199,7 +199,11 @@ export class PurchaseOrderService {
     const attempt = async (tx: Prisma.TransactionClient) => {
       // Serialize issuance per requisition and revalidate mutable gates after
       // acquiring locks. Different idempotency keys must not double-order.
-      await tx.$queryRaw`SELECT id FROM requisition WHERE id = ${input.requisitionId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`SELECT id FROM requisition WHERE id = ${input.requisitionId}`,
+        ),
+      )
       const requisition = await tx.requisition.findUnique({
         where: { id: input.requisitionId },
         include: { lines: true },
@@ -247,13 +251,19 @@ export class PurchaseOrderService {
         )
       }
 
-      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${input.vendorId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`SELECT id FROM vendor WHERE id = ${input.vendorId}`,
+        ),
+      )
       const vendor = await tx.vendor.findUnique({
         where: { id: input.vendorId },
       })
       if (!vendor) throw new NotFoundException('Vendor not found')
       const vendorDecision = evaluateVendorGate(vendor.status)
-      await tx.$queryRaw`SELECT id FROM budget WHERE id = ${budgetId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM budget WHERE id = ${budgetId}`),
+      )
       // Vendor gate: BLACKLIST is a hard block; unqualified needs human approval.
       if (vendorDecision.outcome === 'BLOCK') {
         throw new ConflictException(vendorDecision.reason)
@@ -458,9 +468,12 @@ export class PurchaseOrderService {
     requestedBy: string,
     tx: Prisma.TransactionClient = db,
   ) {
-    await tx.$queryRaw`
-      SELECT id FROM "purchaseOrder" WHERE id = ${id} FOR UPDATE
-    `
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`
+      SELECT id FROM "purchaseOrder" WHERE id = ${id}`,
+      ),
+    )
     const po = await tx.purchaseOrder.findUnique({ where: { id } })
     if (!po) throw new NotFoundException(`PurchaseOrder ${id} not found`)
     if (po.status !== 'confirmed' && po.status !== 'issued') {

@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common'
 import { db, type MessageStatus, type MessageTier, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockSelection } from '../shared/locks'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 import {
@@ -427,9 +428,12 @@ export class MessagingService {
     input: ResolveFailedMessageInput,
     tx: Prisma.TransactionClient = db,
   ): Promise<object> {
-    await tx.$queryRaw`
-      SELECT id FROM "message" WHERE id = ${input.id} FOR UPDATE
-    `
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`
+      SELECT id FROM "message" WHERE id = ${input.id}`,
+      ),
+    )
     const message = await tx.message.findUnique({ where: { id: input.id } })
     if (!message) throw new NotFoundException(`Message ${input.id} not found`)
     const isFailed = message.status === 'failed'
@@ -534,7 +538,9 @@ export class MessagingService {
     // Lock the message before reading content, then its vendor. The claim,
     // integrity check and current contact authorization commit before SMTP.
     const claim = await client.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT id FROM "message" WHERE id = ${id} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM "message" WHERE id = ${id}`),
+      )
       const message = await tx.message.findUnique({ where: { id } })
       if (!message) throw new NotFoundException(`Message ${id} not found`)
       const claimed = await tx.message.updateMany({
@@ -547,7 +553,11 @@ export class MessagingService {
       })
       if (claimed.count !== 1) return { claimed: false, message }
 
-      await tx.$queryRaw`SELECT id FROM "vendor" WHERE id = ${message.vendorId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`SELECT id FROM "vendor" WHERE id = ${message.vendorId}`,
+        ),
+      )
       const vendor = await tx.vendor.findUnique({
         where: { id: message.vendorId },
       })

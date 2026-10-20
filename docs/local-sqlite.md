@@ -63,18 +63,37 @@ pnpm dev:sqlite --reset
 | Area | PostgreSQL | SQLite (local) |
 |---|---|---|
 | Concurrency | Row locks (`FOR UPDATE`) and transaction-scoped advisory locks | SQLite serialises writers for the whole transaction, so the locks are no-ops there |
+| Case-insensitive search | `mode: 'insensitive'` on the filter | SQLite's `LIKE` is already case-insensitive for ASCII and has no such option |
+| JSON path filters | `path: ['outcome']` on a JSON column | Not supported; the payload is matched after the read |
+| Null ordering | `nulls: 'last'` in an order | Not supported; SQLite sorts nulls first |
 | Approval latency percentiles | `percentile_cont` in the database | Computed from the rows (same linear interpolation) |
 | Month buckets | `date_trunc` / `to_char` | `strftime` |
 | Skill aggregation | `jsonb_array_elements_text` | `json_each` |
 | Audit chain sequence | Column default (`autoincrement`) | Assigned by the writer (SQLite can only auto-increment a primary key) |
+| Journal mode | Server-side | WAL, so the relay and the app can work at the same time |
 
 Everything else - the money arithmetic, the policy engine, the tax engine, the
-audit hash chain, the API contracts - is the same code on both engines.
+audit hash chain, the API contracts - is the same code on both engines. The
+code compiles against either client, so one codebase serves both.
 
 **What this does not prove.** A local SQLite run cannot catch a bug that only
 PostgreSQL has (locking behaviour, isolation, aggregate edge cases, the
-`FOR UPDATE` paths). The integration and browser suites still run against
-PostgreSQL in CI, and that remains the gate.
+`FOR UPDATE` paths, the PostgreSQL-only query features above). The integration
+and browser suites still run against PostgreSQL in CI, and that remains the
+gate.
+
+## Running the suites locally on SQLite
+
+```bash
+DATABASE_URL=file:/abs/path/to/aipms_test.db \
+AIPMS_TEST_DATABASE_URL=file:/abs/path/to/aipms_test.db \
+  pnpm --filter web exec playwright test
+```
+
+The file name has to end in `_test`: the isolated-test guard accepts a
+disposable SQLite file the same way it accepts a disposable PostgreSQL
+database. The suite regenerates the Prisma client for the configured engine
+before it boots the API.
 
 ## Troubleshooting
 

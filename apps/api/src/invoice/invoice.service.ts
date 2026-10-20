@@ -3,10 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, type InvoiceStatus, Prisma } from '@workspace/db'
+import { db, type InvoiceStatus, isSqlite, Prisma } from '@workspace/db'
 import { computeTax } from '@workspace/tax'
 import { PolicyService } from '../policy/policy.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockSelection } from '../shared/locks'
 import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, paginate } from '../trpc/list-input'
 
@@ -138,7 +139,11 @@ export class InvoiceService {
       const computation = computeTax(input.lines, taxConfig)
       this.assertPersistableComputation(computation)
       if (input.poId != null) {
-        await client.$queryRaw`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId} FOR UPDATE`
+        await client.$queryRaw(
+          lockSelection(
+            Prisma.sql`SELECT id FROM "purchaseOrder" WHERE id = ${input.poId}`,
+          ),
+        )
       }
 
       // Dedupe up front: [vendorId, number] is unique, and a unique
@@ -474,19 +479,35 @@ export class InvoiceService {
     outerTx?: Prisma.TransactionClient,
   ): Promise<RematchSummary> {
     const client = outerTx ?? db
-    const open = await client.invoice.findMany({
-      where: {
-        poId,
-        OR: [
-          { status: 'received' },
-          {
-            status: 'exception',
-            matchResult: { path: ['outcome'], equals: 'receipt_shortfall' },
-          },
-        ],
-      },
-      orderBy: { receivedAt: 'asc' },
-    })
+    // The JSON path filter is a PostgreSQL feature. SQLite reads the same
+    // payload as text, so the outcome is matched after the read there.
+    const open = isSqlite()
+      ? (
+          await client.invoice.findMany({
+            where: {
+              poId,
+              OR: [{ status: 'received' }, { status: 'exception' }],
+            },
+            orderBy: { receivedAt: 'asc' },
+          })
+        ).filter((invoice) => {
+          if (invoice.status !== 'exception') return true
+          const result = invoice.matchResult as Record<string, unknown> | null
+          return result?.outcome === 'receipt_shortfall'
+        })
+      : await client.invoice.findMany({
+          where: {
+            poId,
+            OR: [
+              { status: 'received' },
+              {
+                status: 'exception',
+                matchResult: { path: ['outcome'], equals: 'receipt_shortfall' },
+              },
+            ],
+          } as unknown as Prisma.InvoiceWhereInput,
+          orderBy: { receivedAt: 'asc' },
+        })
     const summary: RematchSummary = {
       considered: open.length,
       matched: 0,
@@ -530,10 +551,13 @@ export class InvoiceService {
    * Paid obligations require a separate return/refund workflow, not correction.
    */
   async assertPoCorrectionAllowed(poId: string, tx: Prisma.TransactionClient) {
-    await tx.$queryRaw`
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`
       SELECT id FROM "invoice" WHERE "poId" = ${poId}
-      ORDER BY id FOR UPDATE
-    `
+      ORDER BY id`,
+      ),
+    )
     const invoices = await tx.invoice.findMany({
       where: { poId },
       orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }],

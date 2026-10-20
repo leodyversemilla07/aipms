@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { Injectable } from '@nestjs/common'
-import { db, isSqlite, Prisma, type UserKind } from '@workspace/db'
+import {
+  containsInsensitive,
+  db,
+  isSqlite,
+  Prisma,
+  type UserKind,
+} from '@workspace/db'
 import { paginate } from '../../trpc/list-input'
 import { lockScope } from '../locks'
 
@@ -154,6 +160,9 @@ export class AuditService {
       const seq = isSqlite() ? await this.nextSeq(tx) : undefined
 
       await tx.auditEntry.create({
+        // The chain sequence has a column default on PostgreSQL and is
+        // assigned by the writer on SQLite; the cast keeps one codebase for
+        // both engines.
         data: {
           id,
           runId: input.runId ?? null,
@@ -173,7 +182,7 @@ export class AuditService {
           prevHash,
           entryHash,
           ...(seq === undefined ? {} : { seq }),
-        },
+        } as unknown as Prisma.AuditEntryUncheckedCreateInput,
       })
     }
     if (transaction) await append(transaction)
@@ -415,10 +424,10 @@ export class AuditService {
     if (input.action) where.action = input.action
     if (input.q) {
       where.OR = [
-        { action: { contains: input.q, mode: 'insensitive' } },
-        { entity: { contains: input.q, mode: 'insensitive' } },
-        { entityId: { contains: input.q, mode: 'insensitive' } },
-        { actorId: { contains: input.q, mode: 'insensitive' } },
+        { action: containsInsensitive(input.q) },
+        { entity: containsInsensitive(input.q) },
+        { entityId: containsInsensitive(input.q) },
+        { actorId: containsInsensitive(input.q) },
       ]
     }
     const [rows, total] = await Promise.all([

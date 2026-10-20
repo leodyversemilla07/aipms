@@ -3,6 +3,11 @@ import { expect, test } from "@playwright/test"
 import { db } from "../../../packages/db/src/index"
 
 const fixtureEntity = `E2EAudit:${randomUUID()}`
+// The chain sequence is explicit: the local SQLite engine cannot
+// auto-increment a non-primary key. Each run gets its own block of sequence
+// numbers, so parallel workers never collide on the unique sequence.
+const seqBase =
+  900_000_000 + (Number.parseInt(fixtureEntity.slice(-8), 16) % 10_000) * 100
 
 test.beforeAll(async () => {
   // UI pagination needs its own history, not rows produced by other specs.
@@ -17,6 +22,7 @@ test.beforeAll(async () => {
       entity: fixtureEntity,
       entityId: `fixture-${index}`,
       at: new Date(start + index * 1000),
+      seq: seqBase + index,
     })),
   })
 })

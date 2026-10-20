@@ -4,7 +4,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common'
-import { db, Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 import type { DomainEventType } from './event-types'
 
 type RelayedEvent = {
@@ -141,18 +141,24 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
     event: RelayedEvent | undefined
   }> {
     const claimId = randomUUID()
+    const claimedAt = new Date()
     const staleBefore = new Date(Date.now() - this.leaseMs)
     const excludeAttempted = attempted.size
       ? Prisma.sql`AND "id" NOT IN (${Prisma.join([...attempted])})`
       : Prisma.empty
+    // The claim locks the row it takes. SQLite serialises writers for the
+    // whole transaction, so it claims without the lock clause.
+    const skipLocked = isSqlite()
+      ? Prisma.empty
+      : Prisma.sql`FOR UPDATE SKIP LOCKED`
     const events = await db.$transaction((tx) =>
       tx.$queryRaw<RelayedEvent[]>(Prisma.sql`
         UPDATE "domainEvent" AS event
         SET
           "dispatchClaimId" = ${claimId},
-          "dispatchClaimedAt" = NOW()
+          "dispatchClaimedAt" = ${claimedAt}
         FROM (
-          SELECT "id"
+          SELECT "id" AS "claimable_id"
           FROM "domainEvent"
           WHERE "publishedAt" IS NULL
             AND "deadLetteredAt" IS NULL
@@ -163,17 +169,17 @@ export class EventRelayService implements OnModuleInit, OnModuleDestroy {
               OR "dispatchClaimedAt" < ${staleBefore}
             )
           ORDER BY "createdAt" ASC
-          FOR UPDATE SKIP LOCKED
+          ${skipLocked}
           LIMIT 1
         ) AS claimable
-        WHERE event."id" = claimable."id"
+        WHERE event."id" = claimable."claimable_id"
         RETURNING
-          event."id",
-          event."type",
-          event."entityType",
-          event."entityId",
-          event."payload",
-          event."createdAt"
+          "id",
+          "type",
+          "entityType",
+          "entityId",
+          "payload",
+          "createdAt"
       `),
     )
     return { claimId, event: events[0] }

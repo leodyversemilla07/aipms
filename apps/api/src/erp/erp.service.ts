@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common'
 import { db, isSqlite, Prisma } from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
-import { lockScope } from '../shared/locks'
+import { lockScope, lockSelection } from '../shared/locks'
 import type { ListInput, ListResult } from '../trpc/list-input'
 import { paginate } from '../trpc/list-input'
 import {
@@ -384,7 +384,11 @@ export class ErpService {
     // §13, Finding 340: serialize acknowledgement and QBO push claim operations under
     // the same advisory lock and row lock to prevent claim creation from racing manual acknowledgement.
     await lockScope(tx, `qbo-push:${input.exportId}`)
-    await tx.$queryRaw`SELECT id FROM "erpJournalExport" WHERE id = ${input.exportId} FOR UPDATE`
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`SELECT id FROM "erpJournalExport" WHERE id = ${input.exportId}`,
+      ),
+    )
 
     const row = await tx.erpJournalExport.findUnique({
       where: { id: input.exportId },
@@ -573,10 +577,15 @@ export class ErpService {
         `),
       db.erpJournalExport.findMany({
         where: { status: 'exported' },
-        orderBy: [
-          { dispatchClaimId: { sort: 'asc', nulls: 'last' } },
-          { exportedAt: 'desc' },
-        ],
+        // Prisma's nulls ordering is a PostgreSQL feature, and its object
+        // form is only accepted there for date fields. SQLite sorts nulls
+        // first, which only changes the order of the local view.
+        orderBy: (isSqlite()
+          ? [{ dispatchClaimId: 'asc' }, { exportedAt: 'desc' }]
+          : [
+              { dispatchClaimId: { sort: 'asc', nulls: 'last' } },
+              { exportedAt: 'desc' },
+            ]) as unknown as Prisma.ErpJournalExportOrderByWithRelationInput[],
         take: 500,
       }),
     ])

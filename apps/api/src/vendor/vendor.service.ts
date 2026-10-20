@@ -4,7 +4,13 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, Prisma, type VendorStatus } from '@workspace/db'
+import {
+  containsInsensitive,
+  db,
+  Prisma,
+  type VendorStatus,
+} from '@workspace/db'
+import { lockSelection } from '../shared/locks'
 import { type ListInput, type ListResult, paginate } from '../trpc/list-input'
 
 export interface CreateVendor {
@@ -102,9 +108,9 @@ export class VendorService {
     const where: Prisma.VendorWhereInput = input.q
       ? {
           OR: [
-            { name: { contains: input.q, mode: 'insensitive' } },
-            { email: { contains: input.q, mode: 'insensitive' } },
-            { taxId: { contains: input.q, mode: 'insensitive' } },
+            { name: containsInsensitive(input.q) },
+            { email: containsInsensitive(input.q) },
+            { taxId: containsInsensitive(input.q) },
           ],
         }
       : {}
@@ -155,7 +161,9 @@ export class VendorService {
     outerTx?: Prisma.TransactionClient,
   ) {
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM vendor WHERE id = ${vendorId}`),
+      )
       const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
       if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
 
@@ -223,7 +231,9 @@ export class VendorService {
     outerTx?: Prisma.TransactionClient,
   ): Promise<VendorView> {
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM vendor WHERE id = ${vendorId}`),
+      )
       const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
       if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
 
@@ -300,7 +310,9 @@ export class VendorService {
     outerTx?: Prisma.TransactionClient,
   ): Promise<VendorView> {
     const run = async (tx: Prisma.TransactionClient) => {
-      await tx.$queryRaw`SELECT id FROM vendor WHERE id = ${vendorId} FOR UPDATE`
+      await tx.$queryRaw(
+        lockSelection(Prisma.sql`SELECT id FROM vendor WHERE id = ${vendorId}`),
+      )
       const vendor = await tx.vendor.findUnique({ where: { id: vendorId } })
       if (!vendor) throw new NotFoundException(`Vendor ${vendorId} not found`)
 

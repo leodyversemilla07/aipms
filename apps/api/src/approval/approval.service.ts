@@ -5,9 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, isSqlite, type Prisma } from '@workspace/db'
+import { db, isSqlite, Prisma } from '@workspace/db'
 import { InvoiceService } from '../invoice/invoice.service'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
+import { lockSelection } from '../shared/locks'
 import {
   assertDatabaseInt,
   normalizeCurrencyCode,
@@ -164,11 +165,13 @@ export class ApprovalService {
         // SQLite serialises writers for the whole transaction, so the lock
         // statement is a no-op there.
         if (!isSqlite()) {
-          await tx.$queryRaw`
+          await tx.$queryRaw(
+            lockSelection(
+              Prisma.sql`
             SELECT id FROM "purchaseOrder"
-            WHERE id = ${approval.poId}
-            FOR UPDATE
-          `
+            WHERE id = ${approval.poId}`,
+            ),
+          )
         }
         const poBefore = await tx.purchaseOrder.findUnique({
           where: { id: approval.poId },
@@ -254,9 +257,12 @@ export class ApprovalService {
         // so concurrent approvals on sibling gates never race or miscount pending gates.
         // SQLite serialises writers for the whole transaction.
         if (!isSqlite()) {
-          await tx.$queryRaw`
-            SELECT id FROM "requisition" WHERE id = ${approval.requisitionId} FOR UPDATE
-          `
+          await tx.$queryRaw(
+            lockSelection(
+              Prisma.sql`
+            SELECT id FROM "requisition" WHERE id = ${approval.requisitionId}`,
+            ),
+          )
         }
 
         if (verdict === 'reject') {
@@ -349,9 +355,12 @@ export class ApprovalService {
     // The budget row is locked while it is committed against; SQLite
     // serialises writers for the whole transaction.
     if (!isSqlite()) {
-      await tx.$queryRaw`
-        SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
-      `
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`
+        SELECT id FROM budget WHERE id = ${req.budgetId}`,
+        ),
+      )
     }
     const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
     if (!budget) throw new NotFoundException('Purchase order budget not found')

@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { db, type IntakeStatus, Prisma } from '@workspace/db'
+import {
+  containsInsensitive,
+  db,
+  type IntakeStatus,
+  Prisma,
+} from '@workspace/db'
 import { EventEmitterService } from '../shared/events/event-emitter.service'
 import { type ListInput, paginate } from '../trpc/list-input'
 
@@ -151,9 +156,9 @@ export class IntakeService {
     if (input.status) where.status = input.status
     if (input.q) {
       where.OR = [
-        { channel: { contains: input.q, mode: 'insensitive' } },
-        { contentHash: { contains: input.q, mode: 'insensitive' } },
-        { senderId: { contains: input.q, mode: 'insensitive' } },
+        { channel: containsInsensitive(input.q) },
+        { contentHash: containsInsensitive(input.q) },
+        { senderId: containsInsensitive(input.q) },
       ]
     }
     return db.intakeDocument.findMany({
@@ -173,9 +178,9 @@ export class IntakeService {
     if (input.status) where.status = input.status
     if (input.q) {
       where.OR = [
-        { channel: { contains: input.q, mode: 'insensitive' } },
-        { contentHash: { contains: input.q, mode: 'insensitive' } },
-        { senderId: { contains: input.q, mode: 'insensitive' } },
+        { channel: containsInsensitive(input.q) },
+        { contentHash: containsInsensitive(input.q) },
+        { senderId: containsInsensitive(input.q) },
       ]
     }
     const [rows, total] = await Promise.all([

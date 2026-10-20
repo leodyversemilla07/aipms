@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { TRPCError } from '@trpc/server'
 import { db, Prisma, type UserRole } from '@workspace/db'
+import { lockSelection } from '../shared/locks'
 import {
   type DetachedSignature,
   SIGNATURE_ALGORITHM,
@@ -67,9 +68,12 @@ export class PoSigningService {
     const run = async (tx: Prisma.TransactionClient) => {
       // Freeze the signed snapshot against concurrent PO changes and enforce
       // countersignature separation from the principal that issued it.
-      await tx.$queryRaw`
-        SELECT id FROM "purchaseOrder" WHERE id = ${poId} FOR UPDATE
-      `
+      await tx.$queryRaw(
+        lockSelection(
+          Prisma.sql`
+        SELECT id FROM "purchaseOrder" WHERE id = ${poId}`,
+        ),
+      )
       const po = await this.load(poId, tx)
       if (po.status !== 'issued' && po.status !== 'confirmed') {
         throw new TRPCError({

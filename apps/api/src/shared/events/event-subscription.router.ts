@@ -1,5 +1,5 @@
 import { ConflictException, Inject, NotFoundException } from '@nestjs/common'
-import { db } from '@workspace/db'
+import { containsInsensitive, db, Prisma } from '@workspace/db'
 import {
   Ctx,
   Input,
@@ -9,6 +9,7 @@ import {
   UseMiddlewares,
 } from 'nestjs-trpc'
 import { z } from 'zod'
+import { lockSelection } from '../../shared/locks'
 import type { AuthedTrpcContext } from '../../trpc/context.types'
 import { listInput, paginate } from '../../trpc/list-input'
 import { AuthMiddleware } from '../../trpc/middlewares/auth.middleware'
@@ -72,10 +73,10 @@ export class EventSubscriptionRouter {
       ...(q
         ? {
             OR: [
-              { id: { contains: q, mode: 'insensitive' as const } },
-              { type: { contains: q, mode: 'insensitive' as const } },
-              { entityType: { contains: q, mode: 'insensitive' as const } },
-              { entityId: { contains: q, mode: 'insensitive' as const } },
+              { id: containsInsensitive(q) },
+              { type: containsInsensitive(q) },
+              { entityType: containsInsensitive(q) },
+              { entityId: containsInsensitive(q) },
             ],
           }
         : {}),
@@ -116,9 +117,12 @@ export class EventSubscriptionRouter {
         input,
       },
       async (tx) => {
-        await tx.$queryRaw`
-          SELECT id FROM "domainEvent" WHERE id = ${input.id} FOR UPDATE
-        `
+        await tx.$queryRaw(
+          lockSelection(
+            Prisma.sql`
+          SELECT id FROM "domainEvent" WHERE id = ${input.id}`,
+          ),
+        )
         const event = await tx.domainEvent.findUnique({
           where: { id: input.id },
         })

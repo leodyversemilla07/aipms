@@ -5,13 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import {
+  containsInsensitive,
   db,
   type PaymentRunStatus,
   type PaymentStatus,
   Prisma,
 } from '@workspace/db'
 import { DocumentNumberService } from '../shared/document-number/document-number.service'
-import { lockScope } from '../shared/locks'
+import { lockScope, lockSelection } from '../shared/locks'
 import { assertDatabaseInt } from '../shared/money/minor-units'
 import { type ListInput, paginate } from '../trpc/list-input'
 import { type BuiltBatch, buildPaymentBatch } from './batch'
@@ -102,7 +103,9 @@ export class PaymentRunService {
     // whole transaction, so attempt once and let the caller retry the key.
     const attempt = async (tx: Prisma.TransactionClient) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
-        Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) ORDER BY id FOR UPDATE`,
+        lockSelection(
+          Prisma.sql`SELECT id FROM "invoice" WHERE id IN (${Prisma.join(uniqueIds)}) ORDER BY id`,
+        ),
       )
       if (locked.length !== uniqueIds.length) {
         throw new NotFoundException('One or more invoices do not exist')
@@ -129,7 +132,9 @@ export class PaymentRunService {
         ...new Set(fresh.map((invoice) => invoice.vendorId)),
       ].sort()
       await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM vendor WHERE id IN (${Prisma.join(freshVendorIds)}) ORDER BY id FOR UPDATE`,
+        lockSelection(
+          Prisma.sql`SELECT id FROM vendor WHERE id IN (${Prisma.join(freshVendorIds)}) ORDER BY id`,
+        ),
       )
       const freshVendors = await tx.vendor.findMany({
         where: { id: { in: freshVendorIds } },
@@ -377,7 +382,9 @@ export class PaymentRunService {
   ) {
     const runTx = async (tx: Prisma.TransactionClient) => {
       const locked = await tx.$queryRaw<{ id: string }[]>(
-        Prisma.sql`SELECT id FROM "paymentRun" WHERE id = ${runId} FOR UPDATE`,
+        lockSelection(
+          Prisma.sql`SELECT id FROM "paymentRun" WHERE id = ${runId}`,
+        ),
       )
       if (locked.length !== 1) {
         throw new NotFoundException(`Payment run ${runId} not found`)
@@ -437,9 +444,12 @@ export class PaymentRunService {
     invoiceId: string,
     tx: Prisma.TransactionClient,
   ) {
-    await tx.$queryRaw`
-      SELECT id FROM "invoice" WHERE id = ${invoiceId} FOR UPDATE
-    `
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`
+      SELECT id FROM "invoice" WHERE id = ${invoiceId}`,
+      ),
+    )
     const invoice = await tx.invoice.findUnique({ where: { id: invoiceId } })
     if (!invoice) throw new NotFoundException(`Invoice ${invoiceId} not found`)
     if (invoice.status === 'paid') return
@@ -461,9 +471,12 @@ export class PaymentRunService {
     })
     if (!req?.budgetId) return
 
-    await tx.$queryRaw`
-      SELECT id FROM budget WHERE id = ${req.budgetId} FOR UPDATE
-    `
+    await tx.$queryRaw(
+      lockSelection(
+        Prisma.sql`
+      SELECT id FROM budget WHERE id = ${req.budgetId}`,
+      ),
+    )
     const budget = await tx.budget.findUnique({ where: { id: req.budgetId } })
     if (!budget) return
     await tx.budget.update({
@@ -520,8 +533,8 @@ export class PaymentRunService {
     if (input.status) where.status = input.status
     if (input.q) {
       where.OR = [
-        { runNumber: { contains: input.q, mode: 'insensitive' } },
-        { voidReason: { contains: input.q, mode: 'insensitive' } },
+        { runNumber: containsInsensitive(input.q) },
+        { voidReason: containsInsensitive(input.q) },
       ]
     }
     return db.paymentRun.findMany({
@@ -542,8 +555,8 @@ export class PaymentRunService {
     if (input.status) where.status = input.status
     if (input.q) {
       where.OR = [
-        { runNumber: { contains: input.q, mode: 'insensitive' } },
-        { voidReason: { contains: input.q, mode: 'insensitive' } },
+        { runNumber: containsInsensitive(input.q) },
+        { voidReason: containsInsensitive(input.q) },
       ]
     }
     const [rows, total] = await Promise.all([
