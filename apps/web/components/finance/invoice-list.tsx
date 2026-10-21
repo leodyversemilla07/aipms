@@ -1,13 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@workspace/ui/components/alert"
 import { Badge } from "@workspace/ui/components/badge"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
   TableBody,
@@ -19,6 +13,9 @@ import {
 import type { ReactNode } from "react"
 import { useEffect, useState } from "react"
 import { PageControls } from "@/components/page-controls"
+import { EmptyState } from "@/components/states/empty-state"
+import { ErrorState } from "@/components/states/error-state"
+import { PendingCard } from "@/components/states/pending-state"
 import { INVOICE_STATUS, netMinor } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
@@ -51,23 +48,15 @@ export function InvoiceList({
   }, [invoices.data, page, totalPages])
 
   if (invoices.isPending) {
-    // Show a loading skeleton instead of plain text.
-    return (
-      <div className="flex flex-col gap-2">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-full" />
-      </div>
-    )
+    return <PendingCard label="Loading invoices" />
   }
 
   if (invoices.isError) {
-    // Use shadcn Alert for a richer error UI.
     return (
-      <Alert variant="destructive">
-        <AlertTitle>Failed to load invoices</AlertTitle>
-        <AlertDescription>{invoices.error.message}</AlertDescription>
-      </Alert>
+      <ErrorState
+        title="Failed to load invoices"
+        message={invoices.error.message}
+      />
     )
   }
 
@@ -102,9 +91,10 @@ export function InvoiceList({
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No invoices registered yet.
-        </p>
+        <EmptyState
+          title="No invoices registered yet."
+          description="Register one from a received purchase order."
+        />
       ) : (
         <Table className="w-full">
           <TableHeader>

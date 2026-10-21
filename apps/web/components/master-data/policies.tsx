@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
 import { type ReactNode, useState } from "react"
+import { InlineError } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
 
 type PolicyRow = {
@@ -154,11 +155,7 @@ export function PoliciesPanel() {
           {notice}
         </p>
       ) : null}
-      {error ? (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} /> : null}
 
       <ul className="flex flex-col gap-2">
         {rows.map((p) => (

@@ -14,6 +14,9 @@ import {
 } from "@workspace/ui/components/dialog"
 import type { ReactNode } from "react"
 import { useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { ErrorState } from "@/components/states/error-state"
+import { PendingLabel } from "@/components/states/pending-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -115,16 +118,17 @@ export function AgentRuns({ heading }: { heading?: ReactNode }) {
       </div>
 
       {runsQuery.isError ? (
-        <p role="alert" className="text-destructive text-sm">
-          Could not load agent runs: {runsQuery.error.message}
-        </p>
+        <ErrorState
+          title="Could not load agent runs"
+          message={runsQuery.error.message}
+        />
       ) : runsQuery.isPending ? (
-        <p className="text-muted-foreground text-sm">Loading agent activity…</p>
+        <PendingLabel label="Loading agent activity" />
       ) : rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No agent runs yet — runs appear here as agents drain intake or react
-          to domain events.
-        </p>
+        <EmptyState
+          title="No agent runs yet."
+          description="Runs appear here as agents drain intake or react to domain events."
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {prioritizedRows.map((r) => {

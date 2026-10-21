@@ -18,7 +18,6 @@ import {
   DialogTrigger,
 } from "@workspace/ui/components/dialog"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
   TableBody,
@@ -36,6 +35,7 @@ import {
 } from "@workspace/ui/components/tooltip"
 import { useEffect, useState } from "react"
 import { PageControls } from "@/components/page-controls"
+import { PendingCard } from "@/components/states/pending-state"
 import { LINE_STATUS, netMinor, RUN_STATUS } from "@/lib/finance"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
@@ -235,13 +235,7 @@ export function PaymentRuns() {
   }
 
   if (runs.isPending || matched.isPending) {
-    return (
-      <section className="flex flex-col gap-3">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-full" />
-      </section>
-    )
+    return <PendingCard label="Loading payment runs" />
   }
 
   return (

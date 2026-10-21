@@ -17,6 +17,8 @@ import {
 } from "@workspace/ui/components/select"
 import type { ReactNode } from "react"
 import { useState } from "react"
+import { ErrorState, InlineError } from "@/components/states/error-state"
+import { PendingLabel } from "@/components/states/pending-state"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -81,13 +83,12 @@ export function AnalyticsPanel({ heading }: { heading?: ReactNode }) {
       </div>
 
       {overview.isError ? (
-        <p role="alert" className="text-destructive text-sm">
-          Could not load operations metrics: {overview.error.message}
-        </p>
+        <ErrorState
+          title="Could not load operations metrics"
+          message={overview.error.message}
+        />
       ) : !d ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          Computing…
-        </p>
+        <PendingLabel label="Computing" />
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {/* Spend control stays above secondary operational metrics. */}
@@ -245,11 +246,7 @@ export function AnalyticsPanel({ heading }: { heading?: ReactNode }) {
                   {pruneNotice}
                 </p>
               ) : null}
-              {pruneError ? (
-                <p className="rounded bg-destructive/10 px-3 py-1.5 text-destructive text-xs">
-                  {pruneError}
-                </p>
-              ) : null}
+              {pruneError ? <InlineError message={pruneError} /> : null}
               {retentionQuery.data ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border p-3">

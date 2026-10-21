@@ -18,6 +18,8 @@ import {
 } from "@workspace/ui/components/select"
 import { useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
+import { EmptyState } from "@/components/states/empty-state"
+import { InlineError } from "@/components/states/error-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -96,11 +98,7 @@ export function Receipts() {
           {notice}
         </p>
       ) : null}
-      {error ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} /> : null}
 
       <RecordReceiptForm
         open={recording}
@@ -120,10 +118,10 @@ export function Receipts() {
       />
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No receipts yet — record a delivery against an issued or confirmed PO
-          above.
-        </p>
+        <EmptyState
+          title="No receipts yet."
+          description="Record a delivery against an issued or confirmed PO above."
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((r) => (

@@ -5,6 +5,8 @@ import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
 import { Textarea } from "@workspace/ui/components/textarea"
 import { useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { InlineError } from "@/components/states/error-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -75,16 +77,10 @@ export function MessagingQueue() {
         </div>
       </div>
 
-      {error ? (
-        <p className="rounded-lg bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} /> : null}
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No {status} messages.
-        </p>
+        <EmptyState title={`No ${status} messages.`} />
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((m) => (

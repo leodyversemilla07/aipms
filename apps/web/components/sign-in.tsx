@@ -4,6 +4,7 @@ import { authClient } from "@workspace/auth/client"
 import { Button } from "@workspace/ui/components/button"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { InlineError } from "@/components/states/error-state"
 
 /**
  * Sign-in for provisioned accounts. Proxies to the API at
@@ -84,11 +85,7 @@ export function SignInCard() {
           />
         </label>
 
-        {error ? (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineError message={error} /> : null}
 
         <Button type="submit" disabled={busy} className="mt-1">
           {busy ? "…" : "Sign in"}

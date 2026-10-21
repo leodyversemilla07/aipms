@@ -20,15 +20,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@workspace/ui/components/empty"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import type { ReactNode } from "react"
 import { useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { ErrorState, InlineError } from "@/components/states/error-state"
+import { PendingState } from "@/components/states/pending-state"
 import { minorToPhp } from "@/lib/money"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
@@ -132,20 +128,17 @@ export function ExceptionQueue({ heading }: { heading?: ReactNode }) {
         ) : null}
       </div>
       {pending.isPending ? (
-        <Skeleton className="h-24 w-full" />
+        <PendingState label="Loading the approval queue" rows={3} />
       ) : pending.isError ? (
-        <p role="alert" className="text-destructive text-sm">
-          Could not load the approval queue: {pending.error.message}
-        </p>
+        <ErrorState
+          title="Could not load the approval queue"
+          message={pending.error.message}
+        />
       ) : rows.length === 0 ? (
-        <Empty className="border py-6">
-          <EmptyHeader>
-            <EmptyTitle>All caught up</EmptyTitle>
-            <EmptyDescription>
-              No approvals need a human decision right now.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState
+          title="All caught up"
+          description="No approvals need a human decision right now."
+        />
       ) : (
         <ul className="flex flex-col gap-3">
           {rows.map((item) => (
@@ -214,9 +207,7 @@ export function ExceptionQueue({ heading }: { heading?: ReactNode }) {
             </div>
           ) : null}
           {decide.isError ? (
-            <p role="alert" className="text-destructive text-sm">
-              Decision failed: {decide.error.message}
-            </p>
+            <InlineError message={`Decision failed: ${decide.error.message}`} />
           ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={decide.isPending}>

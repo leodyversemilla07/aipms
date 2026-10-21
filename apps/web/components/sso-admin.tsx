@@ -8,6 +8,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { PageHeader } from "@/components/page-header"
 import { SignInCard } from "@/components/sign-in"
+import { InlineError } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
 
 type ProviderRow = {
@@ -159,11 +160,7 @@ function SsoAdminBody() {
           {notice}
         </p>
       ) : null}
-      {error ? (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} /> : null}
 
       <section className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-sm">
         <h3 className="font-heading font-medium text-sm">Sign-in providers</h3>

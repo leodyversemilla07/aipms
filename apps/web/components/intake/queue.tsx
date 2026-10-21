@@ -20,6 +20,8 @@ import { Textarea } from "@workspace/ui/components/textarea"
 import { useEffect, useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
 import { PageControls } from "@/components/page-controls"
+import { EmptyState } from "@/components/states/empty-state"
+import { InlineError } from "@/components/states/error-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -268,11 +270,7 @@ export function IntakeQueue() {
             {notice}
           </p>
         ) : null}
-        {error ? (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-            {error}
-          </p>
-        ) : null}
+        {error ? <InlineError message={error} /> : null}
       </div>
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -334,10 +332,10 @@ export function IntakeQueue() {
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No documents. Ingest one above — re-ingest with the same [channel,
-          contentHash] is deduped.
-        </p>
+        <EmptyState
+          title="No documents."
+          description="Ingest one above - re-ingest with the same [channel, contentHash] is deduped."
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((doc) => (

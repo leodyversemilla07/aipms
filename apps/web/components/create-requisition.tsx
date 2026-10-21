@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@workspace/ui/components/button"
 import type { ReactNode } from "react"
 import { useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { InlineError } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
 
 type LineDraft = {
@@ -125,10 +127,10 @@ export function CreateRequisition({ heading }: { heading?: ReactNode }) {
       </div>
 
       {!show ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          Nothing to submit yet. Start a requisition and the policy engine gates
-          it.
-        </p>
+        <EmptyState
+          title="Nothing to submit yet."
+          description="Start a requisition and the policy engine gates it."
+        />
       ) : (
         <form
           onSubmit={submit}
@@ -218,11 +220,7 @@ export function CreateRequisition({ heading }: { heading?: ReactNode }) {
               {result}
             </p>
           ) : null}
-          {error ? (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-              {error}
-            </p>
-          ) : null}
+          {error ? <InlineError message={error} /> : null}
         </form>
       )}
     </section>

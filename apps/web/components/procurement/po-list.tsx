@@ -5,6 +5,7 @@ import { Button } from "@workspace/ui/components/button"
 import { useEffect, useState } from "react"
 import { ConfirmButton } from "@/components/confirm-button"
 import { PageControls } from "@/components/page-controls"
+import { EmptyState } from "@/components/states/empty-state"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -85,9 +86,10 @@ export function PoList() {
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No POs yet — issue one from an approved requisition above.
-        </p>
+        <EmptyState
+          title="No POs yet."
+          description="Issue one from an approved requisition above."
+        />
       ) : (
         <ul className="flex flex-col gap-2">
           {rows.map((po) => (

@@ -10,6 +10,8 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select"
 import { useEffect, useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { PendingLabel } from "@/components/states/pending-state"
 import { minorToPhp } from "@/lib/money"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
@@ -94,17 +96,21 @@ export function BirReports() {
       </div>
 
       {!period ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          {periods.isPending ? "Loading periods…" : "No withholding data yet."}
-        </p>
+        periods.isPending ? (
+          <PendingLabel label="Loading periods" />
+        ) : (
+          <EmptyState
+            title="No withholding data yet."
+            description="Register an invoice with EWT to see a period here."
+          />
+        )
       ) : remittance.isPending ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          Computing 1601-E…
-        </p>
+        <PendingLabel label="Computing 1601-E" />
       ) : !report || report.suppliers.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No creditable withholding recorded for {period}.
-        </p>
+        <EmptyState
+          title={`No creditable withholding recorded for ${period}.`}
+          description="Nothing was withheld in this period."
+        />
       ) : (
         <>
           <table className="w-full rounded-lg border bg-card text-sm">

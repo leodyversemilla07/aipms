@@ -16,18 +16,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@workspace/ui/components/card"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@workspace/ui/components/empty"
 import { Input } from "@workspace/ui/components/input"
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@workspace/ui/components/native-select"
-import { Skeleton } from "@workspace/ui/components/skeleton"
 import {
   Table,
   TableBody,
@@ -38,6 +31,9 @@ import {
 } from "@workspace/ui/components/table"
 import { useEffect, useState } from "react"
 import { PageControls } from "@/components/page-controls"
+import { EmptyState } from "@/components/states/empty-state"
+import { ErrorState, InlineError } from "@/components/states/error-state"
+import { PendingState } from "@/components/states/pending-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -290,10 +286,14 @@ export function AuditViewer() {
               </Button>
             </div>
             {expectedInput && !expected ? (
-              <p className="text-destructive text-xs">
-                That is not a checkpoint. Paste the copied JSON, or the sequence
-                and hash as <code>42 sha256…</code>.
-              </p>
+              <InlineError
+                message={
+                  <>
+                    That is not a checkpoint. Paste the copied JSON, or the
+                    sequence and hash as <code>42 sha256…</code>.
+                  </>
+                }
+              />
             ) : null}
             {chain.data?.checkpoint ? (
               <Alert
@@ -327,30 +327,17 @@ export function AuditViewer() {
         </CardHeader>
         <CardContent>
           {feed.isPending ? (
-            <div
-              role="status"
-              aria-label="Loading audit entries"
-              className="flex flex-col gap-2"
-            >
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
+            <PendingState label="Loading audit entries" rows={3} />
           ) : feed.isError ? (
-            <Alert variant="destructive">
-              <AlertTitle>Could not load audit entries</AlertTitle>
-              <AlertDescription>{feed.error.message}</AlertDescription>
-            </Alert>
+            <ErrorState
+              title="Could not load audit entries"
+              message={feed.error.message}
+            />
           ) : rows.length === 0 ? (
-            <Empty className="border py-8">
-              <EmptyHeader>
-                <EmptyTitle>No matching entries</EmptyTitle>
-                <EmptyDescription>
-                  Try another filter, or perform an action on a desk to record
-                  one.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
+            <EmptyState
+              title="No matching entries"
+              description="Try another filter, or perform an action on a desk to record one."
+            />
           ) : (
             <Table>
               <TableHeader>

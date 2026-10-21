@@ -26,12 +26,6 @@ import {
   DialogTitle,
 } from "@workspace/ui/components/dialog"
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@workspace/ui/components/empty"
-import {
   Field,
   FieldDescription,
   FieldLabel,
@@ -43,6 +37,7 @@ import {
 } from "@workspace/ui/components/toggle-group"
 import { useState } from "react"
 import { PageHeader } from "@/components/page-header"
+import { EmptyState } from "@/components/states/empty-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
 import { SignInCard } from "./sign-in"
@@ -267,14 +262,10 @@ function RecoveryConsole() {
         </div>
 
         {!deadLetters.isPending && rows.length === 0 ? (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyTitle>No dead-lettered events</EmptyTitle>
-              <EmptyDescription>
-                The outbox has no events requiring operator recovery.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <EmptyState
+            title="No dead-lettered events"
+            description="The outbox has no events requiring operator recovery."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {rows.map((event) => (
@@ -336,14 +327,10 @@ function RecoveryConsole() {
         </div>
 
         {!staleRuns.isPending && staleRows.length === 0 ? (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyTitle>No stale agent runs</EmptyTitle>
-              <EmptyDescription>
-                No running execution exceeds the configured automation lease.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <EmptyState
+            title="No stale agent runs"
+            description="No running execution exceeds the configured automation lease."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {staleRows.map((run) => (
@@ -397,15 +384,10 @@ function RecoveryConsole() {
         </div>
 
         {recoverableEmpty ? (
-          <Empty className="border">
-            <EmptyHeader>
-              <EmptyTitle>No failed or stale messages</EmptyTitle>
-              <EmptyDescription>
-                The outbound relay has no failures or ambiguous sending claims
-                requiring reconciliation.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <EmptyState
+            title="No failed or stale messages"
+            description="The outbound relay has no failures or ambiguous sending claims requiring reconciliation."
+          />
         ) : (
           <ul className="flex flex-col gap-2">
             {allRecoverableMessages.map((message) => (

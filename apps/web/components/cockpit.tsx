@@ -18,6 +18,7 @@ import { useEffect, useState } from "react"
 import { AnalyticsPanel } from "@/components/analytics-panel"
 import { PageSection } from "@/components/page-section"
 import { SectionTitle } from "@/components/section-title"
+import { ErrorState } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { PageHeader } from "./page-header"
@@ -140,10 +141,10 @@ function Dashboard() {
             />
           </div>
           {pending.isError || invoices.isError || runs.isError ? (
-            <p role="alert" className="text-destructive text-sm">
-              Some attention counts could not load. Check the sections below or
-              refresh.
-            </p>
+            <ErrorState
+              title="Some attention counts could not load."
+              message="Check the sections below or refresh."
+            />
           ) : null}
         </PageSection>
       )}
@@ -181,9 +182,10 @@ function Dashboard() {
           )}
         </div>
         {requisitions.isError || orders.isError ? (
-          <p role="alert" className="text-destructive text-sm">
-            Could not load some procurement counts.
-          </p>
+          <ErrorState
+            title="Could not load some procurement counts."
+            message="Check the sections below or refresh."
+          />
         ) : null}
       </PageSection>
 

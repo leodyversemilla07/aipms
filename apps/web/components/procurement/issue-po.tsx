@@ -7,6 +7,8 @@ import {
   NativeSelectOption,
 } from "@workspace/ui/components/native-select"
 import { useEffect, useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
+import { InlineError } from "@/components/states/error-state"
 import { minorToPhp } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -141,11 +143,7 @@ function RequisitionCard({
           {notice}
         </p>
       ) : null}
-      {error ? (
-        <p className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
+      {error ? <InlineError message={error} /> : null}
     </li>
   )
 }
@@ -179,10 +177,10 @@ export function IssuePo() {
       </div>
 
       {approved.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-muted-foreground text-sm">
-          No approved requisitions ready for sourcing. Raise and approve one on
-          the supervisory desk first.
-        </p>
+        <EmptyState
+          title="No approved requisitions ready for sourcing."
+          description="Raise and approve one on the supervisory desk first."
+        />
       ) : (
         <ul className="flex flex-col gap-3">
           {approved.map((req) => (

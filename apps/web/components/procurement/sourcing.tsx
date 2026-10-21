@@ -15,12 +15,6 @@ import {
 } from "@workspace/ui/components/card"
 import { Checkbox } from "@workspace/ui/components/checkbox"
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@workspace/ui/components/empty"
-import {
   Field,
   FieldGroup,
   FieldLabel,
@@ -33,6 +27,7 @@ import {
   NativeSelectOption,
 } from "@workspace/ui/components/native-select"
 import { useEffect, useMemo, useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
 import { phpToMinor } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -300,14 +295,10 @@ export function Sourcing() {
       </Card>
 
       {requisitionId && quoteRows.length === 0 && !quotes.isPending ? (
-        <Empty className="border">
-          <EmptyHeader>
-            <EmptyTitle>No quote requests</EmptyTitle>
-            <EmptyDescription>
-              Select eligible vendors above to open structured RFQs.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
+        <EmptyState
+          title="No quote requests"
+          description="Select eligible vendors above to open structured RFQs."
+        />
       ) : null}
 
       {quoteRows.map((quote) => {
