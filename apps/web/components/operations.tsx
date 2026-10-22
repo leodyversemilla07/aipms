@@ -40,7 +40,7 @@ import { PageHeader } from "@/components/page-header"
 import { EmptyState } from "@/components/states/empty-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
-import { SignInCard } from "./sign-in"
+import { SessionPending, SignInCard } from "./sign-in"
 
 type DeadLetter = {
   id: string
@@ -652,11 +652,7 @@ function RecoveryConsole() {
 export function OperationsDesk() {
   const { data: session, isPending } = authClient.useSession()
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

@@ -3,7 +3,7 @@
 import { authClient } from "@workspace/auth/client"
 import { AgentRuns } from "@/components/agent-runs"
 import { PageHeader } from "@/components/page-header"
-import { SignInCard } from "@/components/sign-in"
+import { SessionPending, SignInCard } from "@/components/sign-in"
 
 /**
  * Agent runs: what the unattended workers did and how they ended. Its own
@@ -26,11 +26,7 @@ export function AgentRunsDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

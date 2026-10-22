@@ -7,7 +7,7 @@ import { IssuePo } from "@/components/procurement/issue-po"
 import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
 import { Sourcing } from "@/components/procurement/sourcing"
-import { SignInCard } from "@/components/sign-in"
+import { SessionPending, SignInCard } from "@/components/sign-in"
 
 function ProcurementBody() {
   return (
@@ -29,11 +29,7 @@ export function ProcurementDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

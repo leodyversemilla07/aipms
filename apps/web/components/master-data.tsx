@@ -12,7 +12,7 @@ import { CatalogPanel } from "@/components/master-data/catalog"
 import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
 import { PageHeader } from "@/components/page-header"
-import { SignInCard } from "@/components/sign-in"
+import { SessionPending, SignInCard } from "@/components/sign-in"
 
 function MasterDataBody() {
   return (
@@ -50,11 +50,7 @@ export function MasterDataDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

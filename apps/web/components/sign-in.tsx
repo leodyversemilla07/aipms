@@ -7,6 +7,23 @@ import { LoginForm } from "@/components/login-form"
 import { PendingCard } from "@/components/states/pending-state"
 
 /**
+ * The session check, drawn with the shared pending vocabulary.
+ *
+ * The way in and every desk wait on the same session query before they can
+ * decide what to draw; showing the same shape keeps the first paint stable
+ * while the answer is unknown.
+ */
+export function SessionPending() {
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <PendingCard label="Checking your session" />
+      </div>
+    </div>
+  )
+}
+
+/**
  * The way in, following the shadcn `login-01` block: the form centred on the
  * muted background.
  *
@@ -28,13 +45,7 @@ export function SignInCard() {
   }, [session, router])
 
   if (isPending) {
-    return (
-      <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
-        <div className="w-full max-w-sm">
-          <PendingCard label="Checking your session" />
-        </div>
-      </div>
-    )
+    return <SessionPending />
   }
 
   return (

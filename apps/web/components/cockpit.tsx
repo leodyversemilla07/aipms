@@ -22,7 +22,7 @@ import { ErrorState } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
 import { CreateRequisition } from "./create-requisition"
 import { PageHeader } from "./page-header"
-import { SignInCard } from "./sign-in"
+import { SessionPending, SignInCard } from "./sign-in"
 
 function OverviewCard({
   title,
@@ -221,11 +221,7 @@ export function Cockpit() {
   }, [isPending])
 
   if (!initialCheckDone) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

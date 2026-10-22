@@ -3,7 +3,7 @@
 import { authClient } from "@workspace/auth/client"
 import { IntakeQueue } from "@/components/intake/queue"
 import { PageHeader } from "@/components/page-header"
-import { SignInCard } from "@/components/sign-in"
+import { SessionPending, SignInCard } from "@/components/sign-in"
 
 function IntakeBody() {
   return (
@@ -21,11 +21,7 @@ export function IntakeDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />

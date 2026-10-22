@@ -3,7 +3,7 @@
 import { authClient } from "@workspace/auth/client"
 import { InvoiceList } from "@/components/finance/invoice-list"
 import { PageHeader } from "@/components/page-header"
-import { SignInCard } from "@/components/sign-in"
+import { SessionPending, SignInCard } from "@/components/sign-in"
 
 /**
  * Invoice exceptions: invoices the engine could not match, so a person has
@@ -26,11 +26,7 @@ export function ExceptionsDesk() {
   const { data: session, isPending } = authClient.useSession()
 
   if (isPending) {
-    return (
-      <p className="py-24 text-center text-muted-foreground text-sm">
-        Checking session…
-      </p>
-    )
+    return <SessionPending />
   }
   if (!session) {
     return <SignInCard />
