@@ -34,20 +34,24 @@ export function NavQueues({ items }: { items: NavQueue[] }) {
   const queryClient = useQueryClient()
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup>
       <SidebarGroupLabel>Queues</SidebarGroupLabel>
       <SidebarMenu>
         {items.map((item) => (
           <SidebarMenuItem key={item.href}>
-            <SidebarMenuButton
-              render={<Link href={item.href} />}
-              tooltip={item.title}
-            >
+            <SidebarMenuButton render={<Link href={item.href} />}>
               <item.icon aria-hidden="true" />
               <span>{item.title}</span>
             </SidebarMenuButton>
             <DropdownMenu>
-              <DropdownMenuTrigger render={<SidebarMenuAction showOnHover />}>
+              <DropdownMenuTrigger
+                render={
+                  <SidebarMenuAction
+                    showOnHover
+                    className="aria-expanded:bg-muted"
+                  />
+                }
+              >
                 <MoreHorizontalIcon />
                 <span className="sr-only">More actions for {item.title}</span>
               </DropdownMenuTrigger>

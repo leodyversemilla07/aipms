@@ -51,11 +51,19 @@ test("sidebar persists across desks and marks the current page", async ({
     .getByRole("heading", { name: "Procurement desk" })
     .boundingBox()
   expect(procurementTitle?.x).toBeCloseTo(dashboardTitle?.x ?? 0, 0)
-  await page.getByRole("button", { name: "Toggle Sidebar" }).first().click()
+  // The header trigger collapses and reopens the rail (off-canvas, like
+  // sidebar-08), while the desk list itself stays flat.
+  const trigger = page.getByRole("button", { name: "Toggle Sidebar" })
+  const sidebar = page.locator('[data-slot="sidebar"]').first()
+  await expect(trigger).toBeVisible()
+  await expect(sidebar).toHaveAttribute("data-state", "expanded")
+  await trigger.click()
+  await expect(sidebar).toHaveAttribute("data-state", "collapsed")
+  await trigger.click()
+  await expect(sidebar).toHaveAttribute("data-state", "expanded")
   await expect(nav.getByRole("link", { name: "Dashboard" })).toBeVisible()
-  // The account menu (which carries the sign-out action) stays reachable
-  // when the rail collapses to icons.
-  await expect(page.getByRole("button", { name: "Account menu" })).toBeVisible()
+  await page.getByRole("button", { name: /Demo Maker/ }).click()
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible()
 })
 
 test("mobile sidebar opens and closes after navigation", async ({ page }) => {

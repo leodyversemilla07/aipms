@@ -76,11 +76,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         controls={controls.filter((entry) => isAllowed(entry.roles))}
       />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-2 sm:px-4">
+        <header className="flex h-16 shrink-0 items-center gap-2">
+          <div className="flex items-center gap-2 px-4">
             <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
-            <Breadcrumb aria-label="Breadcrumb">
+            <Separator
+              orientation="vertical"
+              className="mr-2 data-vertical:h-4 data-vertical:self-auto"
+            />
+            <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem className="hidden md:block">
                   <BreadcrumbLink render={<Link href="/" />}>
@@ -99,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           One content column for every page: the title, its sections and
           their cards share the same edge and the same rhythm.
         */}
-        <div className="w-full flex-1 px-4 py-6 sm:px-6">{children}</div>
+        <div className="w-full flex-1 px-4 pt-4 pb-6 sm:px-6">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   )

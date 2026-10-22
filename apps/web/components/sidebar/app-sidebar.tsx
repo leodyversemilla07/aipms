@@ -8,7 +8,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarRail,
   useSidebar,
 } from "@workspace/ui/components/sidebar"
 import { CommandIcon } from "lucide-react"
@@ -43,23 +42,20 @@ export function AppSidebar({
   const { setOpenMobile } = useSidebar()
 
   return (
-    <Sidebar variant="inset" collapsible="icon" aria-label="Desks">
+    <Sidebar variant="inset">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
               render={<Link href="/" onClick={() => setOpenMobile(false)} />}
-              title="AIPMS overview"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                 <CommandIcon className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">AIPMS</span>
-                <span className="truncate text-sidebar-foreground/70 text-xs">
-                  Supervisory desk
-                </span>
+                <span className="truncate font-medium">AIPMS</span>
+                <span className="truncate text-xs">Supervisory desk</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -72,10 +68,9 @@ export function AppSidebar({
           <NavControls items={controls} className="mt-auto" />
         </nav>
       </SidebarContent>
-      <SidebarFooter className="group-data-[collapsible=icon]:items-center">
+      <SidebarFooter>
         <NavUser user={user} />
       </SidebarFooter>
-      <SidebarRail />
     </Sidebar>
   )
 }

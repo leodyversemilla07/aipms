@@ -3,7 +3,6 @@
 import {
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -26,7 +25,6 @@ export function NavControls({
 
   return (
     <SidebarGroup {...props}>
-      <SidebarGroupLabel>Controls</SidebarGroupLabel>
       <SidebarGroupContent>
         <SidebarMenu>
           {items.map((item) => {
@@ -42,7 +40,6 @@ export function NavControls({
                   }
                   size="sm"
                   isActive={isActive}
-                  tooltip={item.title}
                   aria-current={isActive ? "page" : undefined}
                 >
                   <item.icon aria-hidden="true" />
