@@ -33,11 +33,10 @@ test("sign-in supports provisioned users without exposing public enrollment", as
     page.getByRole("heading", { name: "Supervisory desk" })
   ).toBeVisible()
   await expect(
-    page.getByRole("heading", { name: "Needs attention" })
+    page.getByRole("heading", { name: "Awaiting decision" })
   ).toBeVisible()
-  await expect(
-    page.getByRole("heading", { name: "Procurement flow" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Flow health" })).toBeVisible()
+  await expect(page.getByText("Budget watch", { exact: true })).toBeVisible()
   await expect(
     page.locator('[data-slot="sidebar-inset"]').getByText("Invoice exceptions")
   ).toBeVisible()

@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test"
  */
 
 test.describe("desks render", () => {
-  test("dashboard summarises attention and the procurement flow", async ({
+  test("dashboard summarises decisions, flow health, and requisitions", async ({
     page,
   }) => {
     await page.goto("/")
@@ -14,12 +14,14 @@ test.describe("desks render", () => {
       page.getByRole("heading", { name: "Supervisory desk" })
     ).toBeVisible()
     await expect(
-      page.getByRole("heading", { name: "Needs attention" })
+      page.getByRole("heading", { name: "Flow health" })
     ).toBeVisible()
     await expect(
-      page.getByRole("heading", { name: "Procurement flow" })
+      page.getByRole("heading", { name: "Awaiting decision" })
     ).toBeVisible()
-    await expect(page.getByText("New requisition")).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "New requisition" })
+    ).toBeVisible()
   })
 
   test("queue pages own their content", async ({ page }) => {
