@@ -47,3 +47,34 @@ test("sign-in supports provisioned users without exposing public enrollment", as
   ).toBeVisible()
   expect(buttonSemanticsErrors).toEqual([])
 })
+
+test("a background session check keeps the typed email", async ({ page }) => {
+  await page.goto("/login")
+  const email = page.getByLabel("Email", { exact: true })
+  await expect(email).toBeVisible()
+  await email.fill("maker@demo.aipms")
+
+  // Returning to the tab makes better-auth re-check the session. Hold the
+  // response so the in-flight state stays observable instead of racing it.
+  let releaseResponse!: () => void
+  const responseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve
+  })
+  await page.route("**/api/auth/get-session", async (route) => {
+    await responseGate
+    await route.continue()
+  })
+
+  const refetch = page.waitForRequest("**/api/auth/get-session")
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event("visibilitychange"))
+  })
+  await refetch
+
+  // The form must stay mounted with its value while the check is in flight,
+  // and keep it once the answer lands.
+  await expect(email).toHaveValue("maker@demo.aipms")
+  releaseResponse()
+  await expect(email).toHaveValue("maker@demo.aipms")
+  await expect(page.getByText("Checking your session")).toHaveCount(0)
+})

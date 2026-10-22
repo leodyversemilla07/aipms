@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { AgentRuns } from "@/components/agent-runs"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 /**
  * Agent runs: what the unattended workers did and how they ended. Its own
@@ -23,9 +23,9 @@ function AgentRunsBody() {
 }
 
 export function AgentRunsDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

@@ -1,10 +1,10 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import { LoginForm } from "@/components/login-form"
 import { PendingCard } from "@/components/states/pending-state"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 /**
  * The session check, drawn with the shared pending vocabulary.
@@ -34,7 +34,7 @@ export function SessionPending() {
  * `/login` route renders it as the page's own way in.
  */
 export function SignInCard() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
   const router = useRouter()
 
   // Background session refetches must not unmount a partially filled sign-in
@@ -44,7 +44,7 @@ export function SignInCard() {
     if (session) router.replace("/")
   }, [session, router])
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
 

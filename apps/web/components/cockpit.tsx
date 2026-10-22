@@ -1,7 +1,6 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { authClient } from "@workspace/auth/client"
 import { Badge } from "@workspace/ui/components/badge"
 import { buttonVariants } from "@workspace/ui/components/button"
 import {
@@ -14,12 +13,12 @@ import {
 } from "@workspace/ui/components/card"
 import { Skeleton } from "@workspace/ui/components/skeleton"
 import Link from "next/link"
-import { useEffect, useState } from "react"
 import { AnalyticsPanel } from "@/components/analytics-panel"
 import { PageSection } from "@/components/page-section"
 import { SectionTitle } from "@/components/section-title"
 import { ErrorState } from "@/components/states/error-state"
 import { useTRPC } from "@/lib/trpc/client"
+import { useSessionGate } from "@/lib/use-session-gate"
 import { CreateRequisition } from "./create-requisition"
 import { PageHeader } from "./page-header"
 import { SessionPending, SignInCard } from "./sign-in"
@@ -213,14 +212,9 @@ function Dashboard() {
 }
 
 export function Cockpit() {
-  const { data: session, isPending } = authClient.useSession()
-  // Background session refetches must not unmount a partially filled sign-in form.
-  const [initialCheckDone, setInitialCheckDone] = useState(false)
-  useEffect(() => {
-    if (!isPending) setInitialCheckDone(true)
-  }, [isPending])
+  const { session, isChecking } = useSessionGate()
 
-  if (!initialCheckDone) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

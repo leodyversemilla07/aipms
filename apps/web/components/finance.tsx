@@ -1,6 +1,5 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { DemoSwitcher } from "@/components/demo-switcher"
 import { BirReports } from "@/components/finance/bir-reports"
 import { ErpSync } from "@/components/finance/erp-sync"
@@ -9,6 +8,7 @@ import { InvoiceRegister } from "@/components/finance/invoice-register"
 import { PaymentRuns } from "@/components/finance/payment-runs"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 function FinanceBody() {
   return (
@@ -29,9 +29,9 @@ function FinanceBody() {
 }
 
 export function FinanceDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

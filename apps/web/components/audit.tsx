@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { AuditViewer } from "@/components/audit/viewer"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 function AuditBody() {
   return (
@@ -18,9 +18,9 @@ function AuditBody() {
 }
 
 export function AuditDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

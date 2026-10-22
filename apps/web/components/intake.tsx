@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { IntakeQueue } from "@/components/intake/queue"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 function IntakeBody() {
   return (
@@ -18,9 +18,9 @@ function IntakeBody() {
 }
 
 export function IntakeDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

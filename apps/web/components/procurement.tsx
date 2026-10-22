@@ -1,6 +1,5 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { MessagingQueue } from "@/components/messaging-queue"
 import { PageHeader } from "@/components/page-header"
 import { IssuePo } from "@/components/procurement/issue-po"
@@ -8,6 +7,7 @@ import { PoList } from "@/components/procurement/po-list"
 import { Receipts } from "@/components/procurement/receipts"
 import { Sourcing } from "@/components/procurement/sourcing"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 function ProcurementBody() {
   return (
@@ -26,9 +26,9 @@ function ProcurementBody() {
 }
 
 export function ProcurementDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

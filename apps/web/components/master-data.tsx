@@ -1,6 +1,5 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import {
   Tabs,
   TabsContent,
@@ -13,6 +12,7 @@ import { PoliciesPanel } from "@/components/master-data/policies"
 import { VendorsPanel } from "@/components/master-data/vendors"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 function MasterDataBody() {
   return (
@@ -47,9 +47,9 @@ function MasterDataBody() {
 }
 
 export function MasterDataDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { InvoiceList } from "@/components/finance/invoice-list"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 /**
  * Invoice exceptions: invoices the engine could not match, so a person has
@@ -23,9 +23,9 @@ function ExceptionsBody() {
 }
 
 export function ExceptionsDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

@@ -1,7 +1,6 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { authClient } from "@workspace/auth/client"
 import {
   Alert,
   AlertDescription,
@@ -40,6 +39,7 @@ import { PageHeader } from "@/components/page-header"
 import { EmptyState } from "@/components/states/empty-state"
 import { fmtTime } from "@/lib/time"
 import { useTRPC } from "@/lib/trpc/client"
+import { useSessionGate } from "@/lib/use-session-gate"
 import { SessionPending, SignInCard } from "./sign-in"
 
 type DeadLetter = {
@@ -650,8 +650,8 @@ function RecoveryConsole() {
 }
 
 export function OperationsDesk() {
-  const { data: session, isPending } = authClient.useSession()
-  if (isPending) {
+  const { session, isChecking } = useSessionGate()
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {

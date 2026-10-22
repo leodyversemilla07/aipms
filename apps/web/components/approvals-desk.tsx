@@ -1,9 +1,9 @@
 "use client"
 
-import { authClient } from "@workspace/auth/client"
 import { ExceptionQueue } from "@/components/exception-queue"
 import { PageHeader } from "@/components/page-header"
 import { SessionPending, SignInCard } from "@/components/sign-in"
+import { useSessionGate } from "@/lib/use-session-gate"
 
 /**
  * Approvals: the decisions a person still owes the process (§16.4 - the maker
@@ -23,9 +23,9 @@ function ApprovalsBody() {
 }
 
 export function ApprovalsDesk() {
-  const { data: session, isPending } = authClient.useSession()
+  const { session, isChecking } = useSessionGate()
 
-  if (isPending) {
+  if (isChecking) {
     return <SessionPending />
   }
   if (!session) {
