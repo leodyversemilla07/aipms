@@ -16,6 +16,7 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
+import { Spinner } from "@workspace/ui/components/spinner"
 import { cn } from "@workspace/ui/lib/utils"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -113,7 +114,14 @@ export function LoginForm({
 
               <Field>
                 <Button type="submit" disabled={busy}>
-                  {busy ? "Signing in…" : "Sign in"}
+                  {busy ? (
+                    <>
+                      <Spinner aria-hidden="true" data-icon="inline-start" />
+                      Signing in…
+                    </>
+                  ) : (
+                    "Sign in"
+                  )}
                 </Button>
                 <Button
                   variant="outline"

@@ -1,15 +1,42 @@
 "use client"
 
+import { authClient } from "@workspace/auth/client"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import { LoginForm } from "@/components/login-form"
+import { PendingCard } from "@/components/states/pending-state"
 
 /**
- * The signed-out view, following the shadcn `login-01` block: the form
- * centred on the muted background.
+ * The way in, following the shadcn `login-01` block: the form centred on the
+ * muted background.
  *
- * Every desk renders this when there is no session, so the way in looks the
- * same wherever a reader lands.
+ * The session decides what the reader sees. A pending check draws the shared
+ * loading state, a signed-in reader hands over to the workspace, and a signed
+ * out reader gets the form. The desks render this same view when there is no
+ * session, so the way in looks the same wherever a reader lands - and the
+ * `/login` route renders it as the page's own way in.
  */
 export function SignInCard() {
+  const { data: session, isPending } = authClient.useSession()
+  const router = useRouter()
+
+  // Background session refetches must not unmount a partially filled sign-in
+  // form; a resolved session hands over instead of leaving the reader on the
+  // way in.
+  useEffect(() => {
+    if (session) router.replace("/")
+  }, [session, router])
+
+  if (isPending) {
+    return (
+      <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
+        <div className="w-full max-w-sm">
+          <PendingCard label="Checking your session" />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-svh flex-col items-center justify-center bg-muted p-6 md:p-10">
       {/* The block widens to max-w-4xl so the form can sit beside an image;
