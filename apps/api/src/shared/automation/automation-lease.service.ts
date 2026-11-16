@@ -21,13 +21,17 @@ export class AutomationLeaseService {
       Number.isFinite(configuredTimeout) && configuredTimeout >= 1000
         ? configuredTimeout
         : 900_000
+    // SQLite serialises writers for the whole transaction, so the lease is
+    // always available there. The guarded work also runs without a lease
+    // transaction: the SQLite adapter allows one open transaction per
+    // connection, so a lease transaction would block the work it guards
+    // (the admission counters it reads live on the shared connection). The
+    // deployed engine keeps the advisory lock, which is the real guard.
+    if (isSqlite()) {
+      return { acquired: true, value: await task() }
+    }
     return db.$transaction(
       async (tx) => {
-        // SQLite serialises writers for the whole transaction, so the lease is
-        // always available there.
-        if (isSqlite()) {
-          return { acquired: true, value: await task() }
-        }
         const [lock] = await tx.$queryRaw<Array<{ acquired: boolean }>>(
           Prisma.sql`
             SELECT pg_try_advisory_xact_lock(

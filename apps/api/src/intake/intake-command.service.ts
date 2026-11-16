@@ -34,6 +34,11 @@ export class IntakeCommandService {
     outerTx?: Prisma.TransactionClient,
   ) {
     await this.authorize(actor)
+    // The agent admission is committed on its own, so it is taken before the
+    // business transaction opens. A caller that passes a transaction must
+    // already hold the admission (the quota middleware takes it before the
+    // procedure runs): the nested call then reuses it instead of reading
+    // the counters again from inside the open transaction.
     return this.quotas.run(actor, 'intake.ingest', () =>
       this.ingestAuthorized(input, actor, outerTx),
     )

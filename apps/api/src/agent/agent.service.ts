@@ -38,8 +38,11 @@ export class AgentService {
 
   async classifyAndRegister(docId: string, outerTx?: Prisma.TransactionClient) {
     // Pure extraction first (no I/O): the transaction below then covers
-    // classify → register → bridge atomically.
-    const preview = await this.intake.detail(docId)
+    // classify → register → bridge atomically. The preview reads through the
+    // caller's transaction when there is one: reading through the shared
+    // connection would look outside the transaction, and the SQLite adapter
+    // serialises every connection behind the open transaction.
+    const preview = await this.intake.detail(docId, outerTx)
     if (preview.status === 'dropped') {
       throw new ConflictException(
         'Dropped document cannot be processed by the agent',

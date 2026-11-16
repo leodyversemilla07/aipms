@@ -195,8 +195,8 @@ export class IntakeService {
     return { rows, total }
   }
 
-  async detail(id: string) {
-    const doc = await db.intakeDocument.findUnique({ where: { id } })
+  async detail(id: string, tx: Prisma.TransactionClient = db) {
+    const doc = await tx.intakeDocument.findUnique({ where: { id } })
     if (!doc) throw new NotFoundException(`IntakeDocument ${id} not found`)
     return doc
   }
