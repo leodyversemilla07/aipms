@@ -5,6 +5,7 @@ import request from 'supertest'
 import type { App } from 'supertest/types'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AppModule } from './../src/app.module'
+import { findManyByJsonPayload } from './support/json-payload'
 
 /**
  * @workspace agent M2M over tRPC — the eve runtime authenticates with
@@ -133,9 +134,20 @@ describe('Agent tRPC M2M (short-lived bearer)', () => {
     expect(audit?.actorId).toBe('agent-operator')
 
     await db.intakeDocument.deleteMany({ where: { id: doc.id } })
-    await db.agentRun.deleteMany({
-      where: { meta: { path: ['entityId'], equals: doc.id } },
-    })
+    // The run carries the document in its metadata payload; the payload
+    // filter is a PostgreSQL feature, so the row is matched after the read
+    // on SQLite.
+    const runs = await findManyByJsonPayload(
+      db.agentRun,
+      'meta',
+      ['entityId'],
+      [doc.id],
+    )
+    if (runs.length > 0) {
+      await db.agentRun.deleteMany({
+        where: { id: { in: runs.map((run) => run.id) } },
+      })
+    }
   })
 
   afterAll(async () => {

@@ -1,6 +1,7 @@
 import { db } from '@workspace/db'
 import { afterAll, describe, expect, it } from 'vitest'
 import { AnalyticsService } from '../src/analytics/analytics.service'
+import { AuditService } from '../src/shared/audit/audit.service'
 
 /**
  * §14 observability — aggregations over seeded domain rows. Everything
@@ -145,26 +146,29 @@ describe('AnalyticsService (§14)', () => {
       },
     })
     cleanup.runs.push(run.id)
-    await db.auditEntry.createMany({
-      data: [
-        {
-          actorId: 'agent:service',
-          actorKind: 'agent',
-          action: 'intake.classify',
-          entity: 'IntakeDocument',
-          entityId: 'doc-1',
-          runId: run.id,
-        },
-        {
-          actorId: 'agent:service',
-          actorKind: 'agent',
-          action: 'invoice.register',
-          entity: 'Invoice',
-          entityId: 'inv-1',
-          runId: run.id,
-        },
-      ],
-    })
+    // The audit service assigns the chain sequence on both engines
+    // (PostgreSQL from the column default, SQLite from the writer), so the
+    // trace entries are recorded the way the application records them.
+    const audit = new AuditService()
+    for (const entry of [
+      {
+        action: 'intake.classify',
+        entity: 'IntakeDocument',
+        entityId: 'doc-1',
+      },
+      {
+        action: 'invoice.register',
+        entity: 'Invoice',
+        entityId: 'inv-1',
+      },
+    ]) {
+      await audit.record({
+        actorId: 'agent:service',
+        actorKind: 'agent',
+        runId: run.id,
+        ...entry,
+      })
+    }
 
     const { run: fetched, entries } = await svc.runTrace(run.id)
     expect(fetched?.id).toBe(run.id)

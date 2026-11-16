@@ -362,6 +362,9 @@ pnpm build
 # Database-blocked API unit tests (no PostgreSQL required)
 pnpm --filter api test:unit
 
+# The whole API suite against a local SQLite file (no database server)
+pnpm test:sqlite
+
 # API integration tests (requires matching DATABASE_URL and
 # AIPMS_TEST_DATABASE_URL pointing to a disposable *_test database)
 pnpm --filter api test
@@ -379,10 +382,18 @@ pnpm db:studio     # Prisma Studio UI
 The unit lane selects only `test/unit/**/*.spec.ts` and the pure intake projection
 spec. Its database mock fails on any default-client access. The normal API suite
 still runs the fail-closed disposable-database guard; the unit lane is not a way
-to run integration tests against a development database. Browser E2E enforces
+to run integration tests against a development database. The database-blocked
+unit specs belong to that lane alone, so the integration lane does not run them
+against a real client. Browser E2E enforces
 that same guard before starting either server. Migrate and seed the explicitly
 selected disposable database before running E2E; the audit pagination spec
 appends isolated legacy fixtures and never removes append-only audit history.
+
+`pnpm test:sqlite` runs both lanes against a disposable SQLite file, so the
+whole API suite is verifiable on a workstation with no database server. The
+probes that only PostgreSQL can produce are skipped there rather than
+reported as failures. See [`docs/local-sqlite.md`](docs/local-sqlite.md) for
+what the local engine does and does not prove.
 
 ---
 

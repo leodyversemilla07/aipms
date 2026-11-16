@@ -123,6 +123,19 @@ await run(
     env: environment,
   }
 )
+// `db push` carries no triggers, so the audit append-only guard that the
+// PostgreSQL migration installs is applied here.
+await run(
+  "pnpm",
+  [
+    "--filter",
+    "@workspace/db",
+    "exec",
+    "node",
+    "scripts/apply-sqlite-audit-guard.mjs",
+  ],
+  { cwd: rootDirectory, env: environment }
+)
 await run(
   "pnpm",
   ["--filter", "@workspace/db", "exec", "prisma", "db", "seed"],

@@ -10,6 +10,7 @@ import { ReceiptService } from '../src/receipt/receipt.service'
 import { DocumentNumberService } from '../src/shared/document-number/document-number.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { VendorService } from '../src/vendor/vendor.service'
+import { postgresOnly } from './support/engine'
 
 /** Real PostgreSQL transactions/locks; the standard *_test guard is mandatory. */
 const prefix = `cancel-${randomUUID()}`
@@ -256,6 +257,10 @@ function observeInvoiceLock(
 }
 
 describe('PO cancellation financial invariants against PostgreSQL', () => {
+  // The three lock probes at the end of this block wait for a `FOR UPDATE`
+  // statement to appear in the transaction. SQLite has no row locks - it
+  // serialises writers for the whole transaction - so the barrier never
+  // opens there and the probes are skipped instead of failing.
   it('invalidates stale matched invoices and preserves the other PO commitment', async () => {
     const f = await fixture()
     expect(
@@ -363,147 +368,160 @@ describe('PO cancellation financial invariants against PostgreSQL', () => {
     ).toBe(0)
   })
 
-  it('sees a payment claim committed while receipt correction waits for the invoice lock', async () => {
-    const f = await fixture(true)
-    if (!f.receipt) throw new Error('Fixture receipt missing')
-    const receiptId = f.receipt.id
-    const held = deferred()
-    const release = deferred()
-    const attempted = deferred()
-    const planner = settled(
-      db.$transaction(
-        async (tx) => {
-          const run = await makeRun(f.invoice.id, tx)
-          held.resolve()
-          await release.promise
-          return run
-        },
-        { timeout: 15_000 },
-      ),
-    )
-    let correction: ReturnType<typeof settled> | undefined
-    try {
-      await wait(held.promise)
-      correction = settled(
+  it.skipIf(postgresOnly)(
+    'sees a payment claim committed while receipt correction waits for the invoice lock',
+    async () => {
+      const f = await fixture(true)
+      if (!f.receipt) throw new Error('Fixture receipt missing')
+      const receiptId = f.receipt.id
+      const held = deferred()
+      const release = deferred()
+      const attempted = deferred()
+      const planner = settled(
+        db.$transaction(
+          async (tx) => {
+            const run = await makeRun(f.invoice.id, tx)
+            held.resolve()
+            await release.promise
+            return run
+          },
+          { timeout: 15_000 },
+        ),
+      )
+      let correction: ReturnType<typeof settled> | undefined
+      try {
+        await wait(held.promise)
+        correction = settled(
+          db.$transaction(
+            (tx) =>
+              receipts.cancel(
+                receiptId,
+                observeInvoiceLock(tx, attempted.resolve),
+              ),
+            { timeout: 15_000 },
+          ),
+        )
+        await wait(attempted.promise)
+      } finally {
+        release.resolve()
+        await planner
+        if (correction) await correction
+      }
+      expect((await planner).status).toBe('fulfilled')
+      expect(await correction).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(ConflictException),
+      })
+      expect(
+        (await db.receipt.findUniqueOrThrow({ where: { id: receiptId } }))
+          .status,
+      ).toBe('recorded')
+      expect(
+        (await db.invoice.findUniqueOrThrow({ where: { id: f.invoice.id } }))
+          .status,
+      ).toBe('matched')
+    },
+    20_000,
+  )
+
+  it.skipIf(postgresOnly)(
+    'rejects planning after receipt correction wins the invoice lock',
+    async () => {
+      const f = await fixture(true)
+      if (!f.receipt) throw new Error('Fixture receipt missing')
+      const receiptId = f.receipt.id
+      const held = deferred()
+      const release = deferred()
+      const attempted = deferred()
+      const correction = settled(
         db.$transaction(
           (tx) =>
             receipts.cancel(
               receiptId,
-              observeInvoiceLock(tx, attempted.resolve),
+              observeInvoiceLock(tx, undefined, async () => {
+                held.resolve()
+                await release.promise
+              }),
             ),
           { timeout: 15_000 },
         ),
       )
-      await wait(attempted.promise)
-    } finally {
-      release.resolve()
-      await planner
-      if (correction) await correction
-    }
-    expect((await planner).status).toBe('fulfilled')
-    expect(await correction).toMatchObject({
-      status: 'rejected',
-      reason: expect.any(ConflictException),
-    })
-    expect(
-      (await db.receipt.findUniqueOrThrow({ where: { id: receiptId } })).status,
-    ).toBe('recorded')
-    expect(
-      (await db.invoice.findUniqueOrThrow({ where: { id: f.invoice.id } }))
-        .status,
-    ).toBe('matched')
-  }, 20_000)
-
-  it('rejects planning after receipt correction wins the invoice lock', async () => {
-    const f = await fixture(true)
-    if (!f.receipt) throw new Error('Fixture receipt missing')
-    const receiptId = f.receipt.id
-    const held = deferred()
-    const release = deferred()
-    const attempted = deferred()
-    const correction = settled(
-      db.$transaction(
-        (tx) =>
-          receipts.cancel(
-            receiptId,
-            observeInvoiceLock(tx, undefined, async () => {
-              held.resolve()
-              await release.promise
-            }),
+      let planner: ReturnType<typeof settled> | undefined
+      try {
+        await wait(held.promise)
+        planner = settled(
+          db.$transaction(
+            (tx) =>
+              makeRun(f.invoice.id, observeInvoiceLock(tx, attempted.resolve)),
+            { timeout: 15_000 },
           ),
-        { timeout: 15_000 },
-      ),
-    )
-    let planner: ReturnType<typeof settled> | undefined
-    try {
-      await wait(held.promise)
-      planner = settled(
-        db.$transaction(
-          (tx) =>
-            makeRun(f.invoice.id, observeInvoiceLock(tx, attempted.resolve)),
-          { timeout: 15_000 },
-        ),
-      )
-      await wait(attempted.promise)
-    } finally {
-      release.resolve()
-      await correction
-      if (planner) await planner
-    }
-    expect((await correction).status).toBe('fulfilled')
-    expect((await planner)?.status).toBe('rejected')
-    expect(
-      (await db.invoice.findUniqueOrThrow({ where: { id: f.invoice.id } }))
-        .status,
-    ).toBe('received')
-    expect(
-      await db.paymentRunLine.count({ where: { invoiceId: f.invoice.id } }),
-    ).toBe(0)
-  }, 20_000)
+        )
+        await wait(attempted.promise)
+      } finally {
+        release.resolve()
+        await correction
+        if (planner) await planner
+      }
+      expect((await correction).status).toBe('fulfilled')
+      expect((await planner)?.status).toBe('rejected')
+      expect(
+        (await db.invoice.findUniqueOrThrow({ where: { id: f.invoice.id } }))
+          .status,
+      ).toBe('received')
+      expect(
+        await db.paymentRunLine.count({ where: { invoiceId: f.invoice.id } }),
+      ).toBe(0)
+    },
+    20_000,
+  )
 
-  it('blocks PO cancellation when planning commits while its invoice lock is pending', async () => {
-    const f = await fixture()
-    const held = deferred()
-    const release = deferred()
-    const attempted = deferred()
-    const planner = settled(
-      db.$transaction(
-        async (tx) => {
-          const run = await makeRun(f.invoice.id, tx)
-          held.resolve()
-          await release.promise
-          return run
-        },
-        { timeout: 15_000 },
-      ),
-    )
-    let cancellation: ReturnType<typeof settled> | undefined
-    try {
-      await wait(held.promise)
-      cancellation = settled(
+  it.skipIf(postgresOnly)(
+    'blocks PO cancellation when planning commits while its invoice lock is pending',
+    async () => {
+      const f = await fixture()
+      const held = deferred()
+      const release = deferred()
+      const attempted = deferred()
+      const planner = settled(
         db.$transaction(
-          (tx) =>
-            approvals.decide(
-              f.gate.id,
-              'approve',
-              checker,
-              undefined,
-              observeInvoiceLock(tx, attempted.resolve),
-            ),
+          async (tx) => {
+            const run = await makeRun(f.invoice.id, tx)
+            held.resolve()
+            await release.promise
+            return run
+          },
           { timeout: 15_000 },
         ),
       )
-      await wait(attempted.promise)
-    } finally {
-      release.resolve()
-      await planner
-      if (cancellation) await cancellation
-    }
-    expect((await planner).status).toBe('fulfilled')
-    expect(await cancellation).toMatchObject({
-      status: 'rejected',
-      reason: expect.any(ConflictException),
-    })
-    await expectUnchanged(f)
-  }, 20_000)
+      let cancellation: ReturnType<typeof settled> | undefined
+      try {
+        await wait(held.promise)
+        cancellation = settled(
+          db.$transaction(
+            (tx) =>
+              approvals.decide(
+                f.gate.id,
+                'approve',
+                checker,
+                undefined,
+                observeInvoiceLock(tx, attempted.resolve),
+              ),
+            { timeout: 15_000 },
+          ),
+        )
+        await wait(attempted.promise)
+      } finally {
+        release.resolve()
+        await planner
+        if (cancellation) await cancellation
+      }
+      expect((await planner).status).toBe('fulfilled')
+      expect(await cancellation).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(ConflictException),
+      })
+      await expectUnchanged(f)
+    },
+    20_000,
+  )
 })

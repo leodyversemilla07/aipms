@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { MessageDispatcherService } from '../src/messaging/message-dispatcher.service'
 import { MessagingService } from '../src/messaging/messaging.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
+import { postgresOnly } from './support/engine'
 
 const ids: string[] = []
 const vendorIds: string[] = []
@@ -274,42 +275,48 @@ describe('staged message crash recovery (PostgreSQL)', () => {
     ).toBe(1)
   })
 
-  it('does not observe an uncommitted submission or send a rolled-back row', async () => {
-    const f = await fixture()
-    const rollback = new Error('rollback staged crash probe')
-    await expect(
-      db.$transaction(async (tx) => {
-        const result = await f.service.submit(
-          {
-            vendorId: f.vendor.id,
-            recipient,
-            templateId: 'invoice_ack',
-            templateParams: { invoiceNumber: f.invoice.number },
-          },
-          tx,
-        )
-        const id = (result.message as { id: string }).id
-        ids.push(id)
-        await f.dispatcher.poll()
-        expect(f.sends).not.toContain(id)
-        throw rollback
-      }),
-    ).rejects.toBe(rollback)
-    await f.dispatcher.poll()
-    expect(f.sends).toHaveLength(0)
-  })
-
-  it('does not see an approval until its surrounding transaction commits', async () => {
-    const f = await fixture()
-    const id = await f.stage(true)
-    await db.$transaction(async (tx) => {
-      await f.service.approve({ id, approverId: 'checker' }, tx)
+  it.skipIf(postgresOnly)(
+    'does not observe an uncommitted submission or send a rolled-back row',
+    async () => {
+      const f = await fixture()
+      const rollback = new Error('rollback staged crash probe')
+      await expect(
+        db.$transaction(async (tx) => {
+          const result = await f.service.submit(
+            {
+              vendorId: f.vendor.id,
+              recipient,
+              templateId: 'invoice_ack',
+              templateParams: { invoiceNumber: f.invoice.number },
+            },
+            tx,
+          )
+          const id = (result.message as { id: string }).id
+          ids.push(id)
+          await f.dispatcher.poll()
+          expect(f.sends).not.toContain(id)
+          throw rollback
+        }),
+      ).rejects.toBe(rollback)
       await f.dispatcher.poll()
       expect(f.sends).toHaveLength(0)
-    })
-    await f.dispatcher.poll()
-    expect(f.sends).toEqual([id])
-  })
+    },
+  )
+
+  it.skipIf(postgresOnly)(
+    'does not see an approval until its surrounding transaction commits',
+    async () => {
+      const f = await fixture()
+      const id = await f.stage(true)
+      await db.$transaction(async (tx) => {
+        await f.service.approve({ id, approverId: 'checker' }, tx)
+        await f.dispatcher.poll()
+        expect(f.sends).toHaveLength(0)
+      })
+      await f.dispatcher.poll()
+      expect(f.sends).toEqual([id])
+    },
+  )
 
   it.each(['sending', 'failed'] as const)(
     'does not replay stale %s outcomes',

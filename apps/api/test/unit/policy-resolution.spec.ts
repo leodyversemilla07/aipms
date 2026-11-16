@@ -2,6 +2,7 @@ import './no-database'
 import { BadRequestException, ConflictException } from '@nestjs/common'
 import type { PolicyKind, Prisma } from '@workspace/db'
 import { describe, expect, it, vi } from 'vitest'
+import { isSqlite } from '../../../../packages/db/src/provider'
 import { ensureDefaultThreshold } from '../../../../packages/db/src/seed-policy'
 import { PolicyService } from '../../src/policy/policy.service'
 import {
@@ -167,9 +168,16 @@ describe('policy bootstrap preservation (injected clients)', () => {
       version: 1,
       config: { autoApproveUpTo: 50_00000 },
     })
-    expect(f.mocks.$executeRaw.mock.calls[0]?.[1]).toBe(
-      'policy-version:threshold',
-    )
+    // PostgreSQL serialises the version allocation with an advisory lock.
+    // SQLite serialises writers for the whole transaction, so it takes no
+    // explicit lock there.
+    if (isSqlite()) {
+      expect(f.mocks.$executeRaw).not.toHaveBeenCalled()
+    } else {
+      expect(f.mocks.$executeRaw.mock.calls[0]?.[1]).toBe(
+        'policy-version:threshold',
+      )
+    }
   })
 
   it.each([false, true])(

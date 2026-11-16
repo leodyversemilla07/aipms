@@ -14,6 +14,51 @@ The review itself did not change application source; subsequent fixes are tracke
 
 The findings and baseline verification below describe the reviewed source commit, not the latest remediation state.
 
+Local verification follow-up:
+
+- The API suites now run on the local SQLite file, so the whole suite is
+  verifiable on a workstation with no database server (`pnpm test:sqlite`).
+  The database-blocked unit lane (318 tests) and the integration lane (351
+  cases, 6 skipped) pass there. The probes that only PostgreSQL can produce -
+  a row lock that blocks, a reader that must not see an uncommitted row, two
+  overlapping requests - are skipped with a stated reason instead of reported
+  as failures. CI still gates the suites on PostgreSQL.
+- Two application bugs surfaced that way, both invisible on PostgreSQL:
+  - **The agent pipeline read through the shared connection inside its own
+    transaction.** `AgentService.classifyAndRegister` read the intake preview
+    through the default client while the caller's transaction was open. The
+    SQLite driver adapter serialises every statement on a connection behind
+    the open transaction, so the read waited for the transaction it belonged
+    to and the pipeline timed out. The preview is now read through the
+    caller's transaction, which also keeps the read inside the atomic unit.
+  - **The automation lease held a transaction around the work it guards.**
+    The guarded drain read its admission counters from the shared connection
+    while the lease transaction was open, with the same result. On SQLite the
+    guarded work now runs without a lease transaction; PostgreSQL keeps the
+    advisory lock, which is the real cross-replica guard.
+- The local SQLite environment now keeps the database-enforced append-only
+  audit trail. `prisma db push` carries no triggers, so the guard from the
+  PostgreSQL migration is applied to the file by the local setup
+  (`packages/db/prisma/sqlite/audit-append-only.sql`). The maintenance probes
+  open the guard the way the session variable opens it on PostgreSQL.
+- The database-blocked unit specs now belong to the unit lane alone. The
+  integration lane does not run them against a real client, so they keep their
+  fail-closed database mock.
+- A shared test helper reads JSON payload fields after the read on SQLite, so
+  the suite asserts the same thing on both engines instead of branching at
+  every call site.
+- Both fixes carry a regression: a unit test pins the agent pipeline to the
+  caller's transaction (`apps/api/test/unit/agent-transaction-scope.spec.ts`),
+  and a database-backed test pins the lease to a guarded work that reads
+  through the shared connection
+  (`apps/api/test/automation-lease.spec.ts`). Reverting either fix fails the
+  suite on SQLite.
+
+These changes do not weaken the PostgreSQL contract: the row locks, the
+advisory locks, the cross-replica lease and the append-only trigger are
+unchanged there. The local SQLite run still cannot prove the PostgreSQL-only
+behaviour, and CI remains the gate.
+
 Completed in `942abf2fe2dc09b0dfe5dfa8b9c07bce4d72601b`:
 
 - **Finding 1:** narrowed the audit page cursor explicitly. Full workspace typecheck now passes all nine tasks.

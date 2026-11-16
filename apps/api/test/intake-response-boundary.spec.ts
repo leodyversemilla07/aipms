@@ -12,11 +12,13 @@ import { IntakeRouter } from '../src/intake/intake.router'
 import { IntakeService } from '../src/intake/intake.service'
 import { IntakeCommandService } from '../src/intake/intake-command.service'
 import { InvoiceService } from '../src/invoice/invoice.service'
+import { AgentQuotaService } from '../src/shared/agent-quota/agent-quota.service'
 import { AuditService } from '../src/shared/audit/audit.service'
 import { EventEmitterService } from '../src/shared/events/event-emitter.service'
 import { IdempotencyService } from '../src/shared/idempotency/idempotency.service'
 import { SharedModule } from '../src/shared/shared.module'
 import { TrpcModule } from '../src/trpc/trpc.module'
+import { deleteManyByJsonPayload } from './support/json-payload'
 
 /** Real HTTP/context/authorization/storage; only invoice matching is unused. */
 describe('agent-safe intake responses over HTTP', () => {
@@ -103,13 +105,15 @@ describe('agent-safe intake responses over HTTP', () => {
   afterAll(async () => {
     await app?.close()
     if (documentIds.length > 0) {
-      await db.idempotencyKey.deleteMany({
-        where: {
-          OR: documentIds.map((id) => ({
-            resultJson: { path: ['result', 'id'], equals: id },
-          })),
-        },
-      })
+      // The cached outcome carries the document id in its result payload;
+      // the payload filter is a PostgreSQL feature, so the rows are matched
+      // after the read on SQLite.
+      await deleteManyByJsonPayload(
+        db.idempotencyKey,
+        'resultJson',
+        ['result', 'id'],
+        documentIds,
+      )
       await db.domainEvent.deleteMany({
         where: { entityId: { in: documentIds } },
       })
@@ -211,25 +215,33 @@ describe('agent-safe intake responses over HTTP', () => {
       raw,
       idempotencyKey: 'legacy-cache',
     }
-    const legacy = await app.get(IdempotencyService).runAtomic(
-      {
-        actorId: subject,
-        operation: 'intake.ingest',
-        key: input.idempotencyKey,
-        input,
-      },
-      (tx) =>
-        app.get(IntakeCommandService).ingest(
-          { channel, contentHash: prefix, raw },
+    // The agent admission is taken before the procedure opens its
+    // transaction, exactly as the quota middleware takes it on the HTTP
+    // path. The nested admission then reuses it instead of reading the
+    // counters again inside the open transaction.
+    const legacy = await app
+      .get(AgentQuotaService)
+      .run({ id: subject, kind: 'agent' }, 'intake.ingest', () =>
+        app.get(IdempotencyService).runAtomic(
           {
-            id: subject,
-            kind: 'agent',
-            scopes: ['intake.ingest'],
-            source: 'trpc',
+            actorId: subject,
+            operation: 'intake.ingest',
+            key: input.idempotencyKey,
+            input,
           },
-          tx,
+          (tx) =>
+            app.get(IntakeCommandService).ingest(
+              { channel, contentHash: prefix, raw },
+              {
+                id: subject,
+                kind: 'agent',
+                scopes: ['intake.ingest'],
+                source: 'trpc',
+              },
+              tx,
+            ),
         ),
-    )
+      )
     expect(legacy.raw).toEqual(raw)
     const response = await request(app.getHttpServer())
       .post('/api/trpc/intake.ingest')

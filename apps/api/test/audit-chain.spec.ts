@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { db, type Prisma } from '@workspace/db'
+import { db, isSqlite, type Prisma } from '@workspace/db'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuditService } from '../src/shared/audit/audit.service'
+import { expectDatabaseRefusal } from './support/database-error'
 
 /**
  * Audit history is append-only, including in tests. Each test uses its own
@@ -10,6 +11,29 @@ import { AuditService } from '../src/shared/audit/audit.service'
  */
 const service = new AuditService()
 let probeEntity: string
+
+/**
+ * Opens the append-only guard for one maintenance probe.
+ *
+ * PostgreSQL keeps the flag in a transaction-local session variable. SQLite
+ * has no session variables, so the guard is opened with a row in the local
+ * maintenance table - inside the same rolled-back transaction as the probe,
+ * so the trail stays append-only for every other writer.
+ */
+async function openMaintenance(tx: Prisma.TransactionClient, reason: string) {
+  if (!isSqlite()) {
+    await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+    return
+  }
+  await tx.$executeRaw`CREATE TABLE IF NOT EXISTS "aipmsAuditMaintenance" ("id" TEXT PRIMARY KEY, "reason" TEXT)`
+  await tx.$executeRaw`INSERT INTO "aipmsAuditMaintenance" ("id", "reason") VALUES (${`probe-${randomUUID()}`}, ${reason})`
+}
+
+/** The next chain sequence, the way the audit service takes it on SQLite. */
+async function nextSeq(tx: Prisma.TransactionClient): Promise<number> {
+  const highest = await tx.auditEntry.aggregate({ _max: { seq: true } })
+  return (highest._max.seq ?? 0) + 1
+}
 
 function record(
   action: string,
@@ -57,15 +81,17 @@ describe('Audit chain', () => {
     const row = await db.auditEntry.findFirstOrThrow({
       where: { action: 'immutable.probe', entity: probeEntity },
     })
-    await expect(
+    await expectDatabaseRefusal(
       db.auditEntry.update({
         where: { id: row.id },
         data: { action: 'immutable.changed' },
       }),
-    ).rejects.toThrow(/append-only/)
-    await expect(
+      /append-only/,
+    )
+    await expectDatabaseRefusal(
       db.auditEntry.delete({ where: { id: row.id } }),
-    ).rejects.toThrow(/append-only/)
+      /append-only/,
+    )
   })
 
   it('links sequential records', async () => {
@@ -108,7 +134,7 @@ describe('Audit chain', () => {
       expect(row.runId).toBe('run-original')
       expect((await service.verifyChain(tx)).ok).toBe(true)
 
-      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await openMaintenance(tx, 'tamper a run identity')
       await tx.$executeRaw`UPDATE "AuditEntry" SET "runId" = 'run-tampered' WHERE id = ${row.id}`
       const result = await service.verifyChain(tx)
       expect(result.ok).toBe(false)
@@ -124,7 +150,7 @@ describe('Audit chain', () => {
       const victim = await tx.auditEntry.findFirstOrThrow({
         where: { action: 't.two', entity: probeEntity },
       })
-      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await openMaintenance(tx, 'tamper an action')
       await tx.$executeRaw`UPDATE "AuditEntry" SET action = 't.evil' WHERE id = ${victim.id}`
 
       const result = await service.verifyChain(tx)
@@ -142,7 +168,7 @@ describe('Audit chain', () => {
       const victim = await tx.auditEntry.findFirstOrThrow({
         where: { action: 'd.two', entity: probeEntity },
       })
-      await tx.$executeRaw`SELECT set_config('aipms.allow_audit_mutation', 'on', true)`
+      await openMaintenance(tx, 'delete a chained entry')
       await tx.auditEntry.delete({ where: { id: victim.id } })
 
       const result = await service.verifyChain(tx)
@@ -205,7 +231,22 @@ describe('Audit chain', () => {
 
   it('skips legacy (null-hash) rows', async () => {
     await withRollback(async (tx) => {
-      await tx.$executeRaw`INSERT INTO "AuditEntry" (id, "actorId", "actorKind", action, entity, at) VALUES (${`legacy-${randomUUID()}`}, 'old', 'human', 'legacy.action', ${probeEntity}, now())`
+      // The timestamp is bound as a value: `now()` is a PostgreSQL function.
+      // The chain sequence has a column default on PostgreSQL and is
+      // assigned by the writer on SQLite, exactly as the audit service does.
+      const at = new Date()
+      const legacy = await tx.auditEntry.create({
+        data: {
+          id: `legacy-${randomUUID()}`,
+          actorId: 'old',
+          actorKind: 'human',
+          action: 'legacy.action',
+          entity: probeEntity,
+          at,
+          ...(isSqlite() ? { seq: await nextSeq(tx) } : {}),
+        },
+      })
+      expect(legacy.entryHash).toBeNull()
       await record('l.after-legacy', {}, tx)
 
       const result = await service.verifyChain(tx)

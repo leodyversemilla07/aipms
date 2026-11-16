@@ -20,9 +20,13 @@ import { issueAgentAccessToken } from '../src/agent/agent-access-token'
 import { AgentCommandService } from '../src/agent/agent-command.service'
 import { AgentWakeService } from '../src/agent/agent-wake.service'
 import { AppModule } from '../src/app.module'
+import { postgresOnly } from './support/engine'
+import { findManyByJsonPayload } from './support/json-payload'
 
 const id = `boundary-${randomUUID()}`
 const numberPrefix = `BQ-${randomUUID()}`
+/** A fixed past instant: the quota minute must not move while the file runs. */
+const FROZEN_NOW = 1_700_000_000_000
 let app: INestApplication<App>
 let vendorId: string
 let documents: string[] = []
@@ -48,16 +52,21 @@ async function cleanup() {
   await db.intakeDocument.deleteMany({
     where: { contentHash: { startsWith: id } },
   })
-  await db.agentRun.deleteMany({
-    where: {
-      OR: [
-        { agentId: id },
-        ...documents.map((entityId) => ({
-          meta: { path: ['entityId'], equals: entityId },
-        })),
-      ],
-    },
-  })
+  await db.agentRun.deleteMany({ where: { agentId: id } })
+  // Runs that point at one of the documents carry the document in their
+  // metadata payload; the payload filter is a PostgreSQL feature, so the
+  // rows are matched after the read on SQLite.
+  const documentRuns = await findManyByJsonPayload(
+    db.agentRun,
+    'meta',
+    ['entityId'],
+    documents,
+  )
+  if (documentRuns.length > 0) {
+    await db.agentRun.deleteMany({
+      where: { id: { in: documentRuns.map((run) => run.id) } },
+    })
+  }
   await db.rateLimit.deleteMany({
     where: { key: { startsWith: `agent-mutation-rate:${id}:` } },
   })
@@ -86,7 +95,12 @@ beforeAll(async () => {
 beforeEach(async () => {
   await cleanup()
   documents = []
-  vi.spyOn(Date, 'now').mockReturnValue(1_900_000_000_000)
+  // The quota window is one clock minute, so the clock is frozen at the
+  // same value for every test: a window that changed mid-test would split
+  // the counter. The value is in the past on purpose - the SQLite adapter
+  // compares the frozen clock with the real transaction start, and a clock
+  // in the future would expire every transaction the moment it started.
+  vi.spyOn(Date, 'now').mockReturnValue(FROZEN_NOW)
   for (let i = 0; i < 3; i++) {
     const doc = await db.intakeDocument.create({
       data: {
@@ -278,45 +292,55 @@ describe('shared quotas at real HTTP/command boundaries', () => {
         where: { id: { in: documents }, status: 'new' },
       }),
     ).toBe(2)
-    const run = await db.agentRun.findFirstOrThrow({
-      where: { meta: { path: ['entityId'], equals: documents[1] } },
-    })
-    expect(run.status).toBe('failed')
+    const [documentRun] = await findManyByJsonPayload(
+      db.agentRun,
+      'meta',
+      ['entityId'],
+      [documents[1]],
+    )
+    if (!documentRun) throw new Error('Expected an agent run for the document')
+    expect(documentRun.status).toBe('failed')
     vi.stubEnv('AIPMS_AGENT_WAKE', '0')
   })
 
-  it('one command slot blocks overlapping HTTP mutations and is released after completion', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    let entered!: () => void
-    const started = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const service = app.get(AgentService)
-    const original = service.classifyAndRegister.bind(service)
-    vi.spyOn(service, 'classifyAndRegister').mockImplementation(
-      async (docId, tx) => {
-        entered()
-        await gate
-        return original(docId, tx)
-      },
-    )
-    const first = batch()
-    const pending = first.then((response) => response)
-    try {
-      await started
-      const refusal = await batch()
-      expect(refusal.status).toBe(429)
-      expect((await counter()).count).toBe(2)
-    } finally {
-      release()
-    }
-    expect((await pending).status).toBe(201)
-    // Cap release is observable even though the minute's rate is spent.
-    const later = await batch()
-    expect(later.status).toBe(429)
-    expect(later.body.message).toMatch(/quota exhausted/)
-  })
+  // Two overlapping HTTP requests need two connections at once. The SQLite
+  // adapter allows one open transaction per connection, so the second request
+  // cannot even read its quota while the first one holds a transaction.
+  it.skipIf(postgresOnly)(
+    'one command slot blocks overlapping HTTP mutations and is released after completion',
+    async () => {
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let entered!: () => void
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const service = app.get(AgentService)
+      const original = service.classifyAndRegister.bind(service)
+      vi.spyOn(service, 'classifyAndRegister').mockImplementation(
+        async (docId, tx) => {
+          entered()
+          await gate
+          return original(docId, tx)
+        },
+      )
+      const first = batch()
+      const pending = first.then((response) => response)
+      try {
+        await started
+        const refusal = await batch()
+        expect(refusal.status).toBe(429)
+        expect((await counter()).count).toBe(2)
+      } finally {
+        release()
+      }
+      expect((await pending).status).toBe(201)
+      // Cap release is observable even though the minute's rate is spent.
+      const later = await batch()
+      expect(later.status).toBe(429)
+      expect(later.body.message).toMatch(/quota exhausted/)
+    },
+  )
 })
