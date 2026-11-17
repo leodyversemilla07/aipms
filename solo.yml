@@ -1,0 +1,46 @@
+# Visit https://soloterm.com to learn more
+name: aipms
+icon: null
+processes:
+  pnpm:dev:
+    command: pnpm run dev
+    working_dir: null
+    auto_start: true
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  turbo:format:
+    command: turbo run format
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  turbo:build:
+    command: turbo run build
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  turbo:lint:
+    command: turbo run lint
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
+  turbo:dev:
+    command: turbo run dev
+    working_dir: null
+    auto_start: true
+    auto_restart: true
+    restart_when_changed: []
+    env: {}
+  turbo:typecheck:
+    command: turbo run typecheck
+    working_dir: null
+    auto_start: false
+    auto_restart: false
+    restart_when_changed: []
+    env: {}
