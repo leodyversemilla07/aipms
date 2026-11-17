@@ -46,6 +46,7 @@ export const HUMAN_PROCEDURE_ROLES: Record<string, readonly UserRole[]> = {
 
   'budget.list': ['user', 'procurement', 'finance'],
   'budget.detail': ['user', 'procurement', 'finance'],
+  'budget.reconciliation': ['finance'],
   'budget.create': ['finance'],
 
   'purchaseOrder.list': ['procurement', 'finance'],

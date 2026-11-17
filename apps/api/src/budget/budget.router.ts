@@ -52,6 +52,19 @@ export class BudgetRouter {
     return this.budget.detail(input.id)
   }
 
+  /**
+   * Derived commitment totals against the stored ones. Read-only: a drift is
+   * reported, never silently repaired.
+   */
+  @Query({ input: z.object({ id: z.string().min(1) }) })
+  async reconciliation(
+    @Input() input: { id: string },
+    @Ctx() ctx: AuthedTrpcContext,
+  ) {
+    requireRole(ctx.user, ctx.actorKind, ['finance'], 'budget.reconciliation')
+    return this.budget.reconciliation(input.id)
+  }
+
   @Mutation({ input: createBudgetInput })
   async create(
     @Input() input: z.infer<typeof createBudgetInput>,

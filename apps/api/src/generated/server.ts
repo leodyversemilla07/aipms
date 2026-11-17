@@ -150,6 +150,9 @@ const appRouter = t.router({
   includeRemaining: z.boolean().optional(),
 }))
       .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["detail"]>>),
+    reconciliation: publicProcedure
+      .input(z.object({ id: z.string().min(1) }))
+      .query(async () => "PLACEHOLDER_DO_NOT_REMOVE" as unknown as Awaited<ReturnType<BudgetRouter["reconciliation"]>>),
     create: publicProcedure
       .input(z.object({
   idempotencyKey: z.string().min(1),

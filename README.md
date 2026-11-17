@@ -137,14 +137,14 @@ locking contract, and remaining accounting limitations.
 | `agent` | process, batch | Agent tools (eve → API) |
 | `audit` | list, meta | Audit trail |
 | `policy` | list, create, taxConfig | Policy engine |
-| `budget` | read, list | Budget tracking |
+| `budget` | read, list, reconciliation | Budget tracking and derived commitment audit |
 | `payment-run` | list, create, approve, execute, batch | Payment workflow (§8.6 PESONet hand-off file) |
 | `messaging` | submit, approve, reject, list, detail | §8.3 vendor messaging relay (tiered sends) |
 | `receipt` | record, cancel, list, detail | §8.1 goods receipts (3-way match leg) |
 | `bir` | certificate, remittance, periods | §8.4 BIR statutory withholding reports |
 | `erp` | exportRun, list, manifest, acknowledge, ingestVendors, reconcileReport, qbo* | §8.5 ERP bridge — journal exports, ack feed, QuickBooks connector |
 
-**Total:** 111 procedures across 21 routers
+**Total:** 113 procedures across 21 routers
 
 ---
 

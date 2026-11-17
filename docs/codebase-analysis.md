@@ -53,6 +53,14 @@ Local verification follow-up:
   through the shared connection
   (`apps/api/test/automation-lease.spec.ts`). Reverting either fix fails the
   suite on SQLite.
+- Budget commitments can now be audited without changing any write path.
+  `budget.reconciliation` derives the expected committed and spent totals from
+  the POs linked through requisitions and their paid invoices, and returns the
+  signed drift against the stored counters plus a per-PO breakdown. The
+  finance desk renders it from Master data → Budgets → Reconcile. This does
+  not repair drift, add a per-PO ledger, or implement partial-payment
+  accounting; it makes the existing accounting gap visible so a correction
+  can be decided deliberately. See `docs/financial-corrections.md`.
 
 These changes do not weaken the PostgreSQL contract: the row locks, the
 advisory locks, the cross-replica lease and the append-only trigger are

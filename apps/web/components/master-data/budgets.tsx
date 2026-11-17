@@ -1,9 +1,20 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Badge } from "@workspace/ui/components/badge"
 import { Button } from "@workspace/ui/components/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@workspace/ui/components/table"
 import { type ReactNode, useState } from "react"
+import { EmptyState } from "@/components/states/empty-state"
 import { InlineError } from "@/components/states/error-state"
+import { PendingCard } from "@/components/states/pending-state"
 import { minorToPhp, phpToMinor } from "@/lib/money"
 import { useTRPC } from "@/lib/trpc/client"
 
@@ -17,6 +28,27 @@ type BudgetRow = {
   spentMinor: number
 }
 
+type ReconciliationRow = {
+  poNumber: string
+  status: string
+  committedMinor: number
+  settledMinor: number
+  remainingMinor: number
+  live: boolean
+}
+
+type Reconciliation = {
+  committedMinor: number
+  spentMinor: number
+  expectedCommittedMinor: number
+  expectedSpentMinor: number
+  committedDriftMinor: number
+  spentDriftMinor: number
+  ok: boolean
+  rows: ReconciliationRow[]
+  issues: string[]
+}
+
 /** Budget master — cost-center + period spend envelopes (§9 invariants). */
 export function BudgetsPanel() {
   const trpc = useTRPC()
@@ -26,6 +58,7 @@ export function BudgetsPanel() {
   const [costCenter, setCostCenter] = useState("")
   const [period, setPeriod] = useState("")
   const [limit, setLimit] = useState("")
+  const [reconcileId, setReconcileId] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -35,6 +68,10 @@ export function BudgetsPanel() {
   const rows = (list.data?.rows ?? []) as BudgetRow[]
 
   const create = useMutation(trpc.budget.create.mutationOptions())
+  const reconciliation = useQuery({
+    ...trpc.budget.reconciliation.queryOptions({ id: reconcileId ?? "" }),
+    enabled: reconcileId != null,
+  })
   function refresh() {
     queryClient.invalidateQueries(trpc.budget.pathFilter())
   }
@@ -152,10 +189,136 @@ export function BudgetsPanel() {
                   {minorToPhp(b.spentMinor)}
                 </span>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={`Reconcile ${b.name}`}
+                onClick={() => setReconcileId(b.id)}
+              >
+                Reconcile
+              </Button>
             </li>
           )
         })}
       </ul>
+
+      {reconcileId ? (
+        <ReconciliationReport
+          pending={reconciliation.isPending}
+          error={reconciliation.isError ? reconciliation.error.message : null}
+          report={reconciliation.data as Reconciliation | undefined}
+          onClose={() => setReconcileId(null)}
+        />
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * The derived commitment audit for one budget. The stored totals are
+ * maintained incrementally; this shows what the POs and paid invoices say
+ * they should be, and any drift between the two.
+ */
+function ReconciliationReport({
+  pending,
+  error,
+  report,
+  onClose,
+}: {
+  pending: boolean
+  error: string | null
+  report: Reconciliation | undefined
+  onClose: () => void
+}) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="font-heading font-semibold text-base">
+          Commitment reconciliation
+        </h3>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+
+      {pending ? <PendingCard label="Loading reconciliation" /> : null}
+      {error ? <InlineError message={error} /> : null}
+      {!pending && !error && !report ? (
+        <EmptyState title="No reconciliation available" />
+      ) : null}
+
+      {!pending && !error && report ? (
+        <>
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <Badge variant={report.ok ? "default" : "destructive"}>
+              {report.ok ? "Balanced" : "Drift detected"}
+            </Badge>
+            <span className="font-mono">
+              committed {minorToPhp(report.committedMinor)} / expected{" "}
+              {minorToPhp(report.expectedCommittedMinor)}
+            </span>
+            <span className="font-mono">
+              spent {minorToPhp(report.spentMinor)} / expected{" "}
+              {minorToPhp(report.expectedSpentMinor)}
+            </span>
+          </div>
+          {!report.ok ? (
+            <p className="font-mono text-destructive text-xs">
+              committed drift {minorToPhp(report.committedDriftMinor)} · spent
+              drift {minorToPhp(report.spentDriftMinor)}
+            </p>
+          ) : null}
+          {report.issues.length > 0 ? (
+            <ul className="text-destructive text-xs">
+              {report.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+          {report.rows.length === 0 ? (
+            <EmptyState
+              title="No orders on this budget"
+              description="No purchase orders are linked to this budget's requisitions."
+            />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">PO</TableHead>
+                  <TableHead scope="col">Status</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Committed
+                  </TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Settled
+                  </TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Remaining
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {report.rows.map((row) => (
+                  <TableRow key={row.poNumber}>
+                    <TableCell className="font-mono">{row.poNumber}</TableCell>
+                    <TableCell>{row.status}</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {minorToPhp(row.committedMinor)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {minorToPhp(row.settledMinor)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {minorToPhp(row.remainingMinor)}
+                      {!row.live ? " (released)" : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </>
+      ) : null}
     </section>
   )
 }

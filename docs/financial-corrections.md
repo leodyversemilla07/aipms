@@ -52,3 +52,33 @@ Payment planning locks invoice IDs in the same order, then validates stored stat
 The unit ordering probe uses injected clients; it is not proof of PostgreSQL concurrency semantics. The new PostgreSQL cases have been typechecked but could not be executed locally because an isolated database/Docker daemon was unavailable. Database safeguards were not bypassed.
 
 This change does **not** implement a per-PO commitment/settlement ledger, partial-payment accounting, refunds, or historical-data repair. Tolerance-variance settlement accounting and already inconsistent approved/executed runs still require dedicated hardening/reconciliation. New planning rejects a linked missing or non-live PO even when an old stored invoice match is stale.
+
+## Budget commitment reconciliation
+
+`budget.reconciliation` (finance only, read-only) answers whether the stored
+budget totals still agree with the records that back them. It derives the
+numbers from the source facts rather than trusting the incrementally
+maintained counters:
+
+- The POs that belong to the budget are found through their requisitions.
+- Each PO contributes its total as `committedMinor`, and the paid invoices
+  linked to it contribute their amounts as `settledMinor`; `remainingMinor`
+  is the difference.
+- **Expected committed** is the sum of `remainingMinor` over `issued` and
+  `confirmed` POs only. Cancelled and draft POs carry no commitment.
+- **Expected spent** is the sum of `settledMinor` over all of the budget's POs.
+- The report returns both expected totals, the stored totals, their signed
+  differences, a per-PO breakdown, and any currency mismatch. `ok` is true
+  only when both differences are zero and there are no issues.
+
+A negative committed drift means the stored balance is lower than the live
+commitments — the shape that a floor-at-zero settlement would hide. The
+report deliberately does not repair it: it is a read-only diagnostic, so an
+operator can decide whether the difference is a historical inconsistency,
+an interrupted write, or a genuine accounting variance that needs a separate
+correction workflow.
+
+The finance desk renders the same report under **Master data → Budgets →
+Reconcile**. It does not change PO issue, settlement, or cancellation
+behaviour, and it cannot detect drift in records that were deleted outright:
+it can only compare the budget against the POs and invoices that still exist.
