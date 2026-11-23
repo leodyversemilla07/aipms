@@ -25,6 +25,7 @@ describe("inbound operator authentication", () => {
     expect(auth).toMatchObject({
       principalId: "aipms-agent-operator",
       authenticator: "aipms-operator-token",
+      principalType: "service",
     })
     expect(JSON.stringify(auth)).not.toContain("test-secret")
   })

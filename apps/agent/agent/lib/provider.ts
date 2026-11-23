@@ -3,7 +3,7 @@
    offline/local OpenAI-compatible endpoint with zero egress (§16.1, §16.2.1).
    A "provider gate" decides which path to take from instance configuration and
    refuses to start when the gate is not satisfied (§16.6).  Both paths present
-   the same tool surface (the tRPC procedures wrapped as eve skills); only the
+   the same tool surface (the tRPC procedures wrapped as Eve tools); only the
    underlying model call changes.
 
    - Cloud:   BYO OpenAI/OpenAI-compatible keys (egress permitted).
@@ -276,6 +276,8 @@ export function buildModel(cfg: ProviderConfig): LanguageModel {
     name: "aipms",
     baseURL: cfg.endpoint,
     apiKey,
+    // Let Eve receive token usage so its session limits and compaction work.
+    includeUsage: true,
     headers:
       cfg.kind === "cloud" && cfg.organization
         ? { "OpenAI-Organization": cfg.organization }
@@ -285,7 +287,7 @@ export function buildModel(cfg: ProviderConfig): LanguageModel {
 }
 
 /* ── Example: reading from env (the instance sets these at deploy time) ──────
-   In production the env would be set by the Docker Compose / PaaS / offline
+   In production the env would be set by the process manager / PaaS / offline
    bundle, never checked into source control.
 
    Example .env (cloud):

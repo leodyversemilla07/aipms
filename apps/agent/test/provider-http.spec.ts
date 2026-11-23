@@ -1,4 +1,4 @@
-import { generateText } from "ai"
+import { generateText, streamText } from "ai"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { buildModel } from "../agent/lib/provider"
 
@@ -63,4 +63,38 @@ describe("OpenAI-compatible wire protocol", () => {
         expect(headers.get("OpenAI-Organization")).toBe("test-org")
     }
   )
+
+  it("requests streamed token usage for Eve limits and compaction", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        [
+          'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Ready"},"finish_reason":null}]}\n\n',
+          'data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}\n\n',
+          "data: [DONE]\n\n",
+        ].join(""),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }
+      )
+    )
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = streamText({
+      model: buildModel({
+        kind: "offline",
+        endpoint: "http://localhost:11434/v1",
+        model: "test-model",
+      }),
+      prompt: "Hello",
+      maxRetries: 0,
+    })
+    await result.consumeStream()
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    })
+  })
 })

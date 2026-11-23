@@ -58,7 +58,7 @@ describe("resolveProviderFromEnv", () => {
     )
   })
 
-  it("treats empty-string env values as unset (compose defaults)", () => {
+  it("treats empty-string env values as unset", () => {
     const cfg = resolveProviderFromEnv({
       AIPMS_LLM_KIND: "cloud",
       AIPMS_LLM_ENDPOINT: "",

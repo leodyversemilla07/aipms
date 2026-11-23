@@ -29,4 +29,9 @@ function modelConfig() {
   }
 }
 
-export default defineAgent(modelConfig())
+export default defineAgent({
+  // This agent only needs its authored procurement tools. Keep Eve's optional
+  // shell, filesystem, web, and delegation defaults out of the tool surface.
+  defaultTools: false,
+  ...modelConfig(),
+})

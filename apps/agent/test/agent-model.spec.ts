@@ -61,6 +61,7 @@ describe("agent model selection", () => {
     vi.stubEnv("AIPMS_LLM_KIND", "cloud")
     const { default: agent } = await import("../agent/agent")
     expect(agent.model).toBe("api-model")
+    expect(agent.defaultTools).toBe(false)
     expect(resolveProviderFromEnv).toHaveBeenCalledOnce()
     expect(assertProviderGate).toHaveBeenCalledOnce()
     expect(buildModel).toHaveBeenCalledOnce()

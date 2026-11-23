@@ -21,7 +21,9 @@ export function operatorAuth(): AuthFn<Request> {
       attributes: {},
       authenticator: "aipms-operator-token",
       principalId: "aipms-agent-operator",
-      principalType: "user",
+      // This is a shared trusted-operator credential, not an end user.
+      // Eve treats service principals as operators for GET /eve/v1/info.
+      principalType: "service",
     }
   }
 }

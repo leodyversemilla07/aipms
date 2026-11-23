@@ -3,7 +3,7 @@ import { defineSkill } from "eve/skills"
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    SKILL BUNDLES
 
-   eve ≥0.31 skills are instruction packages: identity is path-derived,
+   Eve skills are instruction packages: identity is path-derived,
    input contracts live on each tool's `inputSchema`, and model-facing
    rendering lives on each tool's `toModelOutput`. These bundles carry the
    procedural guidance for each specialist role.
@@ -11,8 +11,8 @@ import { defineSkill } from "eve/skills"
 
 export const sourcingSkill = defineSkill({
   description:
-    "Skills for discovering vendors and catalog items, and raising quote requests.",
-  markdown: `
+    "Use when the user needs to discover vendors or catalog items, request quotes, or compare supplier offers.",
+  content: `
 # Sourcing
 
 Discover suppliers and raise quote requests.
@@ -39,8 +39,8 @@ Discover suppliers and raise quote requests.
 
 export const opsSkill = defineSkill({
   description:
-    "Skills for creating requisitions, issuing purchase orders, and running invoice matches.",
-  markdown: `
+    "Use when the user needs to create or submit requisitions, issue purchase orders, record receipts, or register invoices.",
+  content: `
 # Operations
 
 Requisition → PO → three-way match basics.
@@ -52,7 +52,7 @@ Requisition → PO → three-way match basics.
    line uses integer minor units and one matching currency.
 2. Submit a draft with \`submit_requisition\`. Stop on NEED_APPROVAL or BLOCK;
    only the assigned human approval route may decide it. Every mutation uses
-   the stable eve call identity as its default idempotency key.
+   the stable Eve call identity as its default idempotency key.
 3. Once approved and any required sourcing award is complete, **issue a PO**
    against a qualified vendor — check budget first with \`get_budget\`.
 4. **Record receipts** (\`record_receipt\`) against PO lines as goods arrive;
@@ -74,8 +74,8 @@ Requisition → PO → three-way match basics.
 
 export const auditSkill = defineSkill({
   description:
-    "Skills for inspecting audit records, exception queues, and system state.",
-  markdown: `
+    "Use when the user needs to inspect domain events, exception queues, audit context, or system state.",
+  content: `
 # Audit
 
 Inspect audit trail records, exception queues, and system state.
