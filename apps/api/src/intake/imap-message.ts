@@ -19,10 +19,16 @@ export const DEFAULT_ATTACHMENT_TEXT_MAX_BYTES = 100_000
 export interface ParsedMailLike {
   messageId?: string | false
   from?: { value?: Array<{ address?: string; name?: string }> }
-  to?: {
-    value?: Array<{ address?: string; name?: string }>
-    text?: string
-  } | null
+  to?:
+    | {
+        value?: Array<{ address?: string; name?: string }>
+        text?: string
+      }
+    | Array<{
+        value?: Array<{ address?: string; name?: string }>
+        text?: string
+      }>
+    | null
   subject?: string
   date?: Date | string
   text?: string
@@ -83,6 +89,26 @@ export function senderAddress(mail: ParsedMailLike): string | null {
   return first || null
 }
 
+/**
+ * Recipient header as one string. mailparser returns a single address group
+ * for `To`/`Cc` and several groups when a header carries multiple addresses.
+ */
+function recipientHeader(to: ParsedMailLike['to']): string | null {
+  if (!to) return null
+  const groups = Array.isArray(to) ? to : [to]
+  const parts = groups
+    .map((group) => {
+      const text = group.text?.trim()
+      if (text) return text
+      return (group.value ?? [])
+        .map((entry) => entry.address?.trim())
+        .filter((address): address is string => Boolean(address))
+        .join(', ')
+    })
+    .filter((part) => part.length > 0)
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
 function headerDate(date: Date | string | undefined): string | null {
   if (!date) return null
   if (date instanceof Date) return date.toISOString()
@@ -126,10 +152,7 @@ export function buildRawPayload(
       messageId: mail.messageId ? String(mail.messageId) : null,
       from: senderAddress(mail),
       fromName: mail.from?.value?.[0]?.name ?? null,
-      to:
-        mail.to?.text ??
-        mail.to?.value?.map((v) => v.address).join(', ') ??
-        null,
+      to: recipientHeader(mail.to),
       subject: mail.subject ?? '',
       date: headerDate(mail.date),
     },
