@@ -202,6 +202,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 3.0.57
         version: 3.0.57(zod@4.6.5)
+      '@workspace/env':
+        specifier: workspace:*
+        version: link:../../packages/env
       ai:
         specifier: ^7.0.179
         version: 7.0.179(zod@4.6.5)

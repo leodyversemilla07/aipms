@@ -1,3 +1,8 @@
+// The agent runs in its own process, so it loads the selected environment
+// itself: AIPMS_ENV_FILE picks the file (`.env.sqlite` for the local
+// database), and without it the default root `.env` is used. The process
+// environment always wins over the file.
+import "@workspace/env/load"
 import { defineAgent } from "eve"
 import { chatgpt } from "eve/models/openai"
 import {
