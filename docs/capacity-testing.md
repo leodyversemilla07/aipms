@@ -8,8 +8,7 @@ exchange, centralized authorization, the Prisma pool, and indexed business and
 recovery reads without creating business data.
 It is a regression gate, not a substitute for a workload model.
 
-The production image smoke runs 100 requests at concurrency 10. For staging,
-start with:
+For staging, start with:
 
 ```bash
 CAPACITY_BASE_URL=https://api.staging.example.com \
@@ -22,8 +21,7 @@ CAPACITY_MAX_ERROR_RATE=0.001 \
 pnpm capacity:smoke
 ```
 
-Plain HTTP targets are refused. `CAPACITY_ALLOW_INSECURE=1` exists only for the
-isolated local production-smoke stack. Credentials in the URL are also refused.
+Plain HTTP targets are refused. Credentials in the URL are also refused.
 
 Run the separate read-only browser workload with a dedicated least-privilege
 staging identity. The wrapper fails on browser errors, unauthorized redirects,
@@ -48,7 +46,7 @@ PostgreSQL, reverse proxy, and IdP concurrently.
 
 ## Staging protocol
 
-1. Use production-equivalent container limits, PostgreSQL sizing, indexes, and
+1. Use production-equivalent process limits, PostgreSQL sizing, indexes, and
    connection-pool configuration.
 2. Use synthetic data at expected 12-month volume. Never copy unredacted bank,
    identity, message-body, or invoice data into a lower environment.
@@ -60,8 +58,8 @@ PostgreSQL, reverse proxy, and IdP concurrently.
    do not turn mutation journeys into a production load generator.
 6. Verify recovery counters return to baseline and no audit, outbox, message, or
    ERP rows were duplicated.
-7. Store the report, image digest, schema migration, data volume, and resource
-   limits with the release evidence.
+7. Store the report, schema migration, data volume, and resource limits with
+   the release evidence.
 
 A release fails capacity validation when it exceeds the documented latency or
 error budget, exhausts the database pool, causes restart/lock storms, or loses

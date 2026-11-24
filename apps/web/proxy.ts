@@ -10,7 +10,7 @@ import { type NextRequest, NextResponse } from "next/server"
  *
  * Scope notes:
  * - Document requests only. Static assets, image optimization, and the
- *   proxied API surface (/api is rewritten to the NestJS API container, and
+ *   proxied API surface (/api is rewritten to the NestJS API process, and
  *   Better Auth routes must stay auditable) never receive document CSP.
  * - Link prefetches skip CSP spend; they do not render documents.
  * - style-src keeps 'unsafe-inline' (style attributes across the UI shell) —

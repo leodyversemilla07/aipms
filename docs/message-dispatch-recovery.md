@@ -6,7 +6,7 @@ The API's registered message dispatcher scans at most 25 oldest staged messages
 every five seconds. It is enabled outside tests by default. Set
 `AIPMS_MESSAGING_DISPATCHER_ENABLED=0` to pause **background** release; this does
 not disable explicit post-commit releases or the transport. Invalid flag values
-fail startup. Compose explicitly forwards the setting.
+fail startup. Set the flag in every API process environment.
 
 Only these rows may claim delivery:
 

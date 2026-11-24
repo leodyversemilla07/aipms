@@ -67,10 +67,10 @@ ownership or provide a platform-wide budget across distinct principals.
 
 ## Deployment and rollout
 
-Compose now forwards the API's rate/concurrency configuration and
-`AIPMS_AGENT_SCOPES`. Its null scope mapping inherits shell/explicit env-file
-values: unset retains application defaults; explicitly empty remains deny-all.
-Choose least-privilege scopes. Preflight validates the numeric limits.
+Configure the API's rate/concurrency limits and `AIPMS_AGENT_SCOPES` in the
+process environment. Unset scopes retain the application defaults; explicitly
+empty remains deny-all. Choose least-privilege scopes. Preflight validates the
+numeric limits.
 
 1. Stop old API/automation replicas; old command binaries bypass these checks.
 2. Review configured principal identity, current agent User quotas and scopes.
@@ -78,7 +78,7 @@ Choose least-privilege scopes. Preflight validates the numeric limits.
    Existing counters/history are not rewritten; allow a minute boundary when
    coordinating the cutover.
 3. Deploy consistent settings on participating API processes.
-4. Check effective container settings and token scopes, then enable automation.
+4. Check effective process settings and token scopes, then enable automation.
    Tune budgets for envelope + document costs, not just incoming HTTP requests.
 5. Observe deferrals, failed agent runs and event dead letters.
 
@@ -108,8 +108,8 @@ The bucket store still needs an operational retention/cleanup policy.
 - Real HTTP/queue tests exercise REST/tRPC parity, per-document deferral,
   ownership/run attribution, stored overrides, scope refusals, a held command
   competing with HTTP, and actual scheduler/event-wake entry points.
-- Compose configuration tests cover unset, explicitly empty and narrow scopes.
-  Production-image smoke verifies non-default settings in the running API and
+- API configuration tests cover unset, explicitly empty and narrow scopes.
+  The release workflow verifies non-default settings in the running API and
   admits one authenticated empty batch before requiring HTTP 429.
 
 This evidence does not validate live SMTP/IMAP/LLM/IdP/bank/QBO behavior or

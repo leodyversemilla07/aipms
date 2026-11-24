@@ -191,8 +191,9 @@ function isPrivateHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/g, "")
   if (h === "localhost" || h === "::1") return true
   if (h.endsWith(".local") || h.endsWith(".internal")) return true
-  // Only the bundled Compose service is trusted by default. Arbitrary
-  // single-label names can resolve via DNS search domains outside the network.
+  // Only the bundled single-label model service name is trusted by default.
+  // Arbitrary single-label names can resolve via DNS search domains outside
+  // the network.
   if (h === "llm") return true
   const m = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
   if (!m) return false

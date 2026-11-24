@@ -6,7 +6,7 @@ import { resolve } from "node:path"
 const [evidenceArgument, manifestArgument] = process.argv.slice(2)
 if (!evidenceArgument || !manifestArgument) {
   throw new Error(
-    "Usage: node scripts/release-gate.mjs <release-evidence.json> <image-manifest.json>"
+    "Usage: node scripts/release-gate.mjs <release-evidence.json> <release-manifest.json>"
   )
 }
 
@@ -59,24 +59,52 @@ if (!/^[0-9a-f]{40}$/.test(evidence.sourceSha ?? "")) {
   fail("sourceSha", "must be a full commit SHA")
 }
 if (evidence.sourceSha !== manifest.sourceSha) {
-  fail("sourceSha", "does not match the immutable image manifest")
+  fail("sourceSha", "does not match the immutable release manifest")
 }
-if (manifest.sigstore !== "verified") {
-  fail("manifest.sigstore", "published signatures were not verified")
+if (typeof manifest.version !== "string" || !manifest.version.trim()) {
+  fail("manifest.version", "is required")
 }
-if (manifest.sbom !== true || manifest.provenance !== "mode=max") {
-  fail("manifest", "SBOM and maximum provenance are required")
+// Managed-process deployments promote an immutable source SHA; container
+// deployments promote signed image digests and keep the SBOM/provenance
+// requirements.
+const deployment = manifest.deployment
+if (!["managed-processes", "containers"].includes(deployment)) {
+  fail("manifest.deployment", 'must be "managed-processes" or "containers"')
 }
 for (const component of ["api", "web", "agent"]) {
-  const image = manifest.images?.[component]
-  if (typeof image !== "string" || !/@sha256:[a-f0-9]{64}$/.test(image)) {
-    fail(`manifest.images.${component}`, "must be pinned by sha256 digest")
+  if (deployment === "containers") {
+    const image = manifest.images?.[component]
+    if (typeof image !== "string" || !/@sha256:[a-f0-9]{64}$/.test(image)) {
+      fail(`manifest.images.${component}`, "must be pinned by sha256 digest")
+    }
+    if (evidence.deployedImages?.[component] !== image) {
+      fail(
+        `deployedImages.${component}`,
+        "must exactly match the signed candidate manifest"
+      )
+    }
+  } else {
+    const reference = manifest.components?.[component]
+    if (reference !== manifest.sourceSha) {
+      fail(
+        `manifest.components.${component}`,
+        "must be pinned to the immutable release source SHA"
+      )
+    }
+    if (evidence.deployedComponents?.[component] !== reference) {
+      fail(
+        `deployedComponents.${component}`,
+        "must exactly match the signed candidate manifest"
+      )
+    }
   }
-  if (evidence.deployedImages?.[component] !== image) {
-    fail(
-      `deployedImages.${component}`,
-      "must exactly match the signed candidate manifest"
-    )
+}
+if (deployment === "containers") {
+  if (manifest.sigstore !== "verified") {
+    fail("manifest.sigstore", "published signatures were not verified")
+  }
+  if (manifest.sbom !== true || manifest.provenance !== "mode=max") {
+    fail("manifest", "SBOM and maximum provenance are required")
   }
 }
 
@@ -135,7 +163,8 @@ if (failures.length > 0) {
       {
         ok: true,
         sourceSha: evidence.sourceSha,
-        imageVersion: manifest.version,
+        releaseVersion: manifest.version,
+        deployment: manifest.deployment,
         checkedAt: new Date().toISOString(),
         evidenceMaxAgeDays: maxAgeDays,
       },

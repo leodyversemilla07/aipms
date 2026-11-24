@@ -20,7 +20,7 @@ import { Prisma, type User } from "@workspace/db";
 ## Setup
 
 ```bash
-docker compose up -d     # or point DATABASE_URL at any Postgres
+start PostgreSQL separately, or point DATABASE_URL at any Postgres instance
 cp .env.example .env     # at the repo root
 pnpm db:generate         # generate Prisma Client
 pnpm db:deploy           # apply the migrations

@@ -8,15 +8,12 @@ ENV_FILE="$TEMP_DIR/production.env"
 
 write_valid() {
   cat > "$ENV_FILE" <<'EOF'
-POSTGRES_PASSWORD="pg_7FvSzBknWY8uqoRc2hPjQm9L4NtX6DsE"
+DATABASE_URL="postgresql://aipms:pg_7FvSzBknWY8uqoRc2hPjQm9L4NtX6DsE@db.internal.example.com:5432/aipms?sslmode=require"
 BETTER_AUTH_SECRET="ba_8DkLmQxN4WrTz7YpV2Hs6Jc9FgRu5KeM"
 AIPMS_TOKEN_ENCRYPTION_SECRET="enc_6TbQ2nV9xK4mR8pL1sH7wF3dJ5cY0eZa"
 AIPMS_SERVICE_TOKEN="as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG"
 AIPMS_AGENT_SIGNING_SECRET="ats_4NcR8mV2qP7xL1kD5sH9wF3bJ6tY0eZu"
 AIPMS_AGENT_ID="staging-procurement-agent-1"
-AIPMS_API_IMAGE_REF="ghcr.io/example/aipms-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-AIPMS_WEB_IMAGE_REF="ghcr.io/example/aipms-web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-AIPMS_AGENT_IMAGE_REF="ghcr.io/example/aipms-agent@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 OPERATIONS_MONITORING_TOKEN="om_5KpVxQmT8YrN3Hs7Jc2Ld9WfBg6ZeRaU"
 APP_URL="https://aipms.example.com"
 AUTH_TRUSTED_ORIGINS="https://aipms.example.com"
@@ -42,35 +39,6 @@ isolated_preflight() {
 write_valid
 isolated_preflight | grep -q '"ok": true'
 
-# Compose must inherit configured scopes, preserve empty denial, and leave
-# genuinely unset scopes absent. config does not start/contact any container.
-check_compose_scopes() {
-  env -i PATH="$PATH" HOME="${HOME:-/tmp}" \
-    docker compose --env-file "$ENV_FILE" config --format json | \
-    node --input-type=module -e '
-      import assert from "node:assert/strict"
-      let input = ""
-      for await (const chunk of process.stdin) input += chunk
-      const environment = JSON.parse(input).services.api.environment
-      const expected = process.argv[1]
-      if (expected === "UNSET") {
-        assert.ok(environment.AIPMS_AGENT_SCOPES == null)
-      } else {
-        assert.equal(environment.AIPMS_AGENT_SCOPES, expected)
-      }
-      assert.equal(environment.AIPMS_AGENT_RATE_LIMIT, "2")
-      assert.equal(environment.AIPMS_AGENT_CONCURRENCY, "1")
-    ' "$1"
-}
-printf 'AIPMS_AGENT_RATE_LIMIT="2"\nAIPMS_AGENT_CONCURRENCY="1"\n' >> "$ENV_FILE"
-check_compose_scopes "UNSET"
-cp "$ENV_FILE" "$ENV_FILE.valid"
-printf 'AIPMS_AGENT_SCOPES=""\n' >> "$ENV_FILE"
-check_compose_scopes ""
-mv "$ENV_FILE.valid" "$ENV_FILE"
-printf 'AIPMS_AGENT_SCOPES="intake.read"\n' >> "$ENV_FILE"
-check_compose_scopes "intake.read"
-
 for name in AIPMS_AGENT_RATE_LIMIT AIPMS_AGENT_CONCURRENCY; do
   cp "$ENV_FILE" "$ENV_FILE.valid"
   printf '%s="0"\n' "$name" >> "$ENV_FILE"
@@ -83,7 +51,8 @@ for name in AIPMS_AGENT_RATE_LIMIT AIPMS_AGENT_CONCURRENCY; do
   mv "$ENV_FILE.valid" "$ENV_FILE"
 done
 
-# Only the bundled Compose hostname is trusted without an explicit allowlist.
+# Only the bundled single-label model hostname is trusted without an explicit
+# allowlist.
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i 's|http://llm:11434/v1|http://external:11434/v1|' "$ENV_FILE"
 if isolated_preflight > "$TEMP_DIR/hostname.out" 2>&1; then
@@ -96,7 +65,7 @@ mv "$ENV_FILE.valid" "$ENV_FILE"
 # Shared credentials must fail without echoing either secret.
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i \
-  's/om_5KpVxQmT8YrN3Hs7Jc2Ld9WfBg6ZeRaU/as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG/' \
+  's|om_5KpVxQmT8YrN3Hs7Jc2Ld9WfBg6ZeRaU|as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG|' \
   "$ENV_FILE"
 if isolated_preflight > "$TEMP_DIR/shared.out" 2>&1; then
   echo "deployment preflight accepted shared credentials" >&2
@@ -107,21 +76,52 @@ if grep -q 'as_9FrTqWmK3YpL8VxN6Hs2Jc7BdEz4UaG' "$TEMP_DIR/shared.out"; then
   echo "deployment preflight leaked a credential" >&2
   exit 1
 fi
-
-# Mutable image tags must never pass a production deployment preflight.
 mv "$ENV_FILE.valid" "$ENV_FILE"
+
+# A managed deployment must declare its database connection explicitly.
 cp "$ENV_FILE" "$ENV_FILE.valid"
-sed -i \
-  's|ghcr.io/example/aipms-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|ghcr.io/example/aipms-api:latest|' \
-  "$ENV_FILE"
-if isolated_preflight > "$TEMP_DIR/image.out" 2>&1; then
-  echo "deployment preflight accepted a mutable image tag" >&2
+sed -i '/^DATABASE_URL=/d' "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/database-url.out" 2>&1; then
+  echo "deployment preflight accepted a missing database URL" >&2
   exit 1
 fi
-grep -q 'immutable sha256 image digest' "$TEMP_DIR/image.out"
+grep -q '"check": "DATABASE_URL"' "$TEMP_DIR/database-url.out"
+grep -q 'is required' "$TEMP_DIR/database-url.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
+
+# A PostgreSQL maintenance database is never a valid application target.
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's|:5432/aipms?sslmode=require|:5432/postgres?sslmode=require|' "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/maintenance.out" 2>&1; then
+  echo "deployment preflight accepted a maintenance database" >&2
+  exit 1
+fi
+grep -q 'must not point at a PostgreSQL maintenance database' "$TEMP_DIR/maintenance.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
+
+# A remote database must require transport security.
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's|?sslmode=require||' "$ENV_FILE"
+if isolated_preflight > "$TEMP_DIR/tls.out" 2>&1; then
+  echo "deployment preflight accepted a remote database without TLS" >&2
+  exit 1
+fi
+grep -q 'must require transport security' "$TEMP_DIR/tls.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
+
+# A loopback database is allowed without transport security.
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's|@db.internal.example.com:5432/aipms?sslmode=require|@127.0.0.1:5432/aipms|' "$ENV_FILE"
+isolated_preflight | grep -q '"ok": true'
+mv "$ENV_FILE.valid" "$ENV_FILE"
+
+# A Unix-socket database connection is local and needs no transport security.
+cp "$ENV_FILE" "$ENV_FILE.valid"
+sed -i 's|postgresql://aipms:pg_7FvSzBknWY8uqoRc2hPjQm9L4NtX6DsE@db.internal.example.com:5432/aipms?sslmode=require|postgresql://aipms@/aipms?host=/var/run/postgresql|' "$ENV_FILE"
+isolated_preflight | grep -q '"ok": true'
+mv "$ENV_FILE.valid" "$ENV_FILE"
 
 # Local ChatGPT subscription auth must never pass production preflight.
-mv "$ENV_FILE.valid" "$ENV_FILE"
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i 's/AIPMS_LLM_KIND="offline"/AIPMS_LLM_KIND="chatgpt"/' "$ENV_FILE"
 if isolated_preflight > "$TEMP_DIR/chatgpt.out" 2>&1; then
@@ -129,9 +129,9 @@ if isolated_preflight > "$TEMP_DIR/chatgpt.out" 2>&1; then
   exit 1
 fi
 grep -q 'local-development only' "$TEMP_DIR/chatgpt.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
 
 # Retention/no-retention gates are only enforceable by the offline provider path.
-mv "$ENV_FILE.valid" "$ENV_FILE"
 cp "$ENV_FILE" "$ENV_FILE.valid"
 sed -i \
   -e 's/AIPMS_LLM_KIND="offline"/AIPMS_LLM_KIND="cloud"/' \
@@ -143,13 +143,15 @@ if isolated_preflight > "$TEMP_DIR/retention.out" 2>&1; then
   exit 1
 fi
 grep -q 'retention/no-retention policies require offline mode' "$TEMP_DIR/retention.out"
+mv "$ENV_FILE.valid" "$ENV_FILE"
 
 # A valid file with broad filesystem permissions must still fail closed.
-mv "$ENV_FILE.valid" "$ENV_FILE"
+cp "$ENV_FILE" "$ENV_FILE.valid"
 chmod 644 "$ENV_FILE"
 if isolated_preflight >/dev/null 2>&1; then
   echo "deployment preflight accepted insecure file permissions" >&2
   exit 1
 fi
+mv "$ENV_FILE.valid" "$ENV_FILE"
 
 printf 'Deployment preflight self-test passed.\n'

@@ -145,7 +145,7 @@ Cross-cutting invariants (§9):
 One file per feature under `test/`, mirroring `@workspace/crm`:
 
 - `test/<feature>.spec.ts` — service/integration against the local Postgres
-  (`docker-compose`), e.g. `catalog`, `vendor`, `budget`, `policy`,
+  (the API process), e.g. `catalog`, `vendor`, `budget`, `policy`,
   `requisition`, `purchase-order`, `invoice`, `intake`, `payment-run`, plus
   `idempotency`/`audit` (shared) and the unit `app.spec.ts`.
 - `test/app.e2e-spec.ts` — boots the full `AppModule` over HTTP.

@@ -1,10 +1,8 @@
 # Disaster-recovery validation
 
 A backup is not release evidence until its checksum, freshness, and restore path
-have been tested. `scripts/production-smoke.sh` performs a destructive round
-trip against an isolated ephemeral stack on every CI run. A staging drill is
-still required because it validates the real object store, credentials,
-container runtime, network, storage, and operator procedure.
+have been tested. A staging drill is still required because it validates the
+real object store, credentials, network, storage, and operator procedure.
 
 ## Backup freshness monitor
 
@@ -24,26 +22,29 @@ Alert when the command fails or no success record arrives within the RPO.
 ## Quarterly staging restore drill
 
 1. Open a change record with the source backup identifier, expected RPO/RTO,
-   image digest, schema version, operators, and rollback owner.
+   release source SHA, schema version, operators, and rollback owner.
 2. Select the newest validated off-host archive and checksum sidecar. Download
    them to a restricted directory (`umask 077`) without changing the names.
-3. Create an isolated Compose project and staging database. Verify all public
-   URLs, credentials, queues, mailboxes, and ERP connections point to staging
-   or inert test endpoints. Never run a drill against production DNS or a
-   production payment/messaging provider.
-4. Start PostgreSQL only, then run:
+3. Create an isolated staging database. Verify all public URLs, credentials,
+   queues, mailboxes, and ERP connections point to staging or inert test
+   endpoints. Never run a drill against production DNS or a production
+   payment/messaging provider.
+4. Stop all application writers, then run:
 
    ```bash
-   COMPOSE_PROJECT_NAME=aipms-drill-YYYYQX \
-   POSTGRES_DB=aipms_drill \
+   DATABASE_URL="$STAGING_DATABASE_URL" \
+   AIPMS_RESTORE_CONFIRM=yes \
+   AIPMS_RESTORE_WRITERS_STOPPED=yes \
    ./scripts/restore.sh /restricted/aipms-YYYYMMDD-HHMMSS.sql.gz
    ```
 
-   `restore.sh` validates gzip and SHA-256, restores first into a disposable
-   database, checks the Prisma migration ledger, stops writers, terminates
-   stale sessions, restores transactionally, and fails closed if any step
-   fails.
-5. Start the release-candidate API and web images. Verify `/health/ready`, the
+    `restore.sh` validates gzip and SHA-256, restores the archive into a
+    disposable database first, verifies the Prisma migration ledger there, and
+    only then restores the target in one transaction. It refuses a PostgreSQL
+    maintenance database. Run `pnpm db:deploy` before restarting application
+    writers. If the database role cannot create databases, rerun with
+    `AIPMS_RESTORE_SKIP_VALIDATION=1` and record the exception.
+5. Start the release-candidate API and web processes. Verify `/health/ready`, the
    authenticated `/health/operations` endpoint, login/SSO, authorization
    boundaries, the Operations desk, and the audit-chain integrity check.
 6. Reconcile representative counts for vendors, requisitions, invoices,
@@ -54,8 +55,8 @@ Alert when the command fails or no success record arrives within the RPO.
    using staging-only identities and providers.
 8. Record measured backup age, restore start/end, achieved RPO/RTO, migration
    output, health/capacity results, discrepancies, and remediation owners.
-9. Destroy the staging database, downloaded archive, temporary credentials,
-   and isolated volumes according to the data-retention policy.
+9. Destroy the staging database, downloaded archive, and temporary credentials
+   according to the data-retention policy.
 
 ## Failure rules
 

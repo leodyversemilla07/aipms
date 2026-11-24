@@ -106,7 +106,7 @@ the moments that matter and trust the system for everything else.
   orchestrator + ≤4 specialists (sourcing, ops, audit/match, compliance)
   sharing one domain model (topology per §7.5).
 - Serve **private / enterprise** organizations first, deployed
-  **single-tenant and self-hostable** by each customer (Docker / VM / PaaS) —
+  **single-tenant and self-hostable** by each customer (VM / PaaS) —
   the enterprise deployment story is the v1 product (§16).
 
 ### 4.2 Non-goals (v1)
@@ -890,7 +890,7 @@ if a behavior differs per customer, it is a `Policy` + `config`, not a fork.
 - **Configuration by environment, not code**: `@workspace/env` loads the
   repo-root `.env`; runtime-tunable settings live in a settings store.
 - **One stack, packaged for the org**: web (Next.js) + api (NestJS + tRPC) +
-  agent (eve) + Postgres, shipped as Docker Compose, VM images, or PaaS
+  agent (eve) + Postgres, shipped as managed-process deployment, VM images, or PaaS
   builds. The repo is the deployment unit.
 - **Upgrades are migrations**: Prisma `migrate deploy` at boot; versioned
   releases; backup/restore of Postgres; no cross-tenant data migration ever.
@@ -903,32 +903,34 @@ if a behavior differs per customer, it is a `Policy` + `config`, not a fork.
   (cloud keys) or run locally/offline (air-gapped / regulated deployments).
   No shared model service.
 
-### 16.2.1 Distribution & upgrade story (decided: Docker Compose, single-node)
+### 16.2.1 Distribution & upgrade story (decided: managed processes, single node)
 
-- **Primary distribution: Docker Compose, single node.** A multi-container
-  stack — web (Next) + api (NestJS + tRPC) + agent (eve) + Postgres, plus an
-  optional local LLM endpoint — on one host. This is the recognized sweet
+- **Primary distribution: managed processes on a single node.** The API
+  (NestJS + tRPC), web (Next.js), and agent (eve) run as separate long-lived
+  processes — supervised by systemd, a container orchestrator, or a PaaS
+  runtime — alongside PostgreSQL on one host. This is the recognized sweet
   spot for single-tenant products: low overhead, auditable, no orchestration
   fleet, and no Kubernetes estate (and its ~2-FTE overhead) that a small org
   does not need.
-- **Single-node default, three packages from one build:**
-  - **Compose (default)**: `docker compose up -d` on a VM or bare metal —
-    the enterprise on-prem target.
-  - **Managed PaaS (egress-allowed)**: the same image on a managed host
+- **Single-node default, three packages from one commit:**
+  - **Managed processes (default)**: `pnpm --filter api start`,
+    `pnpm --filter web start`, and `pnpm --filter agent start` under a process
+    supervisor on a VM or bare metal — the enterprise on-prem target.
+  - **Managed PaaS (egress-allowed)**: the same build on a managed host
     (Render / Railway / Fly.io / Cloud Run) for orgs that prefer a managed
     runtime — explicitly not the air-gapped choice (it implies outbound
     client egress).
-  - **Air-gapped / offline bundle**: a signed offline artifact (images +
-    model weights + dependency mirrors) staged in with zero egress; updates
-    arrive via a reviewed, signed pipeline on a slow cadence. No phone-home
-    at runtime.
-- **Postgres ships in-stack** (mounted volume); managed Postgres is an
-  override, not a requirement.
+  - **Air-gapped / offline bundle**: a signed offline artifact (build
+    outputs + model weights + dependency mirrors) staged in with zero egress;
+    updates arrive via a reviewed, signed pipeline on a slow cadence. No
+    phone-home at runtime.
+- **Postgres is a separately managed service** (hosted on the same node or
+  external); the application never assumes it shares the process tree.
 - **Instance configuration lives in env + a settings store** (currency PHP,
   tax policies, approval chains, model provider) — no code change between
   deployments.
-- **Upgrades are boot-time migrations**: pinned image tags; `prisma migrate
-  deploy` at boot; rollback = previous tag + `pg_dump` restore. Never a
+- **Upgrades are boot-time migrations**: pinned commit SHA; `prisma migrate
+  deploy` at boot; rollback = previous commit + `pg_dump` restore. Never a
   cross-tenant data journey.
 - **HA is intentionally later.** Single-node is the audit-friendly default;
   failover/scale is a Phase-7+ extension chosen explicitly to avoid
@@ -979,7 +981,7 @@ informed that potential tier is archived under `docs/research/`.
 
 ```
 Phase 7 — Enterprise hardening (additive, no public machinery)
-- single-tenant packaging: Docker Compose / VM / PaaS; migrate-deploy upgrades
+- single-tenant packaging: managed processes / VM / PaaS; migrate-deploy upgrades
 - offline-model agent runtime (OpenAI-compatible endpoint) + provider gate
 - identity: OIDC/SAML/SCIM via @better-auth/sso
 - qualified signing for POs in air-gapped / regulated deployments

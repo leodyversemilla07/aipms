@@ -54,7 +54,6 @@ playwright-report
 blob-report
 apps/web/e2e/.auth
 backups/
-docker-compose.override.yml
 
 # Local deployment credentials/bootstrap artifacts — never commit.
 aipms-ssh-key*

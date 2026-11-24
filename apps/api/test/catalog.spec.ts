@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { CatalogService } from '../src/catalog/catalog.service'
 
 /**
- * @workspace/catalog service — CRUD against local Postgres (docker-compose).
+ * @workspace/catalog service — CRUD against local Postgres.
  */
 
 const suffix = Math.random().toString(36).slice(2, 8)

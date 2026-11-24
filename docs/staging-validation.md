@@ -1,45 +1,42 @@
 # Staging release validation
 
-Promote the exact release image digests intended for production. Do not rebuild
-images per environment. Configure staging with independent secrets, test IdP and
-provider tenants, inert payment destinations, and production-equivalent TLS,
-reverse proxy, database, and container limits.
+Promote the exact release commit intended for production. Do not rebuild or
+redeploy a different commit per environment. Configure staging with independent
+secrets, test IdP and provider tenants, inert payment destinations, and
+production-equivalent TLS, reverse proxy, database, and process limits.
 
-## Publish and deploy the candidate
+## Verify and deploy the candidate
 
-Run **Publish Docker images** manually with the full commit SHA from `main`.
+Run **Release verification** manually with the full commit SHA from `main`.
 The workflow verifies that commit is an ancestor of `origin/main`, repeats the
-release test suite, publishes multi-architecture images, emits SBOM/provenance,
-signs each digest, verifies the signatures, and uploads
-`image-manifest-<sha>/image-manifest.json`. Download that artifact and copy its
-three exact digest references into the restricted staging environment as
-`AIPMS_API_IMAGE_REF`, `AIPMS_WEB_IMAGE_REF`, and
-`AIPMS_AGENT_IMAGE_REF`.
+release test suite, and uploads
+`release-manifest-<sha>/release-manifest.json`. The manifest pins the API, web,
+and agent components to that immutable source SHA.
 
-Deploy without permitting Compose to rebuild or silently substitute images:
+Deploy that exact commit to staging with the process manager of the target
+host, using the restricted staging environment file:
 
 ```bash
-docker compose --env-file /secure/path/staging.env pull api web agent
-docker compose --env-file /secure/path/staging.env up -d --no-build
+pnpm deployment:preflight -- /secure/path/staging.env
 ```
 
-Confirm the running container image IDs equal the manifest before testing. The
-same digest references—not a later rebuild—are the production promotion units.
+Confirm the running processes report the manifest's source SHA before testing.
+The same commit—not a later build—is the production promotion unit.
 
 ## Configuration preflight
 
 Create the deployment environment file with mode `0600`, then validate it
-without starting containers:
+without starting any process:
 
 ```bash
 pnpm deployment:preflight -- /secure/path/staging.env
 ```
 
 The preflight rejects HTTP origins, shared or placeholder secrets, demo
-identities, wildcard host bindings, incomplete integration credential groups,
-invalid LLM residency configuration, insecure IMAP, and unsafe file
-permissions. Disabled optional integrations are reported as warnings without
-printing secret values.
+identities, a missing or unsecured `DATABASE_URL`, incomplete integration
+credential groups, invalid LLM residency configuration, insecure IMAP, and
+unsafe file permissions. Disabled optional integrations are reported as
+warnings without printing secret values.
 
 ## Automated boundary check
 
@@ -95,8 +92,8 @@ secret/certificate, IMAP credential, QBO OAuth secret/tokens, and LLM key. For
 every rotation:
 
 - Record owner, old/new key identifiers, start/end time, and expected impact.
-- Deploy the new secret without placing it in image layers, browser bundles,
-  command arguments, or logs.
+- Deploy the new secret without placing it in browser bundles, command
+  arguments, process environment dumps, or logs.
 - Verify old credentials fail and new credentials succeed.
 - Confirm audit, readiness, automation leases, and recovery queues remain
   healthy.
@@ -122,16 +119,17 @@ identifier for every gate. `llmOcr` may be `human-review-only` only when the
 release explicitly accepts that product boundary; `signatureAndLegal` may be
 `integrity-only` only when no legally-qualified signature claim is made.
 
-Validate the completed record against the signed manifest:
+Validate the completed record against the release manifest:
 
 ```bash
 pnpm release:gate -- \
   /secure/evidence/release-evidence.json \
-  /secure/evidence/image-manifest.json
+  /secure/evidence/release-manifest.json
 ```
 
-The command fails on mutable/mismatched images, missing SBOM/provenance/signature
-claims, stale or incomplete validation records, untested credential retirement,
-missing operational drills, or absent tax/legal review evidence. This validates
-the evidence record; it does not manufacture provider, operational, legal, or
-tax approval.
+The command fails on components that are not pinned to the release source SHA,
+mismatched deployed components, missing SBOM/provenance/signature claims for
+container deployments, stale or incomplete validation records, untested
+credential retirement, missing operational drills, or absent tax/legal review
+evidence. This validates the evidence record; it does not manufacture provider,
+operational, legal, or tax approval.

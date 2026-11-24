@@ -92,6 +92,78 @@ function httpsUrl(name, optional = false) {
   }
 }
 
+/**
+ * Minimal PostgreSQL URI parser. WHATWG URL rejects socket-style authorities
+ * (`postgresql://user@/db?host=/var/run/postgresql`), which are valid for
+ * libpq, so the connection string is parsed here instead.
+ */
+function parsePostgresUri(raw) {
+  const match =
+    /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)(?:\/([^?#]*))?(?:\?([^#]*))?$/i.exec(
+      raw
+    )
+  if (!match) return null
+  const [, scheme, authority, database, query] = match
+  let host = authority
+  const at = authority.lastIndexOf("@")
+  if (at >= 0) host = authority.slice(at + 1)
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]")
+    if (end < 0) return null
+    host = host.slice(1, end)
+  } else {
+    const colon = host.indexOf(":")
+    if (colon >= 0) host = host.slice(0, colon)
+  }
+  return {
+    scheme: scheme.toLowerCase(),
+    host: host.toLowerCase(),
+    database: database ? decodeURIComponent(database) : "",
+    params: new URLSearchParams(query ?? ""),
+  }
+}
+
+function validateDatabaseUrl() {
+  const raw = values.DATABASE_URL?.trim() ?? ""
+  if (!raw) {
+    fail("DATABASE_URL", "is required")
+    return null
+  }
+  const parsed = parsePostgresUri(raw)
+  if (!parsed) {
+    fail("DATABASE_URL", "must be a valid PostgreSQL connection URL")
+    return null
+  }
+  if (parsed.scheme !== "postgres" && parsed.scheme !== "postgresql") {
+    fail("DATABASE_URL", "must use the postgres:// or postgresql:// scheme")
+    return null
+  }
+  if (!parsed.database) {
+    fail("DATABASE_URL", "must name a database")
+  } else if (["postgres", "template0", "template1"].includes(parsed.database)) {
+    fail("DATABASE_URL", "must not point at a PostgreSQL maintenance database")
+  }
+  // A Unix-socket connection (empty host or host=/path) is local by definition.
+  const socket = (parsed.params.get("host") ?? "").startsWith("/")
+  const local =
+    socket ||
+    parsed.host === "" ||
+    parsed.host === "localhost" ||
+    parsed.host === "::1" ||
+    /^127\./.test(parsed.host)
+  const sslMode = (parsed.params.get("sslmode") ?? "").toLowerCase()
+  const transportSecure =
+    ["require", "verify-ca", "verify-full"].includes(sslMode) ||
+    (parsed.params.get("ssl") ?? "").toLowerCase() === "true"
+  if (!local && !transportSecure) {
+    fail(
+      "DATABASE_URL",
+      "must require transport security (sslmode=require|verify-ca|verify-full) for a remote database"
+    )
+  }
+  return parsed
+}
+
 const appUrl = httpsUrl("APP_URL")
 if (appUrl && (appUrl.pathname !== "/" || appUrl.search || appUrl.hash)) {
   fail("APP_URL", "must be an origin without a path, query, or fragment")
@@ -115,23 +187,32 @@ for (const origin of trustedOrigins) {
   }
 }
 
+// Managed-process deployments connect through DATABASE_URL only. The
+// POSTGRES_* variables are optional and are validated only when an operator
+// still uses them to assemble that URL.
 for (const name of ["POSTGRES_USER", "POSTGRES_DB"]) {
-  const value =
-    values[name]?.trim() || (name === "POSTGRES_USER" ? "user" : "aipms")
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
+  const value = values[name]?.trim()
+  if (value && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) {
     fail(name, "must be a safe PostgreSQL identifier")
   }
 }
-if (!/^[A-Za-z0-9._~-]+$/.test(values.POSTGRES_PASSWORD?.trim() ?? "")) {
+if (
+  values.POSTGRES_PASSWORD?.trim() &&
+  !/^[A-Za-z0-9._~-]+$/.test(values.POSTGRES_PASSWORD.trim())
+) {
   fail(
     "POSTGRES_PASSWORD",
-    "must use URL-safe characters because Compose embeds it in DATABASE_URL"
+    "must use URL-safe characters when embedded in DATABASE_URL"
   )
 }
+validateDatabaseUrl()
 
 const secrets = new Map()
 for (const [name, value] of [
-  ["POSTGRES_PASSWORD", secret("POSTGRES_PASSWORD")],
+  [
+    "POSTGRES_PASSWORD",
+    values.POSTGRES_PASSWORD ? secret("POSTGRES_PASSWORD") : "",
+  ],
   ["BETTER_AUTH_SECRET", secret("BETTER_AUTH_SECRET")],
   ["AIPMS_TOKEN_ENCRYPTION_SECRET", secret("AIPMS_TOKEN_ENCRYPTION_SECRET")],
   [
@@ -175,28 +256,6 @@ for (const name of ["AIPMS_AGENT_RATE_LIMIT", "AIPMS_AGENT_CONCURRENCY"]) {
 if (![undefined, "", "0", "false"].includes(values.AUTH_SEED_DEMO)) {
   fail("AUTH_SEED_DEMO", "must be disabled outside development")
 }
-for (const name of [
-  "POSTGRES_BIND_ADDRESS",
-  "API_BIND_ADDRESS",
-  "WEB_BIND_ADDRESS",
-]) {
-  const address = values[name]?.trim() || "127.0.0.1"
-  if (["0.0.0.0", "::", "[::]"].includes(address)) {
-    fail(name, "must not use a wildcard bind; use an intentional proxy network")
-  }
-}
-
-for (const name of [
-  "AIPMS_API_IMAGE_REF",
-  "AIPMS_WEB_IMAGE_REF",
-  "AIPMS_AGENT_IMAGE_REF",
-]) {
-  const image = required(name)
-  if (image && !/@sha256:[a-f0-9]{64}$/.test(image)) {
-    fail(name, "must pin an immutable sha256 image digest")
-  }
-}
-
 const llmKind = values.AIPMS_LLM_KIND?.trim() || "cloud"
 const llmEndpointRaw = values.AIPMS_LLM_ENDPOINT?.trim()
 const llmModel = values.AIPMS_LLM_MODEL?.trim()
@@ -343,7 +402,7 @@ if (errors.length === 0) {
     "independent-secrets",
     "distinct-agent-identity",
     "non-demo-identity",
-    "loopback-bindings",
+    "database-url",
     "llm-provider-gate",
     "smtp-transport",
     "integration-pairs",

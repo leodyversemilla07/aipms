@@ -1,0 +1,108 @@
+name: Release verification
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full main-branch commit SHA to verify as a release candidate
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-release:
+    name: Verify release source
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aipms
+          POSTGRES_PASSWORD: aipms
+          POSTGRES_DB: aipms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aipms -d aipms_test"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms_test
+      AIPMS_TEST_DATABASE_URL: postgresql://aipms:aipms@localhost:5432/aipms_test
+      BETTER_AUTH_SECRET: release-verification-only-secret
+      SOURCE_SHA: ${{ inputs.commit_sha || github.sha }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable source selection
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            printf '%s' "$SOURCE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            git fetch origin main
+            git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          fi
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare release database
+        run: |
+          pnpm db:generate
+          pnpm db:deploy
+          pnpm db:seed
+
+      - name: Verify source
+        run: |
+          pnpm check
+          ./scripts/test-deployment-preflight.sh
+          pnpm release:gate:test
+          pnpm operations:check:test
+          pnpm typecheck
+          pnpm --filter api test:unit
+          pnpm --filter api test
+          pnpm --filter agent test
+          pnpm --filter @workspace/tax test
+          pnpm --filter @workspace/env test
+          pnpm audit --prod
+
+      - name: Write immutable release manifest
+        run: |
+          mkdir -p release-evidence
+          jq -n \
+            --arg sourceSha "$SOURCE_SHA" \
+            --arg version "${{ github.event_name == 'push' && github.ref_name || format('candidate-{0}', inputs.commit_sha) }}" \
+            --arg workflowRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{sourceSha:$sourceSha,version:$version,workflowRun:$workflowRun,deployment:"managed-processes",components:{api:$sourceSha,web:$sourceSha,agent:$sourceSha}}' \
+            > release-evidence/release-manifest.json
+
+      - name: Upload immutable release manifest
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-manifest-${{ env.SOURCE_SHA }}
+          path: release-evidence/release-manifest.json
+          if-no-files-found: error
+          retention-days: 90

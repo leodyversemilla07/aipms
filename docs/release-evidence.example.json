@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "sourceSha": "REPLACE_WITH_40_CHARACTER_COMMIT_SHA",
-  "deployedImages": {
-    "api": "REPLACE_WITH_EXACT_API_DIGEST_FROM_MANIFEST",
-    "web": "REPLACE_WITH_EXACT_WEB_DIGEST_FROM_MANIFEST",
-    "agent": "REPLACE_WITH_EXACT_AGENT_DIGEST_FROM_MANIFEST"
+  "deployedComponents": {
+    "api": "REPLACE_WITH_RELEASE_SOURCE_SHA",
+    "web": "REPLACE_WITH_RELEASE_SOURCE_SHA",
+    "agent": "REPLACE_WITH_RELEASE_SOURCE_SHA"
   },
   "validations": {
     "deploymentPreflight": {
