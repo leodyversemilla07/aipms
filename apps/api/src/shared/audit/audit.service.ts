@@ -9,6 +9,7 @@ import {
 } from '@workspace/db'
 import { paginate } from '../../trpc/list-input'
 import { lockScope } from '../locks'
+import { currentAgentRunId } from './agent-run-context'
 
 /**
  * §9 append-only audit trail. Every agent/human state change records an
@@ -123,6 +124,15 @@ export class AuditService {
     input: AuditRecordInput,
     transaction?: Prisma.TransactionClient,
   ): Promise<void> {
+    // §7.1 — an agent action belongs to the run that produced it. The run id
+    // comes from the caller's scoped bearer (never from the request body),
+    // so an agent cannot attribute its work to a run it does not own. Human
+    // callers keep their existing behaviour: no run id.
+    const runId =
+      input.runId ??
+      (input.actorKind === 'agent' ? currentAgentRunId() : undefined) ??
+      undefined
+    const record = runId ? { ...input, runId } : input
     const append = async (tx: Prisma.TransactionClient) => {
       // Serialize chain appends: read-then-insert of prevHash must be linear
       // or concurrent writers would fork the chain. SQLite serialises writers
@@ -140,9 +150,9 @@ export class AuditService {
 
       const id = randomUUID()
       const at = new Date()
-      const inputHash = this.hash(input.input)
+      const inputHash = this.hash(record.input)
       const content: ChainContent = {
-        ...(input.runId ? { runId: input.runId } : {}),
+        ...(record.runId ? { runId: record.runId } : {}),
         actorId: input.actorId,
         actorKind: input.actorKind,
         action: input.action,
@@ -165,18 +175,18 @@ export class AuditService {
         // both engines.
         data: {
           id,
-          runId: input.runId ?? null,
-          actorId: input.actorId,
-          actorKind: input.actorKind,
-          action: input.action,
-          entity: input.entity,
-          entityId: input.entityId ?? null,
+          runId: record.runId ?? null,
+          actorId: record.actorId,
+          actorKind: record.actorKind,
+          action: record.action,
+          entity: record.entity,
+          entityId: record.entityId ?? null,
           inputHash,
-          ...(input.before !== undefined && input.before !== null
-            ? { before: input.before as object }
+          ...(record.before !== undefined && record.before !== null
+            ? { before: record.before as object }
             : {}),
-          ...(input.after !== undefined && input.after !== null
-            ? { after: input.after as object }
+          ...(record.after !== undefined && record.after !== null
+            ? { after: record.after as object }
             : {}),
           at,
           prevHash,
