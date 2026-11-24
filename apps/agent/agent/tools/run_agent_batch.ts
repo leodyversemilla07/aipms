@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { defineAipmsTool } from "../lib/agent-tool"
 import { fetchWithDeadline } from "../lib/http-client"
 import { agentAuthorizationToken, getApiConfig } from "../lib/trpc-client"
 
@@ -9,49 +10,51 @@ import { agentAuthorizationToken, getApiConfig } from "../lib/trpc-client"
  * endpoint, authenticated with a short-lived scoped agent bearer.
  * Returns per-run counts including per-document failures.
  */
-export default defineTool({
-  description:
-    "Run deterministic structured intake over up to `limit` pending documents. " +
-    "Unstructured/binary documents require get_intake_document plus OCR or human review. Returns how many were " +
-    "processed, failures, and work deferred by shared quotas. On quota exhaustion, " +
-    "back off; do not assume the queue was drained. Requires configured aipms machine credentials.",
-  inputSchema: z.object({
-    limit: z.number().int().min(1).max(100).default(25),
-  }),
-  async execute({ limit }, ctx) {
-    const { apiUrl } = getApiConfig()
-    const token = await agentAuthorizationToken()
-    const res = await fetchWithDeadline(`${apiUrl}/api/service/agent/batch`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        limit,
-        idempotencyKey: `eve:agent.batch:${ctx.callId}`,
-      }),
-    })
-    if (!res.ok) {
-      return { ok: false, status: res.status, error: await res.text() }
-    }
-    return { ok: true, ...(await res.json()) }
-  },
-  toModelOutput(output) {
-    if (!output.ok) {
+export default defineAipmsTool(
+  defineTool({
+    description:
+      "Run deterministic structured intake over up to `limit` pending documents. " +
+      "Unstructured/binary documents require get_intake_document plus OCR or human review. Returns how many were " +
+      "processed, failures, and work deferred by shared quotas. On quota exhaustion, " +
+      "back off; do not assume the queue was drained. Requires configured aipms machine credentials.",
+    inputSchema: z.object({
+      limit: z.number().int().min(1).max(100).default(25),
+    }),
+    async execute({ limit }, ctx) {
+      const { apiUrl } = getApiConfig()
+      const token = await agentAuthorizationToken()
+      const res = await fetchWithDeadline(`${apiUrl}/api/service/agent/batch`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          limit,
+          idempotencyKey: `eve:agent.batch:${ctx.callId}`,
+        }),
+      })
+      if (!res.ok) {
+        return { ok: false, status: res.status, error: await res.text() }
+      }
+      return { ok: true, ...(await res.json()) }
+    },
+    toModelOutput(output) {
+      if (!output.ok) {
+        return {
+          type: "text",
+          value: `Intake agent call failed: ${output.error}`,
+        }
+      }
       return {
         type: "text",
-        value: `Intake agent call failed: ${output.error}`,
+        value:
+          `Processed ${output.succeeded}/${output.documents} pending intake documents` +
+          (output.failed?.length ? `; ${output.failed.length} failed` : "") +
+          (output.quotaLimited
+            ? `; ${output.deferred} deferred by quota — back off and retry later; queue is not drained`
+            : ""),
       }
-    }
-    return {
-      type: "text",
-      value:
-        `Processed ${output.succeeded}/${output.documents} pending intake documents` +
-        (output.failed?.length ? `; ${output.failed.length} failed` : "") +
-        (output.quotaLimited
-          ? `; ${output.deferred} deferred by quota — back off and retry later; queue is not drained`
-          : ""),
-    }
-  },
-})
+    },
+  })
+)

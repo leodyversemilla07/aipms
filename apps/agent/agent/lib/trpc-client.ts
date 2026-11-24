@@ -7,6 +7,7 @@
  *   - mutations: POST /api/trpc/<router>.<procedure> with the JSON input as body
  */
 
+import { currentAgentRunId } from "./agent-tool"
 import { fetchWithDeadline } from "./http-client"
 
 export function getApiConfig() {
@@ -17,9 +18,21 @@ export function getApiConfig() {
   return { apiUrl, token }
 }
 
-let cachedAccess: { token: string; expiresAt: number } | null = null
+/**
+ * §7.1 — the run this call belongs to. The eve session id is the run identity
+ * the API recorded when it woke the session, so every tool call of that
+ * session carries the same run id. `AIPMS_AGENT_RUN_ID` is the fallback for
+ * sessions that were not started by an API wake.
+ */
+export function agentRunId(): string | undefined {
+  return currentAgentRunId() ?? process.env.AIPMS_AGENT_RUN_ID ?? undefined
+}
 
-export async function agentAuthorizationToken() {
+// One scoped bearer per run: the run id is a claim inside the token, so
+// tokens cannot be shared between sessions.
+const accessTokens = new Map<string, { token: string; expiresAt: number }>()
+
+export async function agentAuthorizationToken(options?: { runId?: string }) {
   const configured = process.env.AIPMS_AGENT_BEARER_TOKEN
   if (configured) return configured
 
@@ -29,9 +42,12 @@ export async function agentAuthorizationToken() {
     process.env.AIPMS_AGENT_TOKEN_EXCHANGE === "true"
   if (!exchange) return bootstrapToken
 
+  const runId = options?.runId ?? agentRunId()
+  const cacheKey = runId ?? "default"
   const now = Date.now()
-  if (cachedAccess && cachedAccess.expiresAt - 30_000 > now) {
-    return cachedAccess.token
+  const cached = accessTokens.get(cacheKey)
+  if (cached && cached.expiresAt - 30_000 > now) {
+    return cached.token
   }
   const res = await fetchWithDeadline(`${apiUrl}/api/service/agent/token`, {
     method: "POST",
@@ -40,7 +56,7 @@ export async function agentAuthorizationToken() {
       authorization: `Bearer ${bootstrapToken}`,
     },
     body: JSON.stringify({
-      runId: process.env.AIPMS_AGENT_RUN_ID || undefined,
+      runId: runId || undefined,
     }),
   })
   if (!res.ok) {
@@ -57,11 +73,11 @@ export async function agentAuthorizationToken() {
   ) {
     throw new Error("Agent token exchange returned an invalid response")
   }
-  cachedAccess = {
+  accessTokens.set(cacheKey, {
     token: body.accessToken,
     expiresAt: Date.parse(body.expiresAt),
-  }
-  return cachedAccess.token
+  })
+  return body.accessToken
 }
 
 export async function trpcQuery<T = unknown>(

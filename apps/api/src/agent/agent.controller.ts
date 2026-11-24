@@ -13,6 +13,7 @@ import { issueAgentAccessToken } from './agent-access-token'
 import {
   type AgentAccessRequest,
   AgentAccessTokenGuard,
+  AgentTokenGuard,
 } from './agent-access-token.guard'
 import { AgentCommandService } from './agent-command.service'
 import { configuredAgentId } from './agent-principal'
@@ -74,5 +75,30 @@ export class AgentController {
       idempotencyKey: body.idempotencyKey,
       source: 'service-api',
     })
+  }
+
+  /**
+   * §7.1 — close the agent run this session owns. The eve runtime records
+   * the wake as a running trace; the agent reports the outcome when its work
+   * is done so the run does not stay open.
+   */
+  @Post('run/complete')
+  @UseGuards(AgentTokenGuard)
+  async completeRun(
+    @Body() body: { outcome?: string; summary?: string; runId?: string },
+    @Req() request: AgentAccessRequest,
+  ) {
+    const claims = request.agentClaims
+    if (!claims) throw new BadRequestException('Agent claims are unavailable')
+    return this.commands.completeRun(
+      { outcome: body.outcome, summary: body.summary, runId: body.runId },
+      {
+        id: claims.sub,
+        kind: 'agent',
+        scopes: claims.scopes,
+        runId: claims.runId,
+        source: 'service-api',
+      },
+    )
   }
 }

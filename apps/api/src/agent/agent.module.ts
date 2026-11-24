@@ -9,8 +9,12 @@ import { AgentController } from './agent.controller'
 import { AgentRouter } from './agent.router'
 import { AgentScheduler } from './agent.scheduler'
 import { AGENT_EXTRACTOR, AgentService } from './agent.service'
-import { AgentAccessTokenGuard } from './agent-access-token.guard'
+import {
+  AgentAccessTokenGuard,
+  AgentTokenGuard,
+} from './agent-access-token.guard'
 import { AgentCommandService } from './agent-command.service'
+import { AgentRuntimeService } from './agent-runtime.service'
 import { AgentWakeService } from './agent-wake.service'
 import { extractStructuredInvoice } from './extract'
 import { ServiceTokenGuard } from './service-token.guard'
@@ -31,8 +35,10 @@ import { ServiceTokenGuard } from './service-token.guard'
     AgentRouter,
     AgentScheduler,
     AgentWakeService,
+    AgentRuntimeService,
     ServiceTokenGuard,
     AgentAccessTokenGuard,
+    AgentTokenGuard,
     // Default extractor seam; swapped for an LLM-backed extractor without
     // changing the pipeline.
     { provide: AGENT_EXTRACTOR, useValue: extractStructuredInvoice },

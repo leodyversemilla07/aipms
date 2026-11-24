@@ -10,6 +10,7 @@ import { resolveEffectivePolicy } from '../policy/policy-resolver'
 import { EventRelayService } from '../shared/events/event-relay.service'
 import { AgentCommandService } from './agent-command.service'
 import { configuredAgentId } from './agent-principal'
+import { AgentRuntimeService } from './agent-runtime.service'
 
 /** Shape the relay hands to handlers (§13 outbox rows). */
 interface RelayedEvent {
@@ -33,16 +34,29 @@ const asJson = (value: unknown): Prisma.InputJsonObject =>
 /**
  * §7.3 Agent wake — listens to domain events and spawns an agent run
  * for events that require automated handling. Disabled by default; enable
- * with AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1. This is a thin orchestrator
- * stub; real skill routing will be expanded in Phase 3+.
+ * with AGENT_AUTORUN=1 or AIPMS_AGENT_WAKE=1.
+ *
+ * Two wake targets:
+ *
+ * - The in-process deterministic pipeline (default). The API performs the
+ *   work itself through the shared command boundary.
+ * - The eve agent runtime (`AIPMS_AGENT_EVE_WAKE=1` with
+ *   `AIPMS_AGENT_EVE_URL` and `AIPMS_AGENT_ACCESS_TOKEN` configured). This
+ *   is the `BUS -.wake.-> EVE` edge of the architecture diagram: the API
+ *   creates an eve session, delivers the event as its first message, and
+ *   records the session as the agent run. The agent then acts through its
+ *   own tools, which call back into the API's command boundary — so every
+ *   capability check, quota, and audit rule still applies.
  */
 @Injectable()
 export class AgentWakeService implements OnModuleInit {
   private readonly db: typeof db
+  private readonly eveWakeEnabled = process.env.AIPMS_AGENT_EVE_WAKE === '1'
 
   constructor(
     private readonly relay: EventRelayService,
     private readonly commands: AgentCommandService,
+    private readonly runtime: AgentRuntimeService,
     @Optional()
     dbClient?: typeof db,
   ) {
@@ -59,8 +73,23 @@ export class AgentWakeService implements OnModuleInit {
       return
     }
 
+    if (this.eveWakeEnabled && !this.runtime.isConfigured()) {
+      console.error(
+        '[agent-wake] AIPMS_AGENT_EVE_WAKE=1 but AIPMS_AGENT_EVE_URL / AIPMS_AGENT_ACCESS_TOKEN are not configured; using the in-process pipeline',
+      )
+    }
+
     // Wake on requisition approval → operator agent should issue PO
     this.relay.subscribe('requisition.approved', async (event) => {
+      if (
+        await this.wakeAgentIfEnabled(
+          event,
+          ['requisition-to-po'],
+          this.requisitionWakeMessage(event),
+        )
+      ) {
+        return
+      }
       await this.handleRequisitionApproved(event)
     })
 
@@ -69,8 +98,65 @@ export class AgentWakeService implements OnModuleInit {
 
     // Wake on intake received → classify document
     this.relay.subscribe('intake.received', async (event) => {
+      if (
+        await this.wakeAgentIfEnabled(
+          event,
+          ['intake-classify'],
+          this.intakeWakeMessage(event),
+        )
+      ) {
+        return
+      }
       await this.spawnRun('operator', ['intake-classify'], event)
     })
+  }
+
+  /**
+   * Hand the event to the eve runtime. Returns false when the in-process
+   * pipeline owns the event instead.
+   */
+  private async wakeAgentIfEnabled(
+    event: RelayedEvent,
+    skills: string[],
+    message: string,
+  ): Promise<boolean> {
+    if (!this.eveWakeEnabled || !this.runtime.isConfigured()) return false
+    // The operation id is stable per event, so a redelivered event returns
+    // the same eve session instead of waking the agent twice.
+    const operationId = `wake:${event.id}`
+    const delivery = await this.runtime.wake({ message, operationId })
+    await this.beginRun(configuredAgentId(), skills, event, {
+      id: delivery.sessionId,
+      meta: {
+        delivery: {
+          channel: 'eve',
+          sessionId: delivery.sessionId,
+          deliveryId: delivery.deliveryId ?? null,
+          operationId,
+        },
+      },
+    })
+    console.log(
+      `[agent-wake] woke eve session ${delivery.sessionId} for ${event.type}`,
+    )
+    return true
+  }
+
+  private requisitionWakeMessage(event: RelayedEvent) {
+    return (
+      `Domain event ${event.type} fired for requisition ${event.entityId}. ` +
+      'The requisition is approved and needs a purchase order. Use your aipms ' +
+      'tools to issue the purchase order for it, then close this run with ' +
+      'complete_agent_run.'
+    )
+  }
+
+  private intakeWakeMessage(event: RelayedEvent) {
+    return (
+      `Domain event ${event.type} fired for intake document ${event.entityId}. ` +
+      'The document is pending classification and registration. Use your aipms ' +
+      'tools to process it, then close this run with complete_agent_run.'
+    )
   }
 
   private async handleRequisitionApproved(event: RelayedEvent) {
@@ -357,11 +443,19 @@ export class AgentWakeService implements OnModuleInit {
    * whose final relay acknowledgement was interrupted returns its succeeded
    * run; failed/stale-running runs are reclaimed for retry without creating
    * duplicate trace rows.
+   *
+   * `options.id` pins the run id to the eve session id, so the agent's tool
+   * calls (which carry that session id as their run claim) resolve to this
+   * exact run.
    */
   private async beginRun(
     agentId: string,
     skills: string[],
     event: RelayedEvent,
+    options: {
+      id?: string
+      meta?: Record<string, unknown>
+    } = {},
   ) {
     const data = {
       agentId,
@@ -372,10 +466,13 @@ export class AgentWakeService implements OnModuleInit {
         entityType: event.entityType,
         entityId: event.entityId,
         eventId: event.id,
+        ...(options.meta ?? {}),
       },
     }
     try {
-      const run = await this.db.agentRun.create({ data })
+      const run = await this.db.agentRun.create({
+        data: { ...data, ...(options.id ? { id: options.id } : {}) },
+      })
       console.log(`[agent-wake] spawned run ${run.id} for ${event.type}`)
       return { run, shouldProcess: true as const }
     } catch (error) {

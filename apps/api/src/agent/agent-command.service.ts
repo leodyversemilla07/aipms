@@ -1,4 +1,10 @@
-import { BadRequestException, Injectable, Optional } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common'
 import { db, type Prisma, type UserKind, type UserRole } from '@workspace/db'
 import {
   type IssueInput,
@@ -236,6 +242,72 @@ export class AgentCommandService {
       }
       throw error
     }
+  }
+
+  /**
+   * §7.1 — close an agent run.
+   *
+   * The eve runtime cannot finish its own trace from the outside, so the
+   * agent calls this with the outcome of the work it was woken for. The run
+   * id is the eve session id carried by the scoped bearer, so the agent
+   * cannot close a run it does not own.
+   */
+  async completeRun(
+    input: { outcome?: string; summary?: string; runId?: string },
+    actor: CommandActor,
+  ) {
+    const outcome =
+      input.outcome === 'succeeded'
+        ? 'succeeded'
+        : input.outcome === 'failed'
+          ? 'failed'
+          : null
+    if (!outcome) {
+      throw new BadRequestException('outcome must be "succeeded" or "failed"')
+    }
+    const runId = (input.runId ?? actor.runId ?? '').trim()
+    if (!/^[a-zA-Z0-9:_-]{1,128}$/.test(runId)) {
+      throw new BadRequestException('runId contains invalid characters')
+    }
+    const run = await this.db.agentRun.findUnique({ where: { id: runId } })
+    if (!run) {
+      throw new NotFoundException(`Agent run ${runId} not found`)
+    }
+    if (run.agentId !== actor.id) {
+      throw new ForbiddenException('Agent run belongs to another principal')
+    }
+    if (run.finishedAt) {
+      // Completion is idempotent: a retried call must not reopen the run.
+      return run
+    }
+    const summary = input.summary?.trim().slice(0, 2000)
+    const updated = await this.db.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: outcome,
+        finishedAt: new Date(),
+        meta: {
+          ...((run.meta ?? {}) as Prisma.InputJsonObject),
+          completion: {
+            outcome,
+            summary: summary ?? null,
+            source: actor.source,
+            completedAt: new Date().toISOString(),
+          },
+        },
+      },
+    })
+    await this.audit.record({
+      runId: run.id,
+      actorId: actor.id,
+      actorKind: actor.kind,
+      action: 'agent.run.complete',
+      entity: 'AgentRun',
+      entityId: run.id,
+      input: { outcome, source: actor.source },
+      after: { status: updated.status, summary: summary ?? null },
+    })
+    return updated
   }
 
   async issuePurchaseOrder(input: IssueInput, actor: CommandActor) {

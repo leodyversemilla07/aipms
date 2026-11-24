@@ -29,6 +29,10 @@ type RunRow = {
     triggeredBy?: string
     entityType?: string
     entityId?: string
+    delivery?: {
+      channel?: string
+      sessionId?: string
+    }
   } | null
   startedAt: string | Date
   finishedAt: string | Date | null
@@ -67,6 +71,23 @@ function normalizeRun(row: {
             typeof meta.entityType === "string" ? meta.entityType : undefined,
           entityId:
             typeof meta.entityId === "string" ? meta.entityId : undefined,
+          delivery:
+            meta.delivery &&
+            typeof meta.delivery === "object" &&
+            !Array.isArray(meta.delivery)
+              ? {
+                  channel:
+                    typeof (meta.delivery as { channel?: unknown }).channel ===
+                    "string"
+                      ? (meta.delivery as { channel: string }).channel
+                      : undefined,
+                  sessionId:
+                    typeof (meta.delivery as { sessionId?: unknown })
+                      .sessionId === "string"
+                      ? (meta.delivery as { sessionId: string }).sessionId
+                      : undefined,
+                }
+              : undefined,
         }
       : null,
   }
@@ -193,6 +214,15 @@ export function AgentRuns({ heading }: { heading?: ReactNode }) {
                     {r.meta.entityType && r.meta.entityId
                       ? ` on ${r.meta.entityType} ${r.meta.entityId.slice(0, 12)}`
                       : ""}
+                  </p>
+                ) : null}
+                {r.meta?.delivery?.channel === "eve" &&
+                r.meta.delivery.sessionId ? (
+                  <p className="mt-1 text-muted-foreground text-xs">
+                    handed to the eve runtime as session{" "}
+                    <span className="font-mono">
+                      {r.meta.delivery.sessionId}
+                    </span>
                   </p>
                 ) : null}
               </li>

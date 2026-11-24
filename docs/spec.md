@@ -244,6 +244,20 @@ procurement API is consumed as tools. Key integration points:
 - **Session = eve channel** with auth (Vercel OIDC / local dev) mapped to a
   `user.kind = agent` identity server-side.
 
+The runtime and the API are wired in both directions, and the contract is
+written down in [`docs/agent-eve-integration.md`](agent-eve-integration.md):
+
+- **API → runtime (wake)**: the API posts the event to
+  `POST /eve/v1/session` with an `operationId` derived from the domain event
+  id, so a redelivered event wakes one session, and records the eve session id
+  as the `AgentRun.id`.
+- **Runtime → API (act)**: the agent's tools call the API's command boundary
+  with a five-minute bearer scoped to that session, so every action is
+  attributable to the run that produced it (§7.1), and the agent closes its
+  own run through `POST /api/service/agent/run/complete`.
+- **Web → API (visibility)**: the web reads runs from the API and shows the
+  eve session each run used; the operator bearer never reaches a browser.
+
 ### 7.4 Agent-level guardrails
 
 - **Budget check before commit**: mutations that commit spend check

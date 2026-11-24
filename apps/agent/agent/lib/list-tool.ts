@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { defineAipmsTool } from "./agent-tool"
 import { trpcQuery } from "./trpc-client"
 
 export const listToolInput = z.object({
@@ -24,15 +25,17 @@ export function defineListTool(
   router: "catalog" | "vendor" | "budget",
   description: string
 ) {
-  return defineTool({
-    description,
-    inputSchema: listToolInput,
-    async execute(input) {
-      return fetchList(router, input)
-    },
-    toModelOutput(result) {
-      // Preserve IDs, pagination totals and exact minor-unit monetary fields.
-      return { type: "text", value: JSON.stringify(result) }
-    },
-  })
+  return defineAipmsTool(
+    defineTool({
+      description,
+      inputSchema: listToolInput,
+      async execute(input) {
+        return fetchList(router, input)
+      },
+      toModelOutput(result) {
+        // Preserve IDs, pagination totals and exact minor-unit monetary fields.
+        return { type: "text", value: JSON.stringify(result) }
+      },
+    })
+  )
 }

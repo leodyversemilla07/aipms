@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { defineAipmsTool } from "../lib/agent-tool"
 import { trpcMutate } from "../lib/trpc-client"
 
 const inputSchema = z.object({
@@ -37,27 +38,29 @@ const resultSchema = z.object({
   ),
 })
 
-export default defineTool({
-  description:
-    "Creates a draft requisition with integer minor-unit prices. Every line must use one matching currency. This does not submit the draft for policy evaluation.",
-  inputSchema,
-  async execute(input, ctx) {
-    const result = await trpcMutate("requisition", "create", {
-      ...input,
-      idempotencyKey:
-        input.idempotencyKey ?? `eve:requisition.create:${ctx.callId}`,
-    })
-    return resultSchema.parse(result)
-  },
-  toModelOutput(result) {
-    const totalMinor = result.lines.reduce(
-      (sum, line) => sum + line.quantity * line.unitPriceMinor,
-      0
-    )
-    const currency = result.lines[0]?.currencyCode ?? "PHP"
-    return {
-      type: "text",
-      value: `Draft ${result.requestNumber} created (${result.id}). Total: ${totalMinor} minor units ${currency}. Submit it separately for policy evaluation.`,
-    }
-  },
-})
+export default defineAipmsTool(
+  defineTool({
+    description:
+      "Creates a draft requisition with integer minor-unit prices. Every line must use one matching currency. This does not submit the draft for policy evaluation.",
+    inputSchema,
+    async execute(input, ctx) {
+      const result = await trpcMutate("requisition", "create", {
+        ...input,
+        idempotencyKey:
+          input.idempotencyKey ?? `eve:requisition.create:${ctx.callId}`,
+      })
+      return resultSchema.parse(result)
+    },
+    toModelOutput(result) {
+      const totalMinor = result.lines.reduce(
+        (sum, line) => sum + line.quantity * line.unitPriceMinor,
+        0
+      )
+      const currency = result.lines[0]?.currencyCode ?? "PHP"
+      return {
+        type: "text",
+        value: `Draft ${result.requestNumber} created (${result.id}). Total: ${totalMinor} minor units ${currency}. Submit it separately for policy evaluation.`,
+      }
+    },
+  })
+)

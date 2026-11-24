@@ -380,6 +380,11 @@ event wakes, sourcing, and tax configuration. Publication serializes revision
 allocation and audits retired predecessors. See
 [`docs/agent-quotas.md`](docs/agent-quotas.md) for shared admission accounting,
 partial-batch responses, run attribution and process-local concurrency limits.
+The eve agent runtime and the API are wired together in both directions:
+domain events wake an eve session, the agent acts through the API's command
+boundary with run-scoped bearers, and the web shows the session each run used.
+See [`docs/agent-eve-integration.md`](docs/agent-eve-integration.md) for the
+contract, environment variables, and deployment checklist.
 See [`docs/policy-resolution.md`](docs/policy-resolution.md) for configuration shapes,
 legacy ambiguity, draft/supersession behavior, and rollout requirements.
 

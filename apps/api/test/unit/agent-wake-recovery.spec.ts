@@ -226,6 +226,12 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
       fakeRelay,
       runs,
       handlers,
+      // The eve runtime is not configured in these cases: the in-process
+      // deterministic pipeline owns the wake.
+      fakeRuntime: {
+        isConfigured: () => false,
+        wake: vi.fn(),
+      },
       setCurrentPo: (po: FakePo | null) => {
         currentPo = po
       },
@@ -253,7 +259,8 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
       ],
     }
 
-    const { fakeDb, fakeRelay, runs, handlers } = makeWakeFixture(existingPo)
+    const { fakeDb, fakeRelay, fakeRuntime, runs, handlers } =
+      makeWakeFixture(existingPo)
     const issuePurchaseOrder = vi.fn()
     const fakeCommands = {
       issuePurchaseOrder,
@@ -264,6 +271,7 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
     const wake = new AgentWakeService(
       fakeRelay as never,
       fakeCommands,
+      fakeRuntime as never,
       fakeDb as never,
     )
 
@@ -302,7 +310,7 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
   })
 
   it('recovers already-issued PO when issue throws ConflictException(already has a purchase order)', async () => {
-    const { fakeDb, fakeRelay, runs, handlers, setCurrentPo } =
+    const { fakeDb, fakeRelay, fakeRuntime, runs, handlers, setCurrentPo } =
       makeWakeFixture(null)
 
     // Simulate conflict: PO did not exist at first read, but was committed by another attempt/worker
@@ -332,6 +340,7 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
     const wake = new AgentWakeService(
       fakeRelay as never,
       fakeCommands,
+      fakeRuntime as never,
       fakeDb as never,
     )
 
@@ -366,7 +375,8 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
   })
 
   it('fails and rethrows non-conflict errors so outbox relay can retry or dead-letter', async () => {
-    const { fakeDb, fakeRelay, runs, handlers } = makeWakeFixture(null)
+    const { fakeDb, fakeRelay, fakeRuntime, runs, handlers } =
+      makeWakeFixture(null)
 
     const issuePurchaseOrder = vi
       .fn()
@@ -381,6 +391,7 @@ describe('Event-Wake PO Crash Recovery (Finding 348)', () => {
     const wake = new AgentWakeService(
       fakeRelay as never,
       fakeCommands,
+      fakeRuntime as never,
       fakeDb as never,
     )
 

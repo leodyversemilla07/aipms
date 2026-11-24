@@ -1,27 +1,30 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { defineAipmsTool } from "../lib/agent-tool"
 import type { RelayPayload } from "../lib/relay-payload"
 import { trpcMutate } from "../lib/trpc-client"
 
-export default defineTool({
-  description: "Promotes a classified intake document to an invoice.",
-  inputSchema: z.object({
-    id: z.string(),
-    idempotencyKey: z.string().optional(),
-  }),
-  async execute(input, ctx) {
-    const idempotencyKey =
-      input.idempotencyKey ?? `eve:intake.registerInvoice:${ctx.callId}`
-    return await trpcMutate("intake", "registerInvoice", {
-      id: input.id,
-      idempotencyKey,
-    })
-  },
+export default defineAipmsTool(
+  defineTool({
+    description: "Promotes a classified intake document to an invoice.",
+    inputSchema: z.object({
+      id: z.string(),
+      idempotencyKey: z.string().optional(),
+    }),
+    async execute(input, ctx) {
+      const idempotencyKey =
+        input.idempotencyKey ?? `eve:intake.registerInvoice:${ctx.callId}`
+      return await trpcMutate("intake", "registerInvoice", {
+        id: input.id,
+        idempotencyKey,
+      })
+    },
 
-  toModelOutput(result: RelayPayload) {
-    return {
-      type: "text",
-      value: `Registered Invoice: ${result?.invoiceId || "Unknown ID"} (Status: ${result?.status || "Unknown"}). Match outcome: ${result?.matchOutcome || "None"}`,
-    }
-  },
-})
+    toModelOutput(result: RelayPayload) {
+      return {
+        type: "text",
+        value: `Registered Invoice: ${result?.invoiceId || "Unknown ID"} (Status: ${result?.status || "Unknown"}). Match outcome: ${result?.matchOutcome || "None"}`,
+      }
+    },
+  })
+)

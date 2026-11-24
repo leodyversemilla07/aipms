@@ -1,5 +1,6 @@
 import { defineTool } from "eve/tools"
 import { z } from "zod"
+import { defineAipmsTool } from "../lib/agent-tool"
 import { trpcMutate } from "../lib/trpc-client"
 
 const inputSchema = z.object({
@@ -31,22 +32,24 @@ const resultSchema = z.object({
   leadTimeDays: z.number().int().nullable(),
 })
 
-export default defineTool({
-  description:
-    "Records a structured vendor offer against an open RFQ. Values are integer minor units and currency must match the requisition; no FX conversion is performed.",
-  inputSchema,
-  async execute(input, ctx) {
-    const result = await trpcMutate("sourcing", "receive", {
-      ...input,
-      idempotencyKey:
-        input.idempotencyKey ?? `eve:sourcing.receive:${ctx.callId}`,
-    })
-    return resultSchema.parse(result)
-  },
-  toModelOutput(result) {
-    return {
-      type: "text",
-      value: `Offer ${result.id} recorded for vendor ${result.vendorId}: ${result.totalMinor} minor units ${result.currencyCode}${result.leadTimeDays ? `, ${result.leadTimeDays} day lead time` : ""}. A human must award the quote.`,
-    }
-  },
-})
+export default defineAipmsTool(
+  defineTool({
+    description:
+      "Records a structured vendor offer against an open RFQ. Values are integer minor units and currency must match the requisition; no FX conversion is performed.",
+    inputSchema,
+    async execute(input, ctx) {
+      const result = await trpcMutate("sourcing", "receive", {
+        ...input,
+        idempotencyKey:
+          input.idempotencyKey ?? `eve:sourcing.receive:${ctx.callId}`,
+      })
+      return resultSchema.parse(result)
+    },
+    toModelOutput(result) {
+      return {
+        type: "text",
+        value: `Offer ${result.id} recorded for vendor ${result.vendorId}: ${result.totalMinor} minor units ${result.currencyCode}${result.leadTimeDays ? `, ${result.leadTimeDays} day lead time` : ""}. A human must award the quote.`,
+      }
+    },
+  })
+)
